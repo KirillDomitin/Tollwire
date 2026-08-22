@@ -20,12 +20,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     print("Finish!")
 
 
-app = FastAPI(
-    title=settings.project_name,
-    docs_url='/api/openapi',
-    openapi_url='/api/openapi.json',
-    lifespan=lifespan
-)
+app = FastAPI(title=settings.project_name, docs_url="/api/openapi", openapi_url="/api/openapi.json", lifespan=lifespan)
 
 
 @app.get("/health")

@@ -130,8 +130,8 @@ src/
 - [x] 1.3 Модель `Admin` + первая миграция
 
 ### Блок 2. Аутентификация
-- [ ] 2.1 Хеширование паролей Argon2id (`core/security.py`)
-- [ ] 2.2 JWT access token (выпуск/проверка)
+- [x] 2.1 Хеширование паролей Argon2id (`core/security.py`)
+- [x] 2.2 JWT access token (выпуск/проверка)
 - [ ] 2.3 Refresh token + `admin_sessions` (хранение hash) + HttpOnly cookie
 - [ ] 2.4 Endpoints: `login`, `refresh`, `logout`, `me`
 - [ ] 2.5 Dependency «текущий админ» (авторизация роутеров)

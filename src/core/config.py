@@ -17,10 +17,7 @@ class Settings(BaseSettings):
     ssh_command_timeout: int
     log_level: str = "info"
 
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore"
-    )
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
 
 settings = Settings()
