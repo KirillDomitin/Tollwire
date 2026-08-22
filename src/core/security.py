@@ -1,12 +1,14 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
+import hashlib
+import secrets
 from datetime import datetime, timedelta, timezone
 
 import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
-from jwt.exceptions import ExpiredSignatureError, InvalidSignatureError, InvalidTokenError
+from jwt.exceptions import InvalidTokenError
 
 from core.config import settings
 
@@ -41,3 +43,11 @@ def decode_access_token(token: str) -> dict[str, int | str] | None:
     except InvalidTokenError:
         return None
     return payload
+
+
+def generate_refresh_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def hash_refresh_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()

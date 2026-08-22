@@ -9,6 +9,7 @@ from alembic import context
 from core.config import settings
 from core.database.base import Base
 from modules.auth.models.admin import Admin  # noqa
+from modules.auth.models.admin_session import AdminSession  # noqa
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
