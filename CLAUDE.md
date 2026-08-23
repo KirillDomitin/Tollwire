@@ -133,8 +133,8 @@ src/
 - [x] 2.1 Хеширование паролей Argon2id (`core/security.py`)
 - [x] 2.2 JWT access token (выпуск/проверка)
 - [x] 2.3 Refresh token + `admin_sessions` (хранение hash) + HttpOnly cookie
-- [~] 2.4 Endpoints: `login`, `refresh`, `logout`, `me`
-- [ ] 2.5 Dependency «текущий админ» (авторизация роутеров)
+- [x] 2.4 Endpoints: `login`, `refresh`, `logout`, `me`
+- [x] 2.5 Dependency «текущий админ» (авторизация роутеров)
 
 ### Блок 3. Эталон слоёв
 - [ ] 3.1 Паттерн repository → service → schema → router на одном простом примере

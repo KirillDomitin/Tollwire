@@ -19,6 +19,9 @@ class AdminRepository:
         result = await self.session.execute(request)
         return result.scalar_one_or_none()
 
+    async def get_by_id(self, admin_id: UUID) -> Admin | None:
+        return await self.session.get(Admin, admin_id)
+
 
 class AdminSessionRepository:
     def __init__(self, session: AsyncSession):

@@ -8,7 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.config import settings
 from core.database.postgres import get_session
 from core.exceptions import InvalidCredentialsError
-from modules.auth.schemas import LoginRequest, TokenResponse
+from modules.auth.dependencies import get_current_admin
+from modules.auth.models.admin import Admin
+from modules.auth.schemas import AdminRead, LoginRequest, TokenResponse
 from modules.auth.service import AuthService
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
@@ -68,3 +70,8 @@ async def logout(
         await service.logout(refresh_token)
     response.delete_cookie("refresh_token", path="/api/v1/auth")
     return {"detail": "logged out"}
+
+
+@router.get("/me", response_model=AdminRead)
+async def me(current_admin: Annotated[Admin, Depends(get_current_admin)]) -> Admin:
+    return current_admin
