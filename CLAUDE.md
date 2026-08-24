@@ -140,7 +140,7 @@ src/
 - [ ] 3.1 Паттерн repository → service → schema → router на одном простом примере
 
 ### Блок 4. Серверы
-- [ ] 4.1 Модель `VPNServer` + статусы (NEW/INSTALLING/READY/OFFLINE/ERROR)
+- [x] 4.1 Модель `VPNServer` + статусы (NEW/INSTALLING/READY/OFFLINE/ERROR)
 - [ ] 4.2 CRUD `/api/v1/servers`
 - [ ] 4.3 `server_credentials` + шифрование секретов (`ENCRYPTION_KEY`)
 
