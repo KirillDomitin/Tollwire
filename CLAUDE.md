@@ -141,7 +141,7 @@ src/
 
 ### Блок 4. Серверы
 - [x] 4.1 Модель `VPNServer` + статусы (NEW/INSTALLING/READY/OFFLINE/ERROR)
-- [ ] 4.2 CRUD `/api/v1/servers`
+- [x] 4.2 CRUD `/api/v1/servers`
 - [ ] 4.3 `server_credentials` + шифрование секретов (`ENCRYPTION_KEY`)
 
 ### Блок 5. SSH-подсистема

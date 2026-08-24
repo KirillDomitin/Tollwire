@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.config import settings
 from core.database.postgres import get_session
 from modules.auth.api.v1.router import router as auth_router
+from modules.servers.api.v1.router import router as server_router
 
 
 @asynccontextmanager
@@ -24,6 +25,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 app = FastAPI(title=settings.project_name, docs_url="/api/openapi", openapi_url="/api/openapi.json", lifespan=lifespan)
 
 app.include_router(auth_router)
+app.include_router(server_router)
 
 
 @app.get("/health")

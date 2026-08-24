@@ -11,8 +11,8 @@ admin = Admin(email="a@a.a", password_hash=hash_password("1234"))
 
 async def main() -> None:
     async with session_factory() as session:
-        session.add(admin)  # add — синхронный, ок
-        await session.commit()  # commit — await
+        session.add(admin)
+        await session.commit()
 
 
-asyncio.run(main())  # запускает event loop
+asyncio.run(main())

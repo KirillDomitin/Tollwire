@@ -7,3 +7,9 @@ class AppError(Exception):
 
 
 class InvalidCredentialsError(AppError): ...
+
+
+class NotFoundError(AppError): ...
+
+
+class AlreadyExistsError(AppError): ...
