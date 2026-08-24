@@ -3,7 +3,7 @@
 
 import hashlib
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import jwt
 from argon2 import PasswordHasher
@@ -11,6 +11,7 @@ from argon2.exceptions import VerifyMismatchError
 from jwt.exceptions import InvalidTokenError
 
 from core.config import settings
+from core.utils import get_access_expires_at
 
 ph = PasswordHasher()
 
@@ -30,7 +31,7 @@ def verify_password(password: str, hashed: str) -> bool:
 def create_access_token(subject: str) -> str:
     payload = {
         "sub": subject,
-        "exp": datetime.now(timezone.utc) + timedelta(seconds=settings.jwt_access_expire),
+        "exp": get_access_expires_at(),
         "iat": datetime.now(timezone.utc),
         "type": "access",
     }
