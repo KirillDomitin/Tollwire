@@ -10,15 +10,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.database.postgres import get_session
 from core.exceptions import AlreadyExistsError, NotFoundError
 from modules.auth.dependencies import get_current_admin
+from modules.servers.models.credential import ServerCredential
 from modules.servers.models.server import VPNServer
-from modules.servers.schemas import ServerCreate, ServerRead, ServerUpdate
-from modules.servers.service import ServerService
+from modules.servers.schemas import CredentialCreate, CredentialRead, ServerCreate, ServerRead, ServerUpdate
+from modules.servers.service import CredentialService, ServerService
 
 router = APIRouter(prefix="/api/v1/servers", tags=["servers"], dependencies=[Depends(get_current_admin)])
 
 
 def get_server_service(session: Annotated[AsyncSession, Depends(get_session)]) -> ServerService:
     return ServerService(session)
+
+
+def get_credential_service(session: Annotated[AsyncSession, Depends(get_session)]) -> CredentialService:
+    return CredentialService(session)
 
 
 @router.post("", response_model=ServerRead, status_code=201)
@@ -59,3 +64,33 @@ async def delete(server_id: UUID, service: ServerService = Depends(get_server_se
         await service.delete(server_id)
     except NotFoundError:
         raise HTTPException(404, detail="Server not found")
+
+
+@router.put("/{server_id}/credentials", response_model=CredentialRead, status_code=200)
+async def put(
+    body: CredentialCreate, server_id: UUID, service: CredentialService = Depends(get_credential_service)
+) -> ServerCredential:
+    try:
+        cred = await service.set_credential(server_id, body)
+    except NotFoundError:
+        raise HTTPException(404, detail="Server not found")
+    return cred
+
+
+@router.get("/{server_id}/credentials", response_model=CredentialRead, status_code=200)
+async def get_credential(
+    server_id: UUID, service: CredentialService = Depends(get_credential_service)
+) -> ServerCredential:
+    try:
+        cred = await service.get(server_id)
+    except NotFoundError:
+        raise HTTPException(404, detail=f"Credential for server '{server_id}' not found")
+    return cred
+
+
+@router.delete("/{server_id}/credentials", status_code=204)
+async def del_credential(server_id: UUID, service: CredentialService = Depends(get_credential_service)) -> None:
+    try:
+        await service.delete(server_id)
+    except NotFoundError:
+        raise HTTPException(404, detail=f"Credential for server '{server_id}' not found")

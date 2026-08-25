@@ -8,12 +8,14 @@ from datetime import datetime, timezone
 import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
+from cryptography.fernet import Fernet
 from jwt.exceptions import InvalidTokenError
 
 from core.config import settings
 from core.utils import get_access_expires_at
 
 ph = PasswordHasher()
+fernet = Fernet(settings.encryption_key.get_secret_value())
 
 
 def hash_password(password: str) -> str:
@@ -52,3 +54,11 @@ def generate_refresh_token() -> str:
 
 def hash_refresh_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+def encrypt_secret(value: str) -> str:
+    return fernet.encrypt(value.encode()).decode()
+
+
+def decrypt_secret(value: str) -> str:
+    return fernet.decrypt(value.encode()).decode()

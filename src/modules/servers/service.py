@@ -6,9 +6,11 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions import AlreadyExistsError, NotFoundError
+from core.security import decrypt_secret, encrypt_secret
+from modules.servers.models.credential import ServerCredential
 from modules.servers.models.server import VPNServer
-from modules.servers.repository import ServerRepository
-from modules.servers.schemas import ServerCreate, ServerUpdate
+from modules.servers.repository import CredentialRepository, ServerRepository
+from modules.servers.schemas import CredentialCreate, ServerCreate, ServerUpdate
 
 
 class ServerService:
@@ -45,3 +47,49 @@ class ServerService:
         server = await self.get(server_id)
         await self.servers.delete(server)
         await self.session.commit()
+
+
+class CredentialService:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+        self.credentials = CredentialRepository(session)
+        self.servers = ServerRepository(session)
+
+    async def set_credential(self, server_id: UUID, data: CredentialCreate) -> ServerCredential:
+        server = await self.servers.get_by_id(server_id)
+        if not server:
+            raise NotFoundError
+        encrypted_secret = encrypt_secret(data.secret)
+        cred = await self.credentials.get_by_server_id(server_id)
+        if cred:
+            cred.username = data.username
+            cred.auth_type = data.auth_type
+            cred.secret_encrypted = encrypted_secret
+            await self.session.commit()
+            return cred
+
+        new_cred = ServerCredential(
+            server_id=server_id, auth_type=data.auth_type, username=data.username, secret_encrypted=encrypted_secret
+        )
+        await self.credentials.create(new_cred)
+        await self.session.commit()
+        return new_cred
+
+    async def get(self, server_id: UUID) -> ServerCredential:
+        cred = await self.credentials.get_by_server_id(server_id)
+        if not cred:
+            raise NotFoundError
+        return cred
+
+    async def delete(self, server_id: UUID) -> None:
+        cred = await self.credentials.get_by_server_id(server_id)
+        if not cred:
+            raise NotFoundError
+        await self.credentials.delete(cred)
+        await self.session.commit()
+
+    async def get_decrypted_secret(self, server_id: UUID) -> str:
+        cred = await self.credentials.get_by_server_id(server_id)
+        if not cred:
+            raise NotFoundError
+        return decrypt_secret(cred.secret_encrypted)

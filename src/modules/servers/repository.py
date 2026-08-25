@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from modules.servers.models.credential import ServerCredential
 from modules.servers.models.server import VPNServer
 
 
@@ -33,3 +34,21 @@ class ServerRepository:
 
     async def delete(self, server: VPNServer) -> None:
         await self.session.delete(server)
+
+
+class CredentialRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def get_by_server_id(self, server_id: UUID) -> ServerCredential | None:
+        sql_request = select(ServerCredential).where(ServerCredential.server_id == server_id)
+        cred = await self.session.execute(sql_request)
+        return cred.scalar_one_or_none()
+
+    async def create(self, credential: ServerCredential) -> ServerCredential:
+        self.session.add(credential)
+        await self.session.flush()
+        return credential
+
+    async def delete(self, credential: ServerCredential) -> None:
+        await self.session.delete(credential)
