@@ -146,7 +146,7 @@ src/
 
 ### Блок 5. SSH-подсистема
 - [x] 5.1 `SSHClient` (AsyncSSH): connect/execute/upload/download/close
-- [ ] 5.2 Таймауты, retry, обработка ошибок аутентификации/соединения, безопасное закрытие
+- [x] 5.2 Таймауты, retry, обработка ошибок аутентификации/соединения, безопасное закрытие
 - [ ] 5.3 `test-connection` endpoint
 
 ### Блок 6. VPN Provider
