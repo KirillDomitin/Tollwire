@@ -12,8 +12,15 @@ from core.exceptions import AlreadyExistsError, NotFoundError
 from modules.auth.dependencies import get_current_admin
 from modules.servers.models.credential import ServerCredential
 from modules.servers.models.server import VPNServer
-from modules.servers.schemas import CredentialCreate, CredentialRead, ServerCreate, ServerRead, ServerUpdate
-from modules.servers.service import CredentialService, ServerService
+from modules.servers.schemas import (
+    CredentialCreate,
+    CredentialRead,
+    ServerCreate,
+    ServerRead,
+    ServerUpdate,
+    TestConnectionResult,
+)
+from modules.servers.service import CredentialService, ServerConnectionService, ServerService
 
 router = APIRouter(prefix="/api/v1/servers", tags=["servers"], dependencies=[Depends(get_current_admin)])
 
@@ -24,6 +31,10 @@ def get_server_service(session: Annotated[AsyncSession, Depends(get_session)]) -
 
 def get_credential_service(session: Annotated[AsyncSession, Depends(get_session)]) -> CredentialService:
     return CredentialService(session)
+
+
+def get_connection_service(session: Annotated[AsyncSession, Depends(get_session)]) -> ServerConnectionService:
+    return ServerConnectionService(session)
 
 
 @router.post("", response_model=ServerRead, status_code=201)
@@ -73,7 +84,7 @@ async def put(
     try:
         cred = await service.set_credential(server_id, body)
     except NotFoundError:
-        raise HTTPException(404, detail="Server not found")
+        raise HTTPException(404, detail=f"Server '{server_id}' not found")
     return cred
 
 
@@ -94,3 +105,14 @@ async def del_credential(server_id: UUID, service: CredentialService = Depends(g
         await service.delete(server_id)
     except NotFoundError:
         raise HTTPException(404, detail=f"Credential for server '{server_id}' not found")
+
+
+@router.post("/{server_id}/test-connection", response_model=TestConnectionResult, status_code=200)
+async def test_connection(
+    server_id: UUID, service: ServerConnectionService = Depends(get_connection_service)
+) -> TestConnectionResult:
+    try:
+        result = await service.test_connection(server_id)
+    except NotFoundError:
+        raise HTTPException(404, detail=f"Credentials for server {server_id} not set")
+    return result

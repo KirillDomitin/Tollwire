@@ -5,12 +5,13 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions import AlreadyExistsError, NotFoundError
+from core.exceptions import AlreadyExistsError, NotFoundError, SSHError
 from core.security import decrypt_secret, encrypt_secret
-from modules.servers.models.credential import ServerCredential
+from infrastructure.ssh.client import SSHClient
+from modules.servers.models.credential import AuthType, ServerCredential
 from modules.servers.models.server import VPNServer
 from modules.servers.repository import CredentialRepository, ServerRepository
-from modules.servers.schemas import CredentialCreate, ServerCreate, ServerUpdate
+from modules.servers.schemas import CredentialCreate, ServerCreate, ServerUpdate, TestConnectionResult
 
 
 class ServerService:
@@ -93,3 +94,43 @@ class CredentialService:
         if not cred:
             raise NotFoundError
         return decrypt_secret(cred.secret_encrypted)
+
+
+class ServerConnectionService:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+        self.credentials = CredentialService(session)
+        self.servers = ServerRepository(session)
+
+    async def test_connection(self, server_id: UUID) -> TestConnectionResult:
+        server = await self.servers.get_by_id(server_id)
+        if not server:
+            raise NotFoundError
+        server_credential = await self.credentials.get(server_id)
+        auth_type = server_credential.auth_type
+        secret = await self.credentials.get_decrypted_secret(server_id)
+        auth: dict[str, str | None] = (
+            {"password": secret, "private_key": None}
+            if auth_type == AuthType.PASSWORD
+            else {"password": None, "private_key": secret}
+        )
+        ssh_client = SSHClient(
+            host=server.host,
+            username=server_credential.username,
+            port=server.ssh_port,
+            retries=2,
+            retry_delay=1.0,
+            connect_timeout=3,
+            command_timeout=2,
+            **auth,
+        )
+        try:
+            async with ssh_client:
+                result = await ssh_client.execute("uname -a")
+            success = True
+            message = f"Successful connection: {result.stdout}"
+        except SSHError as exc:
+            success = False
+            message = f"ERROR: {exc}"
+
+        return TestConnectionResult(success=success, message=message)

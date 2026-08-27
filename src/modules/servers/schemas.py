@@ -47,3 +47,9 @@ class CredentialRead(BaseModel):
     auth_type: AuthType
     username: str
     created_at: datetime
+
+
+class TestConnectionResult(BaseModel):
+    success: bool
+    message: str
+    # latency_ms: int
