@@ -151,7 +151,7 @@ src/
 
 ### Блок 6. VPN Provider
 - [x] 6.1 Интерфейс `VPNProvider` (install/uninstall/get_status/create_client/revoke_client/list_clients/sync)
-- [ ] 6.2 Скелет `AmneziaProvider` (`AmneziaInstaller`, `AmneziaWGProvider`)
+- [x] 6.2 Скелет `AmneziaProvider` (`AmneziaInstaller`, `AmneziaWGProvider`)
 
 ### Блок 7. Jobs и Worker
 - [ ] 7.1 Модель `Job` + статусы/типы
