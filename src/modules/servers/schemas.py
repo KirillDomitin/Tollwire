@@ -52,4 +52,3 @@ class CredentialRead(BaseModel):
 class TestConnectionResult(BaseModel):
     success: bool
     message: str
-    # latency_ms: int
