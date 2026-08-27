@@ -10,6 +10,7 @@ from core.config import settings
 from core.database.base import Base
 from modules.auth.models.admin import Admin  # noqa
 from modules.auth.models.admin_session import AdminSession  # noqa
+from modules.jobs.models.job import Job  # noqa
 from modules.servers.models.credential import ServerCredential  # noqa
 from modules.servers.models.server import VPNServer  # noqa
 

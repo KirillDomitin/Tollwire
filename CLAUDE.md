@@ -154,7 +154,7 @@ src/
 - [x] 6.2 Скелет `AmneziaProvider` (`AmneziaInstaller`, `AmneziaWGProvider`)
 
 ### Блок 7. Jobs и Worker
-- [ ] 7.1 Модель `Job` + статусы/типы
+- [x] 7.1 Модель `Job` + статусы/типы
 - [ ] 7.2 Очередь задач на Redis
 - [ ] 7.3 Отдельный процесс `vpn-admin-worker` (asyncio)
 - [ ] 7.4 Distributed locks на Redis (TTL + безопасное освобождение)
