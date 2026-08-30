@@ -18,10 +18,10 @@ class JobQueue:
 
     async def dequeue(self, timeout: int = 2) -> UUID | None:
         result = await self.client.brpop(KEY, timeout=timeout)
-        if result:
-            _, job_id = result
-            return UUID(str(job_id))
-        return None
+        if result is None:
+            return None
+        _, job_id = result
+        return UUID(str(job_id))
 
     async def size(self) -> int:
         return await self.client.llen(KEY)
