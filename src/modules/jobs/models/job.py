@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 import enum
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, Uuid, text
