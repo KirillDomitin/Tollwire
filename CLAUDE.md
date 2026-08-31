@@ -157,7 +157,7 @@ src/
 - [x] 7.1 Модель `Job` + статусы/типы
 - [x] 7.2 Очередь задач на Redis
 - [x] 7.3 Отдельный процесс `vpn-admin-worker` (asyncio)
-- [ ] 7.4 Distributed locks на Redis (TTL + безопасное освобождение)
+- [x] 7.4 Distributed locks на Redis (TTL + безопасное освобождение)
 - [ ] 7.5 Endpoints `/api/v1/jobs`, `/api/v1/jobs/{id}`
 
 ### Блок 8. Установка Amnezia (сквозной сценарий)
