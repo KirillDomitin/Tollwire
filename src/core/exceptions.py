@@ -9,6 +9,9 @@ class AppError(Exception):
 class InvalidCredentialsError(AppError): ...
 
 
+class CredentialNotFound(AppError): ...
+
+
 class NotFoundError(AppError): ...
 
 

@@ -5,7 +5,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions import AlreadyExistsError, NotFoundError, SSHError
+from core.exceptions import AlreadyExistsError, CredentialNotFound, NotFoundError, SSHError
 from core.security import decrypt_secret, encrypt_secret
 from infrastructure.ssh.client import SSHClient
 from modules.servers.models.credential import AuthType, ServerCredential
@@ -79,20 +79,20 @@ class CredentialService:
     async def get(self, server_id: UUID) -> ServerCredential:
         cred = await self.credentials.get_by_server_id(server_id)
         if not cred:
-            raise NotFoundError
+            raise CredentialNotFound
         return cred
 
     async def delete(self, server_id: UUID) -> None:
         cred = await self.credentials.get_by_server_id(server_id)
         if not cred:
-            raise NotFoundError
+            raise CredentialNotFound
         await self.credentials.delete(cred)
         await self.session.commit()
 
     async def get_decrypted_secret(self, server_id: UUID) -> str:
         cred = await self.credentials.get_by_server_id(server_id)
         if not cred:
-            raise NotFoundError
+            raise CredentialNotFound
         return decrypt_secret(cred.secret_encrypted)
 
 

@@ -13,6 +13,9 @@ class JobRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
+    async def create(self, job: Job) -> None:  # Добавил для сохранения стиля
+        self.session.add(job)
+
     async def get_by_id(self, job_id: UUID) -> Job | None:
         return await self.session.get(Job, job_id)
 
