@@ -4,11 +4,15 @@ import asyncio
 from datetime import datetime, timezone
 from uuid import UUID
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from core.database.postgres import session_factory
 from core.exceptions import JobNotFound, JobStatusError, JobTypeError, ServerBusyError
+from infrastructure.vpn.provider import ProviderStatus
 from infrastructure.workers.locks import ServerLock
 from modules.jobs.models.job import Job, JobStatus, JobType
 from modules.jobs.queue import JobQueue
+from modules.servers.service import ServerConnectionService
 
 
 class JobWorker:
@@ -40,8 +44,16 @@ class JobWorker:
             # TODO(блок 8): серверная задача (INSTALL_SERVER и т.п.) обязана иметь server_id.
             # Если его нет — это ошибка данных: бросать явное исключение, а не полагаться на то,
             # что в серверных ветках match переменная server_id окажется определена (иначе NameError).
-            if job.server_id:
-                server_id = UUID(str(job.server_id))
+            if job.type in [
+                JobType.INSTALL_SERVER,
+                JobType.UNINSTALL_SERVER,
+                JobType.INSTALL_PROTOCOL,
+                JobType.REMOVE_PROTOCOL,
+            ]:
+                if not job.server_id:
+                    raise JobTypeError(f"Job with type '{job.type}' must have server_id")
+                else:
+                    server_id = UUID(str(job.server_id))
 
             job.status = JobStatus.RUNNING
             job.started_at = datetime.now(timezone.utc)
@@ -61,7 +73,7 @@ class JobWorker:
                         await self.revoke_access()
                     case JobType.INSTALL_SERVER:
                         async with ServerLock(server_id):
-                            await self.install_server()
+                            await self.install_server(session, server_id)
                     case JobType.REMOVE_PROTOCOL:
                         async with ServerLock(server_id):
                             await self.remove_protocol()
@@ -106,8 +118,8 @@ class JobWorker:
     async def revoke_access(self) -> None:
         pass
 
-    async def install_server(self) -> None:
-        pass
+    async def install_server(self, session: AsyncSession, server_id: UUID) -> ProviderStatus:
+        return await ServerConnectionService(session).install(server_id)
 
     async def remove_protocol(self) -> None:
         pass

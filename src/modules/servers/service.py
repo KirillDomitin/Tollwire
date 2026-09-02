@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.exceptions import AlreadyExistsError, CredentialNotFound, NotFoundError, SSHError
 from core.security import decrypt_secret, encrypt_secret
 from infrastructure.ssh.client import SSHClient
+from infrastructure.vpn.amnezia import AmneziaWGProvider
+from infrastructure.vpn.provider import ProviderStatus, VPNProvider
 from modules.servers.models.credential import AuthType, ServerCredential
 from modules.servers.models.server import VPNServer
 from modules.servers.repository import CredentialRepository, ServerRepository
@@ -103,6 +105,36 @@ class ServerConnectionService:
         self.servers = ServerRepository(session)
 
     async def test_connection(self, server_id: UUID) -> TestConnectionResult:
+        ssh_client = await self.create_ssh_client(server_id)
+        try:
+            async with ssh_client:
+                result = await ssh_client.execute("uname -a")
+            success = True
+            message = f"Successful connection: {result.stdout}"
+        except SSHError as exc:
+            success = False
+            message = f"ERROR: {exc}"
+
+        return TestConnectionResult(success=success, message=message)
+
+    async def build_provider(self, ssh_client: SSHClient) -> VPNProvider:
+        # TODO(блок 9): выбор провайдера по протоколу через фабрику
+        # match protocol:
+        #     case Protocol.AMNEZIA_WG:
+        #         return AmneziaWGProvider(ssh_client)
+        #     case Protocol.OPENVPN:
+        #         return OpenVPNProvider(ssh_client)
+
+        provider = AmneziaWGProvider(ssh_client)
+        return provider
+
+    async def install(self, server_id: UUID) -> ProviderStatus:
+        ssh_client = await self.create_ssh_client(server_id)
+        provider = await self.build_provider(ssh_client)
+        async with ssh_client:
+            return await provider.install()
+
+    async def create_ssh_client(self, server_id: UUID) -> SSHClient:
         server = await self.servers.get_by_id(server_id)
         if not server:
             raise NotFoundError
@@ -114,7 +146,7 @@ class ServerConnectionService:
             if auth_type == AuthType.PASSWORD
             else {"password": None, "private_key": secret}
         )
-        ssh_client = SSHClient(
+        return SSHClient(
             host=server.host,
             username=server_credential.username,
             port=server.ssh_port,
@@ -124,13 +156,3 @@ class ServerConnectionService:
             command_timeout=2,
             **auth,
         )
-        try:
-            async with ssh_client:
-                result = await ssh_client.execute("uname -a")
-            success = True
-            message = f"Successful connection: {result.stdout}"
-        except SSHError as exc:
-            success = False
-            message = f"ERROR: {exc}"
-
-        return TestConnectionResult(success=success, message=message)

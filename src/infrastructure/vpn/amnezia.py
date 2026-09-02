@@ -30,6 +30,7 @@ class AmneziaInstaller:
 class AmneziaWGProvider(VPNProvider):
     def __init__(self, ssh_client: SSHClient):
         super().__init__(ssh_client)
+        self.ssh_client = ssh_client
         self.installer = AmneziaInstaller(ssh_client)
 
     async def install(self) -> ProviderStatus:
