@@ -92,11 +92,12 @@ class SSHClient:
         except (asyncssh.Error, OSError) as exc:
             raise SSHConnectionError(f"Connection error: host={self.host}, port={self.port}") from exc
 
-    async def execute(self, command: str) -> CommandResult:
+    async def execute(self, command: str, timeout: int | None = None) -> CommandResult:
+        effective = timeout if timeout is not None else self.command_timeout
         if self._conn is None:
             raise RuntimeError("SSH connection is not established")
         try:
-            result = await self._conn.run(command, timeout=self.command_timeout)
+            result = await self._conn.run(command, timeout=effective)
         except TimeoutError as exc:
             raise SSHTimeoutError("Command execution timeout exceeded") from exc
         except (asyncssh.Error, OSError) as exc:
