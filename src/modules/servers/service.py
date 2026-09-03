@@ -5,11 +5,12 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions import AlreadyExistsError, CredentialNotFound, NotFoundError, SSHError
+from core.exceptions import AlreadyExistsError, CredentialNotFound, NotFoundError, SSHError, UnsupportedProtocolError
 from core.security import decrypt_secret, encrypt_secret
 from infrastructure.ssh.client import SSHClient
 from infrastructure.vpn.amnezia import AmneziaInstaller, AmneziaWGProvider
 from infrastructure.vpn.provider import ProviderStatus, VPNProvider
+from modules.protocols.models.protocol import ProtocolType
 from modules.servers.models.credential import AuthType, ServerCredential
 from modules.servers.models.server import ServerStatus, VPNServer
 from modules.servers.repository import CredentialRepository, ServerRepository
@@ -117,16 +118,12 @@ class ServerConnectionService:
 
         return TestConnectionResult(success=success, message=message)
 
-    async def build_provider(self, ssh_client: SSHClient) -> VPNProvider:
-        # TODO(блок 9): выбор провайдера по протоколу через фабрику
-        # match protocol:
-        #     case Protocol.AMNEZIA_WG:
-        #         return AmneziaWGProvider(ssh_client)
-        #     case Protocol.OPENVPN:
-        #         return OpenVPNProvider(ssh_client)
-
-        provider = AmneziaWGProvider(ssh_client)
-        return provider
+    def build_provider(self, ssh_client: SSHClient, protocol_type: ProtocolType) -> VPNProvider:
+        match protocol_type:
+            case ProtocolType.AMNEZIA_WG:
+                return AmneziaWGProvider(ssh_client)
+            case _:
+                raise UnsupportedProtocolError(f"Unsupported protocol '{protocol_type}'")
 
     async def install(self, server_id: UUID) -> None:
         ssh_client = await self.create_ssh_client(server_id)
@@ -147,9 +144,9 @@ class ServerConnectionService:
             server.status = ServerStatus.READY
             await self.session.commit()
 
-    async def uninstall(self, server_id: UUID) -> ProviderStatus:
+    async def uninstall(self, server_id: UUID, protocol_type: ProtocolType = ProtocolType.AMNEZIA_WG) -> ProviderStatus:
         ssh_client = await self.create_ssh_client(server_id)
-        provider = await self.build_provider(ssh_client)
+        provider = self.build_provider(ssh_client, protocol_type)
         server = await self.servers.get_by_id(server_id)
         if not server:
             raise NotFoundError(f"Server '{server_id}' not found")
