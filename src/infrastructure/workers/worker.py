@@ -118,7 +118,7 @@ class JobWorker:
     async def revoke_access(self) -> None:
         pass
 
-    async def install_server(self, session: AsyncSession, server_id: UUID) -> ProviderStatus:
+    async def install_server(self, session: AsyncSession, server_id: UUID) -> None:
         return await ServerConnectionService(session).install(server_id)
 
     async def remove_protocol(self) -> None:

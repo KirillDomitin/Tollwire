@@ -95,13 +95,9 @@ class AmneziaInstaller:
             if container_state.stdout:
                 raise DockerError("Failed to remove container.")
 
-    async def install(self) -> ProviderStatus:
+    async def ensure_ready(self) -> None:
         await self._validate_server()
         await self._ensure_docker()
-        await self._run_container()
-        return ProviderStatus(
-            server_status=ProviderState.RUNNING, version=None, protocols=[]
-        )  # TODO подставлять версию амнезии
 
     async def uninstall(self) -> ProviderStatus:
         await self._rm_container()
@@ -118,7 +114,7 @@ class AmneziaWGProvider(VPNProvider):
         self.installer = AmneziaInstaller(ssh_client)
 
     async def install(self) -> ProviderStatus:
-        return await self.installer.install()
+        raise NotImplementedError("AmneziaWG install — блок 9")  # протокол блок 9
 
     async def uninstall(self) -> ProviderStatus:
         return await self.installer.uninstall()

@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.exceptions import AlreadyExistsError, CredentialNotFound, NotFoundError, SSHError
 from core.security import decrypt_secret, encrypt_secret
 from infrastructure.ssh.client import SSHClient
-from infrastructure.vpn.amnezia import AmneziaWGProvider
+from infrastructure.vpn.amnezia import AmneziaInstaller, AmneziaWGProvider
 from infrastructure.vpn.provider import ProviderStatus, VPNProvider
 from modules.servers.models.credential import AuthType, ServerCredential
 from modules.servers.models.server import ServerStatus, VPNServer
@@ -128,9 +128,8 @@ class ServerConnectionService:
         provider = AmneziaWGProvider(ssh_client)
         return provider
 
-    async def install(self, server_id: UUID) -> ProviderStatus:
+    async def install(self, server_id: UUID) -> None:
         ssh_client = await self.create_ssh_client(server_id)
-        provider = await self.build_provider(ssh_client)
         server = await self.servers.get_by_id(server_id)
         if not server:
             raise NotFoundError(f"Server '{server_id}' not found")
@@ -139,7 +138,7 @@ class ServerConnectionService:
         await self.session.commit()
         try:
             async with ssh_client:
-                status = await provider.install()
+                await AmneziaInstaller(ssh_client).ensure_ready()
         except Exception:
             server.status = ServerStatus.ERROR
             await self.session.commit()
@@ -147,7 +146,6 @@ class ServerConnectionService:
         else:
             server.status = ServerStatus.READY
             await self.session.commit()
-        return status
 
     async def uninstall(self, server_id: UUID) -> ProviderStatus:
         ssh_client = await self.create_ssh_client(server_id)
