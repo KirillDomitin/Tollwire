@@ -11,7 +11,7 @@ from infrastructure.ssh.client import SSHClient
 from infrastructure.vpn.amnezia import AmneziaWGProvider
 from infrastructure.vpn.provider import ProviderStatus, VPNProvider
 from modules.servers.models.credential import AuthType, ServerCredential
-from modules.servers.models.server import VPNServer
+from modules.servers.models.server import ServerStatus, VPNServer
 from modules.servers.repository import CredentialRepository, ServerRepository
 from modules.servers.schemas import CredentialCreate, ServerCreate, ServerUpdate, TestConnectionResult
 
@@ -131,8 +131,23 @@ class ServerConnectionService:
     async def install(self, server_id: UUID) -> ProviderStatus:
         ssh_client = await self.create_ssh_client(server_id)
         provider = await self.build_provider(ssh_client)
-        async with ssh_client:
-            return await provider.install()
+        server = await self.servers.get_by_id(server_id)
+        if not server:
+            raise NotFoundError(f"Server '{server_id}' not found")
+
+        server.status = ServerStatus.INSTALLING
+        await self.session.commit()
+        try:
+            async with ssh_client:
+                status = await provider.install()
+        except Exception:
+            server.status = ServerStatus.ERROR
+            await self.session.commit()
+            raise
+        else:
+            server.status = ServerStatus.READY
+            await self.session.commit()
+        return status
 
     async def create_ssh_client(self, server_id: UUID) -> SSHClient:
         server = await self.servers.get_by_id(server_id)
