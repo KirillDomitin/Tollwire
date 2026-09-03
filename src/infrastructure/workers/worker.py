@@ -79,7 +79,7 @@ class JobWorker:
                             await self.remove_protocol()
                     case JobType.UNINSTALL_SERVER:
                         async with ServerLock(server_id):
-                            await self.uninstall_server()
+                            await self.uninstall_server(session, server_id)
                     case JobType.INSTALL_PROTOCOL:
                         async with ServerLock(server_id):
                             await self.install_protocol()
@@ -124,8 +124,8 @@ class JobWorker:
     async def remove_protocol(self) -> None:
         pass
 
-    async def uninstall_server(self) -> None:
-        pass
+    async def uninstall_server(self, session: AsyncSession, server_id: UUID) -> ProviderStatus:
+        return await ServerConnectionService(session).uninstall(server_id)
 
     async def install_protocol(self) -> None:
         pass

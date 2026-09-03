@@ -79,14 +79,33 @@ class AmneziaInstaller:
         if container_state.stdout.strip() != "running":
             raise DockerError("Failed to start container.")
 
+    async def _rm_container(self) -> None:
+        container_state = await self.ssh_client.execute(
+            "docker ps -a --filter name=" + CONTAINER_NAME + " --format '{{.State}}'"
+        )
+        if container_state.stdout:
+            container_stop = await self.ssh_client.execute(
+                f"docker stop {CONTAINER_NAME} && docker rm {CONTAINER_NAME}"
+            )
+            if container_stop.exit_status != 0:
+                raise DockerError(f"Failed to stop container. Error: {container_stop.stderr}")
+            container_state = await self.ssh_client.execute(
+                "docker ps -a --filter name=" + CONTAINER_NAME + " --format '{{.State}}'"
+            )
+            if container_state.stdout:
+                raise DockerError("Failed to remove container.")
+
     async def install(self) -> ProviderStatus:
         await self._validate_server()
         await self._ensure_docker()
         await self._run_container()
-        return ProviderStatus(server_status=ProviderState.RUNNING, version=None, protocols=[]) # подставлять версию амнезии
+        return ProviderStatus(
+            server_status=ProviderState.RUNNING, version=None, protocols=[]
+        )  # TODO подставлять версию амнезии
 
     async def uninstall(self) -> ProviderStatus:
-        raise NotImplementedError("Dummy uninstall")
+        await self._rm_container()
+        return ProviderStatus(server_status=ProviderState.NOT_INSTALLED, version=None, protocols=[])
 
     async def get_status(self) -> ProviderStatus:
         raise NotImplementedError("Dummy status")

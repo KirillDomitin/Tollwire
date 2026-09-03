@@ -139,3 +139,22 @@ async def server_install(
 
     job = await job_service.create(job_type=JobType.INSTALL_SERVER, server_id=server_id)
     return job
+
+
+@router.post("/{server_id}/uninstall", response_model=JobRead, status_code=202)
+async def server_uninstall(
+    server_id: UUID,
+    server_service: ServerService = Depends(get_server_service),
+    job_service: JobService = Depends(get_job_service),
+    cred_service: CredentialService = Depends(get_credential_service),
+) -> Job:
+    try:
+        await server_service.get(server_id)
+        await cred_service.get(server_id)
+    except NotFoundError:
+        raise HTTPException(404, detail="Server not found")
+    except CredentialNotFound:
+        raise HTTPException(409, detail="Credentials do not exist to perform this operation")
+
+    job = await job_service.create(job_type=JobType.UNINSTALL_SERVER, server_id=server_id)
+    return job

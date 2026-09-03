@@ -149,6 +149,25 @@ class ServerConnectionService:
             await self.session.commit()
         return status
 
+    async def uninstall(self, server_id: UUID) -> ProviderStatus:
+        ssh_client = await self.create_ssh_client(server_id)
+        provider = await self.build_provider(ssh_client)
+        server = await self.servers.get_by_id(server_id)
+        if not server:
+            raise NotFoundError(f"Server '{server_id}' not found")
+
+        try:
+            async with ssh_client:
+                status = await provider.uninstall()
+        except Exception:
+            server.status = ServerStatus.ERROR
+            await self.session.commit()
+            raise
+        else:
+            server.status = ServerStatus.NEW
+            await self.session.commit()
+        return status
+
     async def create_ssh_client(self, server_id: UUID) -> SSHClient:
         server = await self.servers.get_by_id(server_id)
         if not server:
