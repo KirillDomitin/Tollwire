@@ -161,10 +161,10 @@ src/
 - [x] 7.5 Endpoints `/api/v1/jobs`, `/api/v1/jobs/{id}`
 
 ### Блок 8. Установка Amnezia (сквозной сценарий)
-- [~] 8.1 `install`/`uninstall` через Job → worker → SSH → verification → sync
+- [x] 8.1 `install`/`uninstall` через Job → worker → SSH → verification → sync
 
 ### Блок 9. Протоколы
-- [ ] 9.1 Модель `VPNProtocol` (AMNEZIA_WG), установка/удаление протокола
+- [~] 9.1 Модель `VPNProtocol` (AMNEZIA_WG), установка/удаление протокола
 
 ### Блок 10. VPN-пользователи
 - [ ] 10.1 Модель `VPNUser` (не связан с `Admin`) + CRUD `/api/v1/vpn-users`
