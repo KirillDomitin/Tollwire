@@ -18,7 +18,8 @@ class ProviderState(enum.Enum):
 class ProviderStatus:
     server_status: ProviderState
     version: str | None
-    protocols: list[str] | None
+    port: int | None
+    uptime: str | None
 
 
 @dataclass

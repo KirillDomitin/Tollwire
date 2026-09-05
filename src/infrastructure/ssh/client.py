@@ -124,6 +124,7 @@ class SSHClient:
                 await sftp.makedirs(posixpath.dirname(remote_path), exist_ok=True)
                 async with sftp.open(remote_path, "w") as f:
                     await f.write(content)
+                await self.execute(f"chmod 600 {remote_path}")
         except TimeoutError as exc:
             raise SSHTimeoutError("File write timeout exceeded") from exc
         except (asyncssh.Error, OSError) as exc:

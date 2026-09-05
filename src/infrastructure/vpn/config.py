@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
-CONTAINER_NAME = "amnezia-panel"
+CONTAINER_NAME = "amnezia-awg"
 
 DEFAULT_AWG_CONFIG = """[Interface]
 PrivateKey = {}

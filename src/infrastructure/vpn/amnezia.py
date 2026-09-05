@@ -1,9 +1,11 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
+import asyncio
 import re
 
 from core.ssh_exception import CommandExecutionError, DockerError, InstallError, InvalidServerConfigurationError
 from infrastructure.ssh.client import SSHClient
+from infrastructure.vpn.awg_config import generate_secret_keys, pick_udp_port, render_awg_config
 from infrastructure.vpn.config import CONTAINER_NAME
 from infrastructure.vpn.provider import (
     ProviderState,
@@ -15,6 +17,8 @@ from infrastructure.vpn.provider import (
 )
 
 _ALLOWED = re.compile(r"^[a-zA-Z0-9_-]{1,32}$")
+
+CONFIG_PATH = "/opt/vpn-admin/awg"
 
 
 def validate_name(name: str) -> None:
@@ -58,53 +62,9 @@ class AmneziaInstaller:
             if result.exit_status != 0:
                 print(f"Warning: Docker started, but failed to enable autostart: {result.stderr.strip()}")
 
-    async def _run_container(self) -> None:
-        container_state = await self.ssh_client.execute(
-            "docker ps -a --filter name=" + CONTAINER_NAME + " --format '{{.State}}'"
-        )
-        if not container_state.stdout:
-            container_run = await self.ssh_client.execute(
-                f"docker run -d --name {CONTAINER_NAME} nginx:alpine", timeout=300
-            )
-            if container_run.exit_status != 0:
-                raise DockerError(f"Failed to start container. Error: {container_run.stderr}")
-        elif container_state.stdout.strip() == "exited":
-            container_start = await self.ssh_client.execute(f"docker start {CONTAINER_NAME}")
-            if container_start.exit_status != 0:
-                raise DockerError(f"Failed to start container. Error: {container_start.stderr}")
-
-        container_state = await self.ssh_client.execute(
-            "docker ps -a --filter name=" + CONTAINER_NAME + " --format '{{.State}}'"
-        )
-        if container_state.stdout.strip() != "running":
-            raise DockerError("Failed to start container.")
-
-    async def _rm_container(self) -> None:
-        container_state = await self.ssh_client.execute(
-            "docker ps -a --filter name=" + CONTAINER_NAME + " --format '{{.State}}'"
-        )
-        if container_state.stdout:
-            container_stop = await self.ssh_client.execute(
-                f"docker stop {CONTAINER_NAME} && docker rm {CONTAINER_NAME}"
-            )
-            if container_stop.exit_status != 0:
-                raise DockerError(f"Failed to stop container. Error: {container_stop.stderr}")
-            container_state = await self.ssh_client.execute(
-                "docker ps -a --filter name=" + CONTAINER_NAME + " --format '{{.State}}'"
-            )
-            if container_state.stdout:
-                raise DockerError("Failed to remove container.")
-
     async def ensure_ready(self) -> None:
         await self._validate_server()
         await self._ensure_docker()
-
-    async def uninstall(self) -> ProviderStatus:
-        await self._rm_container()
-        return ProviderStatus(server_status=ProviderState.NOT_INSTALLED, version=None, protocols=[])
-
-    async def get_status(self) -> ProviderStatus:
-        raise NotImplementedError("Dummy status")
 
 
 class AmneziaWGProvider(VPNProvider):
@@ -114,13 +74,72 @@ class AmneziaWGProvider(VPNProvider):
         self.installer = AmneziaInstaller(ssh_client)
 
     async def install(self) -> ProviderStatus:
-        raise NotImplementedError("AmneziaWG install — блок 9")  # протокол блок 9
+        test = await self.ssh_client.execute(f"test -f {CONFIG_PATH}/awg0.conf")
+        if test.exit_status == 0:
+            return await self.get_status()
+        port = pick_udp_port()
+        keys = generate_secret_keys()
+        config = render_awg_config(keys.private_key, port)
+        await self.ssh_client.write_file(f"{CONFIG_PATH}/awg0.conf", config)
+        await self._run_container(port)
+        return await self.get_status()
 
     async def uninstall(self) -> ProviderStatus:
-        return await self.installer.uninstall()
+        await self._rm_container()
+        return await self.get_status()
 
     async def get_status(self) -> ProviderStatus:
-        return await self.installer.get_status()
+        status = await self.ssh_client.execute(
+            "docker ps -a --filter name=" + CONTAINER_NAME + " --format '{{.State}}'"
+        )
+        if status.exit_status == 0 and status.stdout.strip():
+            raw_state = status.stdout.strip().lower()
+
+            if raw_state == "running":
+                status_result = ProviderState.RUNNING
+            elif raw_state in ("exited", "created", "paused"):
+                status_result = ProviderState.STOPPED
+            else:
+                status_result = ProviderState.STOPPED
+        else:
+            status_result = ProviderState.NOT_INSTALLED
+            return ProviderStatus(
+                server_status=status_result, version=None, port=None, uptime=None
+            )
+
+        port = await self.ssh_client.execute(f"grep 'ListenPort' {CONFIG_PATH}/awg0.conf | cut -d' ' -f3")
+        if port.exit_status == 0:
+            port_str = port.stdout.strip()
+            port_result = int(port_str)
+
+        elif port.exit_status == 1:
+            raise CommandExecutionError("Error: 'ListenPort' key not found in the configuration file.")
+
+        elif port.exit_status == 2:
+            raise CommandExecutionError(f"Error: Configuration file at {CONFIG_PATH}/awg0.conf does not exist.")
+
+        else:
+            raise CommandExecutionError(f"Unexpected error (Code {port.exit_status}): {port.stderr.strip()}")
+
+        uptime = await self.ssh_client.execute(
+            "docker ps -a --filter name=" + CONTAINER_NAME + " --format '{{.Status}}'"
+        )
+        version = await self.ssh_client.execute(
+            "docker ps -a --filter name=" + CONTAINER_NAME + " --format '{{.Image}}'"
+        )
+        if uptime.exit_status == 0 and uptime.stdout.strip():
+            uptime_result = uptime.stdout.strip()
+        else:
+            raise CommandExecutionError(f"Error or Container '{CONTAINER_NAME}' not found while checking uptime.")
+
+        if version.exit_status == 0 and version.stdout.strip():
+            version_result = version.stdout.strip()
+        else:
+            raise CommandExecutionError(f"Error or Container '{CONTAINER_NAME}' not found while checking version.")
+
+        return ProviderStatus(
+            server_status=status_result, version=version_result, port=port_result, uptime=uptime_result
+        )
 
     async def create_client(self, name: str) -> VPNClientConfig:
         validate_name(name)
@@ -135,3 +154,54 @@ class AmneziaWGProvider(VPNProvider):
 
     async def sync(self) -> SyncResult:
         raise NotImplementedError("AmneziaWG sync is not implemented yet")
+
+    async def _run_container(self, port: int) -> None:
+        container_state = await self.ssh_client.execute(
+            "docker ps -a --filter name=" + CONTAINER_NAME + " --format '{{.State}}'"
+        )
+
+        if not container_state.stdout:
+            container_run = await self.ssh_client.execute(
+                f"docker run -d --name {CONTAINER_NAME} \
+                  --cap-add=NET_ADMIN --device=/dev/net/tun \
+                  -p {port}:{port}/udp \
+                  -v {CONFIG_PATH}:/etc/amnezia/awg \
+                  amneziavpn/amneziawg-go:latest \
+                  sh -c 'awg-quick up /etc/amnezia/awg/awg0.conf && tail -f /dev/null'",
+                timeout=300,
+            )
+            if container_run.exit_status != 0:
+                raise DockerError(f"Failed to start container. Error: {container_run.stderr}")
+        elif container_state.stdout.strip() == "exited":
+            container_start = await self.ssh_client.execute(f"docker start {CONTAINER_NAME}")
+            if container_start.exit_status != 0:
+                raise DockerError(f"Failed to start container. Error: {container_start.stderr}")
+
+        await asyncio.sleep(5)
+        container_state = await self.ssh_client.execute(
+            "docker ps -a --filter name=" + CONTAINER_NAME + " --format '{{.State}}'"
+        )
+        if container_state.stdout.strip() != "running":
+            raise DockerError("Failed to start container.")
+
+    async def _rm_container(self) -> None:
+        container_state = await self.ssh_client.execute(
+            "docker ps -a --filter name=" + CONTAINER_NAME + " --format '{{.State}}'"
+        )
+        if container_state.stdout:
+            container_stop = await self.ssh_client.execute(
+                f"docker stop {CONTAINER_NAME} && docker rm {CONTAINER_NAME}"
+            )
+            rm_config = await self.ssh_client.execute(f"rm -rf {CONFIG_PATH}")
+
+            if container_stop.exit_status != 0:
+                raise DockerError(f"Failed to stop container. Error: {container_stop.stderr}")
+            if rm_config.exit_status != 0:
+                raise OSError(f"Error deleting directory: {rm_config.stderr} (Code: {rm_config.exit_status})")
+
+            container_state = await self.ssh_client.execute(
+                "docker ps -a --filter name=" + CONTAINER_NAME + " --format '{{.State}}'"
+            )
+
+            if container_state.stdout:
+                raise DockerError("Failed to remove container.")
