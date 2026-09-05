@@ -1,6 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 import asyncio
+import posixpath
 from dataclasses import dataclass
 
 import asyncssh
@@ -114,3 +115,16 @@ class SSHClient:
             self._conn.close()
             await self._conn.wait_closed()
         self._conn = None
+
+    async def write_file(self, remote_path: str, content: str) -> None:
+        if self._conn is None:
+            raise RuntimeError("SSH connection is not established")
+        try:
+            async with self._conn.start_sftp_client() as sftp:
+                await sftp.makedirs(posixpath.dirname(remote_path), exist_ok=True)
+                async with sftp.open(remote_path, "w") as f:
+                    await f.write(content)
+        except TimeoutError as exc:
+            raise SSHTimeoutError("File write timeout exceeded") from exc
+        except (asyncssh.Error, OSError) as exc:
+            raise SSHConnectionError(f"File write: host={self.host}, path={remote_path}") from exc

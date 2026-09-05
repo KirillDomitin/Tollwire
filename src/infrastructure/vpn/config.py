@@ -3,7 +3,7 @@
 
 CONTAINER_NAME = "amnezia-panel"
 
-DEFAULT_AWG_CONFIG="""[Interface]
+DEFAULT_AWG_CONFIG = """[Interface]
 PrivateKey = {}
 Address = 10.8.1.0/24
 ListenPort = {}

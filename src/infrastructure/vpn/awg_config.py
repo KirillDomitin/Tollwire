@@ -44,5 +44,6 @@ def generate_secret_keys() -> AWGKeys:
 def pick_udp_port() -> int:
     return random.randint(20000, 60000)
 
+
 def render_awg_config(private_key_str: str, udp_port: int) -> str:
     return DEFAULT_AWG_CONFIG.format(private_key_str, udp_port)
