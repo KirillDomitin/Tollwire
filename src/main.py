@@ -14,6 +14,7 @@ from core.database.postgres import get_session
 from modules.auth.api.v1.router import router as auth_router
 from modules.jobs.api.v1.router import router as job_router
 from modules.servers.api.v1.router import router as server_router
+from modules.vpn_users.api.v1.router import router as vpn_user_router
 
 
 @asynccontextmanager
@@ -28,6 +29,7 @@ app = FastAPI(title=settings.project_name, docs_url="/api/openapi", openapi_url=
 app.include_router(auth_router)
 app.include_router(server_router)
 app.include_router(job_router)
+app.include_router(vpn_user_router)
 
 
 @app.get("/health")

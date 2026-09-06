@@ -14,6 +14,7 @@ from modules.jobs.models.job import Job  # noqa
 from modules.protocols.models.protocol import VPNProtocol  # noqa
 from modules.servers.models.credential import ServerCredential  # noqa
 from modules.servers.models.server import VPNServer  # noqa
+from modules.vpn_users.models.user import VPNUser  # noqa
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

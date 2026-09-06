@@ -164,10 +164,10 @@ src/
 - [x] 8.1 `install`/`uninstall` через Job → worker → SSH → verification → sync
 
 ### Блок 9. Протоколы
-- [~] 9.1 Модель `VPNProtocol` (AMNEZIA_WG), установка/удаление протокола
+- [x] 9.1 Модель `VPNProtocol` (AMNEZIA_WG), установка/удаление протокола
 
 ### Блок 10. VPN-пользователи
-- [ ] 10.1 Модель `VPNUser` (не связан с `Admin`) + CRUD `/api/v1/vpn-users`
+- [x] 10.1 Модель `VPNUser` (не связан с `Admin`) + CRUD `/api/v1/vpn-users`
 
 ### Блок 11. Доступы (AccessGrant)
 - [ ] 11.1 Модель `AccessGrant` + статусы (PENDING/ACTIVE/EXPIRED/REVOKED)
