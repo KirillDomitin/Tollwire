@@ -119,13 +119,13 @@ class JobWorker:
         pass
 
     async def install_server(self, session: AsyncSession, server_id: UUID) -> None:
-        return await ServerConnectionService(session).install(server_id)
+        return await ServerConnectionService(session).server_install(server_id)
 
     async def remove_protocol(self) -> None:
         pass
 
     async def uninstall_server(self, session: AsyncSession, server_id: UUID) -> ProviderStatus:
-        return await ServerConnectionService(session).uninstall(server_id)
+        return await ServerConnectionService(session).protocol_uninstall(server_id)
 
     async def install_protocol(self) -> None:
         pass

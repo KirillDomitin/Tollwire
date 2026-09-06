@@ -10,7 +10,8 @@ from core.security import decrypt_secret, encrypt_secret
 from infrastructure.ssh.client import SSHClient
 from infrastructure.vpn.amnezia import AmneziaInstaller, AmneziaWGProvider
 from infrastructure.vpn.provider import ProviderStatus, VPNProvider
-from modules.protocols.models.protocol import ProtocolType
+from modules.protocols.models.protocol import ProtocolType, VPNProtocol
+from modules.protocols.repository import ProtocolRepository
 from modules.servers.models.credential import AuthType, ServerCredential
 from modules.servers.models.server import ServerStatus, VPNServer
 from modules.servers.repository import CredentialRepository, ServerRepository
@@ -104,6 +105,7 @@ class ServerConnectionService:
         self.session = session
         self.credentials = CredentialService(session)
         self.servers = ServerRepository(session)
+        self.protocols = ProtocolRepository(session)
 
     async def test_connection(self, server_id: UUID) -> TestConnectionResult:
         ssh_client = await self.create_ssh_client(server_id)
@@ -125,7 +127,7 @@ class ServerConnectionService:
             case _:
                 raise UnsupportedProtocolError(f"Unsupported protocol '{protocol_type}'")
 
-    async def install(self, server_id: UUID) -> None:
+    async def server_install(self, server_id: UUID) -> None:
         ssh_client = await self.create_ssh_client(server_id)
         server = await self.servers.get_by_id(server_id)
         if not server:
@@ -144,24 +146,7 @@ class ServerConnectionService:
             server.status = ServerStatus.READY
             await self.session.commit()
 
-    async def uninstall(self, server_id: UUID, protocol_type: ProtocolType = ProtocolType.AMNEZIA_WG) -> ProviderStatus:
-        ssh_client = await self.create_ssh_client(server_id)
-        provider = self.build_provider(ssh_client, protocol_type)
-        server = await self.servers.get_by_id(server_id)
-        if not server:
-            raise NotFoundError(f"Server '{server_id}' not found")
 
-        try:
-            async with ssh_client:
-                status = await provider.uninstall()
-        except Exception:
-            server.status = ServerStatus.ERROR
-            await self.session.commit()
-            raise
-        else:
-            server.status = ServerStatus.NEW
-            await self.session.commit()
-        return status
 
     async def create_ssh_client(self, server_id: UUID) -> SSHClient:
         server = await self.servers.get_by_id(server_id)
@@ -185,3 +170,30 @@ class ServerConnectionService:
             command_timeout=2,
             **auth,
         )
+
+    async def protocol_install(self, protocol: VPNProtocol) -> VPNProtocol:
+        ssh_client = await self.create_ssh_client(protocol.server_id)
+        provider = self.build_provider(ssh_client, protocol.type)
+        async with ssh_client:
+            status = await provider.install()
+        protocol.port = status.port
+        await self.protocols.create(protocol)
+        await self.session.commit()
+        return protocol
+
+    async def protocol_uninstall(
+            self, server_id: UUID, protocol_type: ProtocolType = ProtocolType.AMNEZIA_WG
+    ) -> ProviderStatus:
+        ssh_client = await self.create_ssh_client(server_id)
+        provider = self.build_provider(ssh_client, protocol_type)
+        try:
+            async with ssh_client:
+                status = await provider.uninstall()
+        except Exception:
+            await self.session.commit()
+            raise
+        else:
+            protocol = VPNProtocol(server_id=server_id, type=protocol_type, port=status.port)
+            await self.protocols.delete(protocol)
+            await self.session.commit()
+        return status

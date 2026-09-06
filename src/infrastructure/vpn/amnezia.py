@@ -103,9 +103,7 @@ class AmneziaWGProvider(VPNProvider):
                 status_result = ProviderState.STOPPED
         else:
             status_result = ProviderState.NOT_INSTALLED
-            return ProviderStatus(
-                server_status=status_result, version=None, port=None, uptime=None
-            )
+            return ProviderStatus(server_status=status_result, version=None, port=None, uptime=None)
 
         port = await self.ssh_client.execute(f"grep 'ListenPort' {CONFIG_PATH}/awg0.conf | cut -d' ' -f3")
         if port.exit_status == 0:
