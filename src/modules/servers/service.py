@@ -5,6 +5,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.config import settings
 from core.exceptions import AlreadyExistsError, CredentialNotFound, NotFoundError, SSHError, UnsupportedProtocolError
 from core.security import decrypt_secret, encrypt_secret
 from infrastructure.ssh.client import SSHClient
@@ -146,8 +147,6 @@ class ServerConnectionService:
             server.status = ServerStatus.READY
             await self.session.commit()
 
-
-
     async def create_ssh_client(self, server_id: UUID) -> SSHClient:
         server = await self.servers.get_by_id(server_id)
         if not server:
@@ -164,10 +163,10 @@ class ServerConnectionService:
             host=server.host,
             username=server_credential.username,
             port=server.ssh_port,
-            retries=2,
+            retries=3,
             retry_delay=1.0,
-            connect_timeout=3,
-            command_timeout=2,
+            connect_timeout=settings.ssh_connect_timeout,
+            command_timeout=settings.ssh_command_timeout,
             **auth,
         )
 
@@ -182,7 +181,7 @@ class ServerConnectionService:
         return protocol
 
     async def protocol_uninstall(
-            self, server_id: UUID, protocol_type: ProtocolType = ProtocolType.AMNEZIA_WG
+        self, server_id: UUID, protocol_type: ProtocolType = ProtocolType.AMNEZIA_WG
     ) -> ProviderStatus:
         ssh_client = await self.create_ssh_client(server_id)
         provider = self.build_provider(ssh_client, protocol_type)
