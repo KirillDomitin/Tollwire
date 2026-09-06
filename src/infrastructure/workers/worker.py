@@ -12,6 +12,7 @@ from infrastructure.vpn.provider import ProviderStatus
 from infrastructure.workers.locks import ServerLock
 from modules.jobs.models.job import Job, JobStatus, JobType
 from modules.jobs.queue import JobQueue
+from modules.protocols.models.protocol import ProtocolType, VPNProtocol
 from modules.servers.service import ServerConnectionService
 
 
@@ -63,26 +64,31 @@ class JobWorker:
                 match job.type:
                     case JobType.CREATE_USER:
                         await self.create_user()
+
                     case JobType.DELETE_USER:
                         await self.delete_user()
+
                     case JobType.SYNC_SERVER:
                         await self.sync_server()
+
                     case JobType.HEALTH_CHECK:
                         await self.health_check()
+
                     case JobType.REVOKE_ACCESS:
                         await self.revoke_access()
+
                     case JobType.INSTALL_SERVER:
                         async with ServerLock(server_id):
                             await self.install_server(session, server_id)
+
                     case JobType.REMOVE_PROTOCOL:
                         async with ServerLock(server_id):
-                            await self.remove_protocol()
-                    case JobType.UNINSTALL_SERVER:
-                        async with ServerLock(server_id):
-                            await self.uninstall_server(session, server_id)
+                            await self.remove_protocol(session, server_id)
+
                     case JobType.INSTALL_PROTOCOL:
                         async with ServerLock(server_id):
-                            await self.install_protocol()
+                            await self.install_protocol(session, server_id, ProtocolType.AMNEZIA_WG)
+
                     case _:
                         raise JobTypeError(f"Unknown type name '{job.type}'")
             except ServerBusyError:
@@ -121,11 +127,11 @@ class JobWorker:
     async def install_server(self, session: AsyncSession, server_id: UUID) -> None:
         return await ServerConnectionService(session).server_install(server_id)
 
-    async def remove_protocol(self) -> None:
-        pass
-
-    async def uninstall_server(self, session: AsyncSession, server_id: UUID) -> ProviderStatus:
+    async def remove_protocol(self, session: AsyncSession, server_id: UUID) -> ProviderStatus:
         return await ServerConnectionService(session).protocol_uninstall(server_id)
 
-    async def install_protocol(self) -> None:
-        pass
+    async def install_protocol(
+        self, session: AsyncSession, server_id: UUID, protocol_type: ProtocolType
+    ) -> VPNProtocol:
+        protocol = VPNProtocol(server_id=server_id, type=protocol_type)
+        return await ServerConnectionService(session).protocol_install(protocol)
