@@ -16,11 +16,14 @@ from modules.protocols.repository import ProtocolRepository
 from modules.servers.repository import ServerRepository
 from modules.vpn_users.repository import VPNUserRepository
 
+_TERMINAL_STATUSES = (AccessGrantStatus.EXPIRED, AccessGrantStatus.REVOKED)
+
 
 class SubscriptionService:
     def __init__(self, session: AsyncSession):
         self.session = session
         self.subscriptions = SubscriptionRepository(session)
+        self.grants = AccessGrantRepository(session)
         self.users = VPNUserRepository(session)
 
     async def create(self, user_id: UUID, data: SubscriptionCreate) -> Subscription:
@@ -63,6 +66,26 @@ class SubscriptionService:
         subscription = await self.get(subscription_id)
         await self.subscriptions.delete(subscription)
         await self.session.commit()
+
+    async def expire(self, subscription_id: UUID) -> Subscription:
+        """Переводит подписку и её гранты в EXPIRED, если valid_until уже наступил.
+
+        Идемпотентно: подписку в терминальном статусе (EXPIRED/REVOKED) не трогает.
+        REVOKED имеет приоритет над истечением по времени — явный отзыв не
+        переписывается автоматическим переходом.
+        """
+        subscription = await self.get(subscription_id)
+        if subscription.status in _TERMINAL_STATUSES:
+            return subscription
+        if datetime.now(timezone.utc) < subscription.valid_until:
+            return subscription
+
+        subscription.status = AccessGrantStatus.EXPIRED
+        for grant in await self.grants.list_by_subscription_id(subscription_id):
+            if grant.status not in _TERMINAL_STATUSES:
+                grant.status = AccessGrantStatus.EXPIRED
+        await self.session.commit()
+        return subscription
 
 
 class AccessGrantService:
