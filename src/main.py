@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.database.postgres import get_session
+from modules.access.api.v1.router import router as access_router
 from modules.auth.api.v1.router import router as auth_router
 from modules.jobs.api.v1.router import router as job_router
 from modules.servers.api.v1.router import router as server_router
@@ -30,6 +31,7 @@ app.include_router(auth_router)
 app.include_router(server_router)
 app.include_router(job_router)
 app.include_router(vpn_user_router)
+app.include_router(access_router)
 
 
 @app.get("/health")

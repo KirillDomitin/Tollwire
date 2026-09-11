@@ -170,8 +170,8 @@ src/
 - [x] 10.1 Модель `VPNUser` (не связан с `Admin`) + CRUD `/api/v1/vpn-users`
 
 ### Блок 11. Доступы (AccessGrant)
-- [ ] 11.1 Модель `AccessGrant` + статусы (PENDING/ACTIVE/EXPIRED/REVOKED)
-- [ ] 11.2 Выдача/изменение/отзыв доступа + проверки конфликтов
+- [x] 11.1 Модель `AccessGrant` + статусы (PENDING/ACTIVE/EXPIRED/REVOKED)
+- [x] 11.2 Выдача/изменение/отзыв доступа + проверки конфликтов
 - [ ] 11.3 Ограничение по времени (`valid_from`/`valid_until`) + идемпотентный revoke
 
 ### Блок 12. VPN-конфигурации

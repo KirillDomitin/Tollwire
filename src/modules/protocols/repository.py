@@ -12,6 +12,9 @@ class ProtocolRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
+    async def get_by_id(self, protocol_id: UUID) -> VPNProtocol | None:
+        return await self.session.get(VPNProtocol, protocol_id)
+
     async def get_by_server_and_type(self, server_id: UUID, protocol_type: ProtocolType) -> VPNProtocol | None:
         query = select(VPNProtocol).where(VPNProtocol.server_id == server_id, VPNProtocol.type == protocol_type)
         result = await self.session.execute(query)
