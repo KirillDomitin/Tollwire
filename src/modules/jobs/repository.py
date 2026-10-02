@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from modules.jobs.models.job import Job, JobStatus
+from modules.jobs.models.job import Job, JobStatus, JobType
 
 
 class JobRepository:
@@ -31,3 +31,15 @@ class JobRepository:
         query = query.order_by(Job.created_at.desc()).limit(limit).offset(offset)
         result = await self.session.execute(query)
         return result.scalars().all()
+
+    async def has_unfinished_for_grant(self, job_type: JobType, access_grant_id: UUID) -> bool:
+        query = (
+            select(Job.id)
+            .where(
+                Job.type == job_type,
+                Job.access_grant_id == access_grant_id,
+                Job.status.in_((JobStatus.PENDING, JobStatus.RUNNING)),
+            )
+            .limit(1)
+        )
+        return (await self.session.execute(query)).first() is not None

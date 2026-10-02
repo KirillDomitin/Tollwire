@@ -17,8 +17,8 @@ class JobService:
         self.jobs = JobRepository(session)
         self.job_queue = JobQueue()
 
-    async def create(self, job_type: JobType, server_id: UUID | None) -> Job:
-        job = Job(type=job_type, server_id=server_id)
+    async def create(self, job_type: JobType, server_id: UUID | None, access_grant_id: UUID | None = None) -> Job:
+        job = Job(type=job_type, server_id=server_id, access_grant_id=access_grant_id)
         await self.jobs.create(job)
         await self.session.commit()
         await self.job_queue.enqueue(job.id)

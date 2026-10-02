@@ -5,7 +5,8 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions import AlreadyExistsError, NotFoundError
+from core.exceptions import AlreadyExistsError, LiveCredentialExistsError, NotFoundError
+from modules.access.repository import VPNCredentialRepository
 from modules.vpn_users.models.user import VPNUser
 from modules.vpn_users.repository import VPNUserRepository
 from modules.vpn_users.schemas import VPNUserCreate, VPNUserUpdate
@@ -49,5 +50,8 @@ class VPNUserService:
 
     async def delete(self, user_id: UUID) -> None:
         user = await self.get(user_id)
+        # Каскад в БД удалил бы credential'ы, а peer'ы остались бы на сервере — поэтому сначала отзыв.
+        if await VPNCredentialRepository(self.session).has_live_for_user(user_id):
+            raise LiveCredentialExistsError("User has live VPN clients, revoke access first")
         await self.users.delete(user)
         await self.session.commit()

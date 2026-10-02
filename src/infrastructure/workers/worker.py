@@ -10,6 +10,8 @@ from core.database.postgres import session_factory
 from core.exceptions import JobNotFound, JobStatusError, JobTypeError, ServerBusyError
 from infrastructure.vpn.provider import ProviderStatus
 from infrastructure.workers.locks import ServerLock
+from modules.access.models.vpn_credential import VPNCredential
+from modules.access.service import VPNCredentialService
 from modules.jobs.models.job import Job, JobStatus, JobType
 from modules.jobs.queue import JobQueue
 from modules.protocols.models.protocol import ProtocolType, VPNProtocol
@@ -50,11 +52,18 @@ class JobWorker:
                 JobType.UNINSTALL_SERVER,
                 JobType.INSTALL_PROTOCOL,
                 JobType.REMOVE_PROTOCOL,
+                JobType.CREATE_USER,
+                JobType.REVOKE_ACCESS,
             ]:
                 if not job.server_id:
                     raise JobTypeError(f"Job with type '{job.type}' must have server_id")
                 else:
                     server_id = UUID(str(job.server_id))
+            if job.type in [JobType.CREATE_USER, JobType.REVOKE_ACCESS]:
+                if not job.access_grant_id:
+                    raise JobTypeError(f"Job with type '{job.type}' must have access_grant_id")
+                else:
+                    access_grant_id = UUID(str(job.access_grant_id))
 
             job.status = JobStatus.RUNNING
             job.started_at = datetime.now(timezone.utc)
@@ -63,7 +72,8 @@ class JobWorker:
             try:
                 match job.type:
                     case JobType.CREATE_USER:
-                        await self.create_user()
+                        async with ServerLock(server_id):
+                            await self.create_user(session, access_grant_id)
 
                     case JobType.DELETE_USER:
                         await self.delete_user()
@@ -75,7 +85,8 @@ class JobWorker:
                         await self.health_check()
 
                     case JobType.REVOKE_ACCESS:
-                        await self.revoke_access()
+                        async with ServerLock(server_id):
+                            await self.revoke_access(session, access_grant_id)
 
                     case JobType.INSTALL_SERVER:
                         async with ServerLock(server_id):
@@ -109,8 +120,8 @@ class JobWorker:
                 job.progress = 100
                 await session.commit()
 
-    async def create_user(self) -> None:
-        pass
+    async def create_user(self, session: AsyncSession, access_grant_id: UUID) -> VPNCredential:
+        return await VPNCredentialService(session).provision(access_grant_id)
 
     async def delete_user(self) -> None:
         pass
@@ -121,8 +132,8 @@ class JobWorker:
     async def health_check(self) -> None:
         pass
 
-    async def revoke_access(self) -> None:
-        pass
+    async def revoke_access(self, session: AsyncSession, access_grant_id: UUID) -> VPNCredential | None:
+        return await VPNCredentialService(session).deprovision(access_grant_id)
 
     async def install_server(self, session: AsyncSession, server_id: UUID) -> None:
         return await ServerConnectionService(session).server_install(server_id)

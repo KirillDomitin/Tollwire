@@ -52,6 +52,10 @@ class InactiveAccessError(AppError):
     """Объект существует, но доступ по нему уже не действует (отозван или истёк)."""
 
 
+class LiveCredentialExistsError(AppError):
+    """Удаление запрещено: на сервере есть живой клиент, его нужно сначала отозвать."""
+
+
 class ProtocolError(AppError): ...
 
 

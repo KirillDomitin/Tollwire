@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database.postgres import get_session
-from core.exceptions import AlreadyExistsError, InactiveAccessError, NotFoundError
+from core.exceptions import AlreadyExistsError, InactiveAccessError, LiveCredentialExistsError, NotFoundError
 from modules.access.models.access_grant import AccessGrant
 from modules.access.models.subscription import Subscription
 from modules.access.models.vpn_credential import VPNCredential
@@ -24,6 +24,8 @@ from modules.access.schemas import (
 )
 from modules.access.service import AccessGrantService, SubscriptionService, VPNCredentialService
 from modules.auth.dependencies import get_current_admin
+from modules.jobs.models.job import Job
+from modules.jobs.schemas import JobRead
 
 router = APIRouter(prefix="/api/v1", tags=["access"], dependencies=[Depends(get_current_admin)])
 
@@ -87,6 +89,8 @@ async def delete_subscription(
         await service.delete(subscription_id)
     except NotFoundError:
         raise HTTPException(404, detail="Subscription not found")
+    except LiveCredentialExistsError as exc:
+        raise HTTPException(409, detail=str(exc))
 
 
 @router.post("/subscriptions/{subscription_id}/revoke", response_model=SubscriptionRead)
@@ -134,6 +138,8 @@ async def delete_grant(access_grant_id: UUID, service: AccessGrantService = Depe
         await service.delete(access_grant_id)
     except NotFoundError:
         raise HTTPException(404, detail="Access grant not found")
+    except LiveCredentialExistsError as exc:
+        raise HTTPException(409, detail=str(exc))
 
 
 @router.post("/access/{access_grant_id}/revoke", response_model=AccessGrantRead)
@@ -144,6 +150,19 @@ async def revoke_grant(
         return await service.revoke(access_grant_id)
     except NotFoundError:
         raise HTTPException(404, detail="Access grant not found")
+
+
+@router.post("/access/{access_grant_id}/credentials", response_model=JobRead, status_code=202)
+async def issue_credential(
+    access_grant_id: UUID, service: VPNCredentialService = Depends(get_credential_service)
+) -> Job:
+    # Клиент создаётся на сервере воркером; результат — в GET /access/{id}/credentials после SUCCESS задачи.
+    try:
+        return await service.schedule_issue(access_grant_id)
+    except NotFoundError as exc:
+        raise HTTPException(404, detail=str(exc))
+    except (InactiveAccessError, AlreadyExistsError) as exc:
+        raise HTTPException(409, detail=str(exc))
 
 
 @router.get("/access/{access_grant_id}/credentials", response_model=list[VPNCredentialRead])
@@ -177,11 +196,21 @@ async def reveal_credential_config(
         raise HTTPException(409, detail=str(exc))
 
 
-@router.post("/credentials/{credential_id}/revoke", response_model=VPNCredentialRead)
+@router.post(
+    "/credentials/{credential_id}/revoke",
+    response_model=JobRead | VPNCredentialRead,
+    status_code=202,
+    responses={200: {"model": VPNCredentialRead, "description": "Credential is already revoked"}},
+)
 async def revoke_credential(
-    credential_id: UUID, service: VPNCredentialService = Depends(get_credential_service)
-) -> VPNCredential:
+    credential_id: UUID, response: Response, service: VPNCredentialService = Depends(get_credential_service)
+) -> JobRead | VPNCredentialRead:
+    # 202 + задача, если клиента ещё надо убрать с сервера; 200 + credential, если он уже отозван.
     try:
-        return await service.revoke(credential_id)
+        result = await service.schedule_revoke(credential_id)
     except NotFoundError:
         raise HTTPException(404, detail="Credential not found")
+    if isinstance(result, VPNCredential):
+        response.status_code = 200
+        return VPNCredentialRead.model_validate(result)
+    return JobRead.model_validate(result)

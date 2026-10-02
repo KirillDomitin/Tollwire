@@ -112,3 +112,22 @@ class VPNCredentialRepository:
         )
         result = await self.session.execute(sql_request)
         return result.scalar_one_or_none()
+
+    async def has_live_for_subscription(self, subscription_id: UUID) -> bool:
+        sql_request = (
+            select(VPNCredential.id)
+            .join(AccessGrant, VPNCredential.access_grant_id == AccessGrant.id)
+            .where(AccessGrant.subscription_id == subscription_id, VPNCredential.revoked_at.is_(None))
+            .limit(1)
+        )
+        return (await self.session.execute(sql_request)).first() is not None
+
+    async def has_live_for_user(self, user_id: UUID) -> bool:
+        sql_request = (
+            select(VPNCredential.id)
+            .join(AccessGrant, VPNCredential.access_grant_id == AccessGrant.id)
+            .join(Subscription, AccessGrant.subscription_id == Subscription.id)
+            .where(Subscription.user_id == user_id, VPNCredential.revoked_at.is_(None))
+            .limit(1)
+        )
+        return (await self.session.execute(sql_request)).first() is not None

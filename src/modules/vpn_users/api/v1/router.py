@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database.postgres import get_session
-from core.exceptions import AlreadyExistsError, NotFoundError
+from core.exceptions import AlreadyExistsError, LiveCredentialExistsError, NotFoundError
 from modules.auth.dependencies import get_current_admin
 from modules.vpn_users.models.user import VPNUser
 from modules.vpn_users.schemas import VPNUserCreate, VPNUserRead, VPNUserUpdate
@@ -58,3 +58,5 @@ async def delete(user_id: UUID, service: VPNUserService = Depends(get_user_servi
         await service.delete(user_id)
     except NotFoundError:
         raise HTTPException(404, detail="User not found")
+    except LiveCredentialExistsError as exc:
+        raise HTTPException(409, detail=str(exc))

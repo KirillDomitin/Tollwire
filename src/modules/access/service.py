@@ -6,7 +6,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions import AlreadyExistsError, InactiveAccessError, NotFoundError
+from core.exceptions import AlreadyExistsError, InactiveAccessError, LiveCredentialExistsError, NotFoundError
 from core.security import decrypt_secret, encrypt_secret
 from modules.access.models import AccessGrantStatus
 from modules.access.models.access_grant import AccessGrant
@@ -20,8 +20,12 @@ from modules.access.schemas import (
     SubscriptionUpdate,
     VPNCredentialConfigRead,
 )
+from modules.jobs.models.job import Job, JobType
+from modules.jobs.repository import JobRepository
+from modules.jobs.service import JobService
 from modules.protocols.repository import ProtocolRepository
 from modules.servers.repository import ServerRepository
+from modules.servers.service import ServerConnectionService
 from modules.vpn_users.repository import VPNUserRepository
 
 _TERMINAL_STATUSES = (AccessGrantStatus.EXPIRED, AccessGrantStatus.REVOKED)
@@ -32,6 +36,7 @@ class SubscriptionService:
         self.session = session
         self.subscriptions = SubscriptionRepository(session)
         self.grants = AccessGrantRepository(session)
+        self.credentials = VPNCredentialRepository(session)
         self.users = VPNUserRepository(session)
 
     async def create(self, user_id: UUID, data: SubscriptionCreate) -> Subscription:
@@ -73,15 +78,20 @@ class SubscriptionService:
             now = datetime.now(timezone.utc)
             subscription.status = AccessGrantStatus.REVOKED
             subscription.revoked_at = now
+            revoked = []
             for grant in await self.grants.list_by_subscription_id(subscription_id):
                 if grant.status not in _TERMINAL_STATUSES:
                     grant.status = AccessGrantStatus.REVOKED
                     grant.revoked_at = now
+                    revoked.append(grant)
             await self.session.commit()
+            await VPNCredentialService(self.session).schedule_revoke_for_grants(revoked)
         return subscription
 
     async def delete(self, subscription_id: UUID) -> None:
         subscription = await self.get(subscription_id)
+        if await self.credentials.has_live_for_subscription(subscription_id):
+            raise LiveCredentialExistsError("Subscription has live VPN clients, revoke it first")
         await self.subscriptions.delete(subscription)
         await self.session.commit()
 
@@ -99,10 +109,13 @@ class SubscriptionService:
             return subscription
 
         subscription.status = AccessGrantStatus.EXPIRED
+        expired = []
         for grant in await self.grants.list_by_subscription_id(subscription_id):
             if grant.status not in _TERMINAL_STATUSES:
                 grant.status = AccessGrantStatus.EXPIRED
+                expired.append(grant)
         await self.session.commit()
+        await VPNCredentialService(self.session).schedule_revoke_for_grants(expired)
         return subscription
 
 
@@ -111,6 +124,7 @@ class AccessGrantService:
         self.session = session
         self.grants = AccessGrantRepository(session)
         self.subscriptions = SubscriptionRepository(session)
+        self.credentials = VPNCredentialRepository(session)
         self.servers = ServerRepository(session)
         self.protocols = ProtocolRepository(session)
 
@@ -159,10 +173,13 @@ class AccessGrantService:
             grant.status = AccessGrantStatus.REVOKED
             grant.revoked_at = datetime.now(timezone.utc)
             await self.session.commit()
+            await VPNCredentialService(self.session).schedule_revoke_for_grants([grant])
         return grant
 
     async def delete(self, access_grant_id: UUID) -> None:
         grant = await self.get(access_grant_id)
+        if await self.credentials.get_live_by_access_grant_id(access_grant_id):
+            raise LiveCredentialExistsError("Access grant has a live VPN client, revoke it first")
         await self.grants.delete(grant)
         await self.session.commit()
 
@@ -173,21 +190,94 @@ class VPNCredentialService:
         self.credentials = VPNCredentialRepository(session)
         self.grants = AccessGrantRepository(session)
         self.subscriptions = SubscriptionRepository(session)
+        self.protocols = ProtocolRepository(session)
+        self.jobs = JobService(session)
+        self.job_repository = JobRepository(session)
+        self.connections = ServerConnectionService(session)
 
-    async def issue(self, access_grant_id: UUID, config: str) -> VPNCredential:
-        """Сохраняет конфиг клиента в зашифрованном виде для живого гранта.
+    async def schedule_issue(self, access_grant_id: UUID) -> Job:
+        """Ставит задачу CREATE_USER: воркер создаст клиента на сервере и сохранит credential.
 
-        Сюда приходит уже собранный конфиг (в 12.2 его будет собирать провайдер).
-        Второй живой credential на тот же грант не создаётся.
+        Быстрые проверки делаем здесь, чтобы сразу ответить 404/409, а не получить
+        упавшую задачу. Воркер всё равно перепроверит — за время в очереди всё могло измениться.
         """
-        await self._ensure_grant_is_live(access_grant_id)
+        grant = await self._ensure_grant_is_live(access_grant_id)
         if await self.credentials.get_live_by_access_grant_id(access_grant_id):
             raise AlreadyExistsError("Access grant already has a live credential")
+        if await self.job_repository.has_unfinished_for_grant(JobType.CREATE_USER, access_grant_id):
+            raise AlreadyExistsError("Credential is already being issued")
+        return await self.jobs.create(JobType.CREATE_USER, server_id=grant.server_id, access_grant_id=grant.id)
 
-        credential = VPNCredential(access_grant_id=access_grant_id, encrypted_config=encrypt_secret(config))
+    async def provision(self, access_grant_id: UUID) -> VPNCredential:
+        """Создаёт клиента на сервере и сохраняет его конфиг в зашифрованном виде.
+
+        Вызывается воркером под ServerLock сервера гранта. Идемпотентно: если живой
+        credential уже есть (повтор задачи), возвращает его, второго клиента не создаёт.
+        """
+        grant = await self._ensure_grant_is_live(access_grant_id)
+        live = await self.credentials.get_live_by_access_grant_id(access_grant_id)
+        if live:
+            return live
+        protocol = await self.protocols.get_by_id(grant.protocol_id)
+        if not protocol:
+            raise NotFoundError(f"Protocol '{grant.protocol_id}' not found")
+
+        ssh_client = await self.connections.create_ssh_client(grant.server_id)
+        provider = self.connections.build_provider(ssh_client, protocol.type)
+        async with ssh_client:
+            client = await provider.create_client(f"grant-{grant.id.hex[:12]}")
+        # Если коммит ниже упадёт, на сервере останется peer без записи в БД — его подберёт sync (блок 13).
+        credential = VPNCredential(
+            access_grant_id=grant.id,
+            encrypted_config=encrypt_secret(client.config),
+            client_address=client.address,
+            client_public_key=client.public_key,
+        )
         await self.credentials.create(credential)
+        grant.status = AccessGrantStatus.ACTIVE
         await self.session.commit()
         return credential
+
+    async def deprovision(self, access_grant_id: UUID) -> VPNCredential | None:
+        """Удаляет клиента гранта с сервера и помечает credential отозванным.
+
+        Вызывается воркером под ServerLock. Идемпотентно: нет живого credential — ничего не делает.
+        Состояние гранта не проверяем: отзывать нужно как раз у отозванных/истёкших.
+        """
+        grant = await self.grants.get_by_id(access_grant_id)
+        if not grant:
+            raise NotFoundError(f"Access grant '{access_grant_id}' not found")
+        credential = await self.credentials.get_live_by_access_grant_id(access_grant_id)
+        if not credential:
+            return None
+        protocol = await self.protocols.get_by_id(grant.protocol_id)
+        if not protocol:
+            raise NotFoundError(f"Protocol '{grant.protocol_id}' not found")
+
+        ssh_client = await self.connections.create_ssh_client(grant.server_id)
+        provider = self.connections.build_provider(ssh_client, protocol.type)
+        async with ssh_client:
+            await provider.revoke_client(credential.client_public_key)
+        credential.revoked_at = datetime.now(timezone.utc)
+        await self.session.commit()
+        return credential
+
+    async def schedule_revoke_for_grants(self, grants: Sequence[AccessGrant]) -> list[Job]:
+        """Ставит REVOKE_ACCESS тем грантам, у которых на сервере есть (или вот-вот появится) клиент.
+
+        «Вот-вот появится» — незавершённая CREATE_USER. Порядок выполнения не важен: если она
+        успеет первой, REVOKE_ACCESS увидит свежий credential и уберёт его; если опоздает —
+        provision откажет сам, потому что грант уже не живой.
+        """
+        jobs = []
+        for grant in grants:
+            if await self.credentials.get_live_by_access_grant_id(
+                grant.id
+            ) or await self.job_repository.has_unfinished_for_grant(JobType.CREATE_USER, grant.id):
+                jobs.append(
+                    await self.jobs.create(JobType.REVOKE_ACCESS, server_id=grant.server_id, access_grant_id=grant.id)
+                )
+        return jobs
 
     async def get(self, credential_id: UUID) -> VPNCredential:
         credential = await self.credentials.get_by_id(credential_id)
@@ -211,14 +301,20 @@ class VPNCredentialService:
             config=decrypt_secret(credential.encrypted_config),
         )
 
-    async def revoke(self, credential_id: UUID) -> VPNCredential:
-        credential = await self.get(credential_id)
-        if credential.revoked_at is None:
-            credential.revoked_at = datetime.now(timezone.utc)
-            await self.session.commit()
-        return credential
+    async def schedule_revoke(self, credential_id: UUID) -> VPNCredential | Job:
+        """Уже отозванный credential возвращается как есть (идемпотентно), иначе ставится REVOKE_ACCESS.
 
-    async def _ensure_grant_is_live(self, access_grant_id: UUID) -> None:
+        Грант при этом остаётся живым: по нему можно выпустить новый credential (ротация ключей).
+        """
+        credential = await self.get(credential_id)
+        if credential.revoked_at is not None:
+            return credential
+        grant = await self.grants.get_by_id(credential.access_grant_id)
+        if not grant:
+            raise NotFoundError(f"Access grant '{credential.access_grant_id}' not found")
+        return await self.jobs.create(JobType.REVOKE_ACCESS, server_id=grant.server_id, access_grant_id=grant.id)
+
+    async def _ensure_grant_is_live(self, access_grant_id: UUID) -> AccessGrant:
         # Проверяем и грант, и подписку: отзыв/истечение подписки каскадят на гранты,
         # но проверка подписки страхует от рассинхрона (данные до каскада, ручные правки через PATCH).
         grant = await self.grants.get_by_id(access_grant_id)
@@ -229,3 +325,4 @@ class VPNCredentialService:
         subscription = await self.subscriptions.get_by_id(grant.subscription_id)
         if not subscription or subscription.status in _TERMINAL_STATUSES:
             raise InactiveAccessError("Subscription is not active")
+        return grant
