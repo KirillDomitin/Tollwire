@@ -2,8 +2,9 @@
 # -*- coding: utf-8 -*-
 
 import enum
+from datetime import datetime
 
-from sqlalchemy import String, text
+from sqlalchemy import DateTime, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.database.base import Base, TimestampMixin, UuidPkMixin
@@ -17,6 +18,12 @@ class ServerStatus(enum.Enum):
     ERROR = "error"
 
 
+class HealthStatus(enum.Enum):
+    OK = "ok"
+    DEGRADED = "degraded"  # SSH доступен, но часть проверок не прошла
+    DOWN = "down"  # до сервера не достучаться
+
+
 class VPNServer(UuidPkMixin, TimestampMixin, Base):
     __tablename__ = "vpn_servers"
     name: Mapped[str] = mapped_column(unique=True)
@@ -24,3 +31,6 @@ class VPNServer(UuidPkMixin, TimestampMixin, Base):
     ssh_port: Mapped[int] = mapped_column(server_default=text("22"))
     status: Mapped[ServerStatus] = mapped_column(default=ServerStatus.NEW, server_default=text("'NEW'"))
     description: Mapped[str | None] = mapped_column(String(300))
+    # Сводка последнего health-чека; полный отчёт — в Job.result задачи HEALTH_CHECK.
+    health_status: Mapped[HealthStatus | None] = mapped_column(default=None)
+    last_health_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)

@@ -16,7 +16,7 @@ from modules.access.repository import VPNCredentialRepository
 from modules.access.service import CLIENT_NAME_PREFIX, client_name, is_terminal
 from modules.protocols.models.protocol import ProtocolType, VPNProtocol
 from modules.protocols.repository import ProtocolRepository
-from modules.servers.models.server import ServerStatus
+from modules.servers.reachability import mark_reachable, mark_unreachable
 from modules.servers.repository import ServerRepository
 from modules.servers.service import ServerConnectionService
 
@@ -55,14 +55,13 @@ class ServerSyncService:
         try:
             await ssh_client.connect()
         except (SSHConnectionError, SSHTimeoutError):
-            server.status = ServerStatus.OFFLINE
+            mark_unreachable(server)
             await self.session.commit()
             raise
 
         async with ssh_client:
             docker = await AmneziaInstaller(ssh_client).docker_version()
-            if docker and server.status == ServerStatus.OFFLINE:
-                server.status = ServerStatus.READY
+            mark_reachable(server, docker_installed=docker is not None)
             protocols = []
             if docker:
                 tracked = {protocol.type: protocol for protocol in await self.protocols.list_by_server_id(server_id)}

@@ -16,6 +16,7 @@ from modules.access.service import VPNCredentialService
 from modules.jobs.models.job import Job, JobStatus, JobType
 from modules.jobs.queue import JobQueue
 from modules.protocols.models.protocol import ProtocolType, VPNProtocol
+from modules.servers.health import ServerHealthService
 from modules.servers.service import ServerConnectionService
 from modules.servers.sync import ServerSyncService
 
@@ -57,6 +58,7 @@ class JobWorker:
                 JobType.CREATE_USER,
                 JobType.REVOKE_ACCESS,
                 JobType.SYNC_SERVER,
+                JobType.HEALTH_CHECK,
             ]:
                 if not job.server_id:
                     raise JobTypeError(f"Job with type '{job.type}' must have server_id")
@@ -86,7 +88,8 @@ class JobWorker:
                             job.result = await self.sync_server(session, server_id)
 
                     case JobType.HEALTH_CHECK:
-                        await self.health_check()
+                        # Без ServerLock: health только читает и не должен ждать выдачу/отзыв клиентов.
+                        job.result = await self.health_check(session, server_id)
 
                     case JobType.REVOKE_ACCESS:
                         async with ServerLock(server_id):
@@ -133,8 +136,8 @@ class JobWorker:
     async def sync_server(self, session: AsyncSession, server_id: UUID) -> dict[str, Any]:
         return await ServerSyncService(session).sync(server_id)
 
-    async def health_check(self) -> None:
-        pass
+    async def health_check(self, session: AsyncSession, server_id: UUID) -> dict[str, Any]:
+        return await ServerHealthService(session).check(server_id)
 
     async def revoke_access(self, session: AsyncSession, access_grant_id: UUID) -> VPNCredential | None:
         return await VPNCredentialService(session).deprovision(access_grant_id)

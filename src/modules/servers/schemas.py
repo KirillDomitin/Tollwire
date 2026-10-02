@@ -6,7 +6,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 
 from modules.servers.models.credential import AuthType
-from modules.servers.models.server import ServerStatus
+from modules.servers.models.server import HealthStatus, ServerStatus
 
 
 class ServerCreate(BaseModel):
@@ -31,6 +31,8 @@ class ServerRead(BaseModel):
     ssh_port: int
     status: ServerStatus
     description: str | None = None
+    health_status: HealthStatus | None = None
+    last_health_at: datetime | None = None
     created_at: datetime
 
 

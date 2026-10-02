@@ -41,6 +41,24 @@ class VPNClientConfig:
 
 
 @dataclass
+class HealthCheck:
+    """Одна проверка health: имя, прошла ли, пояснение для человека (без секретов)."""
+
+    name: str
+    ok: bool
+    detail: str | None = None
+
+
+@dataclass
+class ProviderHealth:
+    installed: bool  # на сервере есть следы протокола (контейнер или конфиг)
+    checks: list[HealthCheck]
+    port: int | None
+    clients_total: int
+    clients_active: int
+
+
+@dataclass
 class SyncResult:
     provider_status: ProviderStatus
     client_list: list[VPNClientInfo]
@@ -66,3 +84,5 @@ class VPNProvider(ABC):
     async def list_clients(self) -> list[VPNClientInfo]: ...
     @abstractmethod
     async def sync(self) -> SyncResult: ...
+    @abstractmethod
+    async def health_check(self) -> ProviderHealth: ...

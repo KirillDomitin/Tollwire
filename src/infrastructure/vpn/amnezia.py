@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 import asyncio
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 
 from core.ssh_exception import CommandExecutionError, DockerError, InstallError, InvalidServerConfigurationError
 from infrastructure.ssh.client import SSHClient
@@ -10,6 +10,7 @@ from infrastructure.vpn.awg_config import (
     append_peer,
     ensure_nat_hooks,
     generate_secret_keys,
+    interface_values,
     is_valid_public_key,
     list_peers,
     parse_client_config,
@@ -23,14 +24,19 @@ from infrastructure.vpn.awg_config import (
     used_peer_addresses,
 )
 from infrastructure.vpn.config import (
+    ACTIVE_HANDSHAKE_WINDOW_SECONDS,
     CONFIG_FILE_NAME,
     CONTAINER_CONFIG_DIR,
     CONTAINER_NAME,
     HOST_CONFIG_DIR,
     INTERFACE_NAME,
+    INTERNET_PROBE_COMMAND,
     NAT_POST_UP,
+    NAT_RULE,
 )
 from infrastructure.vpn.provider import (
+    HealthCheck,
+    ProviderHealth,
     ProviderState,
     ProviderStatus,
     SyncResult,
@@ -93,6 +99,21 @@ class AmneziaInstaller:
         if result.exit_status != 0:
             return None
         return result.stdout.strip() or None
+
+    async def docker_daemon_active(self) -> bool:
+        result = await self.ssh_client.execute("systemctl is-active docker")
+        return result.stdout.strip() == "active"
+
+    async def internet_latency_ms(self) -> int | None:
+        """Время подключения сервера к внешнему адресу в мс; None — интернета нет или curl недоступен."""
+        result = await self.ssh_client.execute(INTERNET_PROBE_COMMAND, timeout=10)
+        if result.exit_status != 0:
+            return None
+        try:
+            seconds = float(result.stdout.strip())
+        except ValueError:
+            return None
+        return round(seconds * 1000) if seconds > 0 else None
 
     async def ensure_ready(self) -> None:
         await self._validate_server()
@@ -296,6 +317,61 @@ class AmneziaWGProvider(VPNProvider):
         """Снимок реального состояния протокола на сервере. Ничего не меняет — сверку с БД делает сервис."""
         status = await self.get_status()
         return SyncResult(provider_status=status, client_list=await self.list_clients())
+
+    async def health_check(self) -> ProviderHealth:
+        """Проверки протокола на сервере: контейнер, конфиг, интерфейс, порт, NAT, клиенты. Ничего не меняет."""
+        checks: list[HealthCheck] = []
+        state = await self.ssh_client.execute("docker ps -a --filter name=" + CONTAINER_NAME + " --format '{{.State}}'")
+        raw_state = state.stdout.strip()
+        running = raw_state == "running"
+        checks.append(HealthCheck("container", running, raw_state or "container not found"))
+
+        port: int | None = None
+        config_exists = await self._config_exists()
+        installed = bool(raw_state) or config_exists
+        if config_exists:
+            try:
+                port = int(interface_values(await self.ssh_client.read_file(HOST_CONFIG_FILE))["ListenPort"])
+                checks.append(HealthCheck("config", True, f"ListenPort {port}"))
+            except (KeyError, ValueError):
+                checks.append(HealthCheck("config", False, "ListenPort is missing or invalid"))
+        else:
+            checks.append(HealthCheck("config", False, f"{HOST_CONFIG_FILE} not found"))
+
+        if not running:
+            return ProviderHealth(installed=installed, checks=checks, port=port, clients_total=0, clients_active=0)
+
+        listen = await self.ssh_client.execute(f"docker exec {CONTAINER_NAME} awg show {INTERFACE_NAME} listen-port")
+        interface_up = listen.exit_status == 0
+        checks.append(
+            HealthCheck("interface", interface_up, f"{INTERFACE_NAME} is up" if interface_up else "interface is down")
+        )
+        if interface_up and port is not None:
+            listen_port = listen.stdout.strip()
+            checks.append(HealthCheck("listen_port", listen_port == str(port), f"interface listens on {listen_port}"))
+        if port is not None:
+            # port — число из конфига, а не пользовательский ввод: подставлять в команду безопасно.
+            published = await self.ssh_client.execute(f"docker port {CONTAINER_NAME} {port}/udp")
+            mapping = published.stdout.strip()
+            checks.append(
+                HealthCheck("port_published", published.exit_status == 0 and bool(mapping), mapping or "not published")
+            )
+        nat = await self.ssh_client.execute(f"docker exec {CONTAINER_NAME} iptables -t nat -C {NAT_RULE}")
+        checks.append(
+            HealthCheck("nat", nat.exit_status == 0, "masquerade rule present" if nat.exit_status == 0 else "no rule")
+        )
+
+        clients = await self.list_clients()
+        now = datetime.now(timezone.utc)
+        active = sum(
+            1
+            for client in clients
+            if client.latest_handshake
+            and (now - client.latest_handshake).total_seconds() <= ACTIVE_HANDSHAKE_WINDOW_SECONDS
+        )
+        return ProviderHealth(
+            installed=installed, checks=checks, port=port, clients_total=len(clients), clients_active=active
+        )
 
     async def _config_exists(self) -> bool:
         result = await self.ssh_client.execute(f"test -f {HOST_CONFIG_FILE}")

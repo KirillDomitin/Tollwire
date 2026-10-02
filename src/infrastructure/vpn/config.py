@@ -22,6 +22,15 @@ NAT_RULE = f"POSTROUTING -s {TUNNEL_SUBNET} -o eth0 -j MASQUERADE"
 NAT_POST_UP = f"iptables -t nat -C {NAT_RULE} 2>/dev/null || iptables -t nat -A {NAT_RULE}"
 NAT_POST_DOWN = f"iptables -t nat -D {NAT_RULE}"
 
+# Health: клиент считается активным, если рукопожатие было не раньше этого окна (WireGuard повторяет
+# рукопожатие каждые ~2 минуты, пока туннелем пользуются).
+ACTIVE_HANDSHAKE_WINDOW_SECONDS = 180
+# Проверка выхода сервера в интернет. Команда — константа: адрес никогда не берётся из ввода пользователя.
+# time_connect — секунды от старта до установленного TCP-соединения (включая DNS). Не f-строка: %{...} — синтаксис curl.
+INTERNET_PROBE_COMMAND = (
+    "curl -o /dev/null -s -w '%{time_connect}' --max-time 5 https://www.cloudflare.com/cdn-cgi/trace"
+)
+
 # Шаблон серверного конфига; {} — приватный ключ и порт (подставляются через str.format).
 DEFAULT_AWG_CONFIG = (
     "[Interface]\n"
