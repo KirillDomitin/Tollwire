@@ -32,6 +32,8 @@ class VPNClientInfo:
 @dataclass
 class VPNClientConfig:
     name: str
+    public_key: str
+    address: str
     config: str = field(repr=False)
 
 
@@ -54,7 +56,7 @@ class VPNProvider(ABC):
     @abstractmethod
     async def create_client(self, name: str) -> VPNClientConfig: ...
     @abstractmethod
-    async def revoke_client(self, name: str) -> None: ...
+    async def revoke_client(self, public_key: str) -> None: ...
     @abstractmethod
     async def list_clients(self) -> list[VPNClientInfo]: ...
     @abstractmethod

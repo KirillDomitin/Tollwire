@@ -1,14 +1,27 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 import base64
+import ipaddress
 import random
+import re
 import secrets
 from dataclasses import dataclass
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import x25519
 
-from infrastructure.vpn.config import DEFAULT_AWG_CONFIG
+from core.exceptions import AddressPoolExhaustedError
+from infrastructure.vpn.config import (
+    CLIENT_ALLOWED_IPS,
+    CLIENT_DNS,
+    CLIENT_PERSISTENT_KEEPALIVE,
+    DEFAULT_AWG_CONFIG,
+)
+
+# Ключи серверного [Interface], которые клиенту не копируются: у клиента свои ключ и адрес, порт он не слушает.
+# Всё остальное в [Interface] — параметры обфускации AmneziaWG, они обязаны совпадать у сервера и клиента.
+_SERVER_ONLY_INTERFACE_KEYS = frozenset({"PrivateKey", "Address", "ListenPort"})
+_PUBLIC_KEY_RE = re.compile(r"^[A-Za-z0-9+/]{43}=$")
 
 
 @dataclass
@@ -47,3 +60,137 @@ def pick_udp_port() -> int:
 
 def render_awg_config(private_key_str: str, udp_port: int) -> str:
     return DEFAULT_AWG_CONFIG.format(private_key_str, udp_port)
+
+
+def is_valid_public_key(value: str) -> bool:
+    """Ключ WireGuard — 32 байта в base64: ровно 43 символа алфавита и '=' в конце."""
+    return bool(_PUBLIC_KEY_RE.match(value))
+
+
+def _parse_line(line: str) -> tuple[str, str] | None:
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#") or "=" not in stripped:
+        return None
+    key, value = stripped.split("=", 1)
+    return key.strip(), value.strip()
+
+
+def _split_sections(config: str) -> list[list[str]]:
+    """Режет конфиг на секции. Первая строка секции — заголовок ([Interface]/[Peer]).
+
+    Строки до первого заголовка (если есть) идут отдельной секцией без заголовка.
+    Пустые строки остаются в секции, после которой стоят, — текст собирается обратно без потерь.
+    """
+    sections: list[list[str]] = [[]]
+    for line in config.splitlines():
+        if line.strip().startswith("["):
+            sections.append([line])
+        else:
+            sections[-1].append(line)
+    return [section for section in sections if section]
+
+
+def _section_name(section: list[str]) -> str:
+    return section[0].strip()
+
+
+def _section_values(section: list[str]) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for line in section[1:]:
+        parsed = _parse_line(line)
+        if parsed:
+            values[parsed[0]] = parsed[1]
+    return values
+
+
+def _join_sections(sections: list[list[str]]) -> str:
+    return "\n".join(line for section in sections for line in section).rstrip("\n") + "\n"
+
+
+def interface_values(server_config: str) -> dict[str, str]:
+    for section in _split_sections(server_config):
+        if _section_name(section) == "[Interface]":
+            return _section_values(section)
+    raise ValueError("Server config has no [Interface] section")
+
+
+def used_peer_addresses(server_config: str) -> set[ipaddress.IPv4Address]:
+    used: set[ipaddress.IPv4Address] = set()
+    for section in _split_sections(server_config):
+        if _section_name(section) != "[Peer]":
+            continue
+        for item in _section_values(section).get("AllowedIPs", "").split(","):
+            item = item.strip()
+            if not item:
+                continue
+            address = ipaddress.ip_interface(item)
+            if isinstance(address, ipaddress.IPv4Interface):
+                used.add(address.ip)
+    return used
+
+
+def pick_free_address(server_config: str) -> ipaddress.IPv4Address:
+    """Первый свободный адрес в подсети туннеля сервера.
+
+    Подсеть берётся из Address серверного [Interface] (у нас 10.8.1.0/24, сервер сам занимает .0),
+    занятые — из AllowedIPs всех [Peer]. Вызывающий обязан держать блокировку сервера, иначе два
+    одновременных создания клиента получат один и тот же адрес.
+    """
+    server_address = ipaddress.ip_interface(interface_values(server_config)["Address"].split(",")[0].strip())
+    taken = used_peer_addresses(server_config) | {server_address.ip}
+    for host in server_address.network.hosts():
+        if host not in taken and isinstance(host, ipaddress.IPv4Address):
+            return host
+    raise AddressPoolExhaustedError(f"No free addresses left in {server_address.network}")
+
+
+def render_peer_block(name: str, public_key: str, psk: str, address: ipaddress.IPv4Address) -> str:
+    return f"[Peer]\n# client: {name}\nPublicKey = {public_key}\nPresharedKey = {psk}\nAllowedIPs = {address}/32\n"
+
+
+def append_peer(server_config: str, peer_block: str) -> str:
+    return server_config.rstrip("\n") + "\n\n" + peer_block.rstrip("\n") + "\n"
+
+
+def remove_peer(server_config: str, public_key: str) -> tuple[str, bool]:
+    """Убирает [Peer] с данным PublicKey. Возвращает новый текст и флаг «что-то удалено»."""
+    kept: list[list[str]] = []
+    removed = False
+    for section in _split_sections(server_config):
+        if _section_name(section) == "[Peer]" and _section_values(section).get("PublicKey") == public_key:
+            removed = True
+            continue
+        kept.append(section)
+    return _join_sections(kept), removed
+
+
+def render_client_config(
+    *,
+    server_config: str,
+    client_private_key: str,
+    client_address: ipaddress.IPv4Address,
+    psk: str,
+    server_public_key: str,
+    endpoint_host: str,
+) -> str:
+    """Конфиг для приложения клиента. Параметры обфускации копируются из серверного [Interface]."""
+    server_interface = interface_values(server_config)
+    obfuscation = [
+        f"{key} = {value}" for key, value in server_interface.items() if key not in _SERVER_ONLY_INTERFACE_KEYS
+    ]
+    host = f"[{endpoint_host}]" if ":" in endpoint_host else endpoint_host
+    lines = [
+        "[Interface]",
+        f"PrivateKey = {client_private_key}",
+        f"Address = {client_address}/32",
+        f"DNS = {CLIENT_DNS}",
+        *obfuscation,
+        "",
+        "[Peer]",
+        f"PublicKey = {server_public_key}",
+        f"PresharedKey = {psk}",
+        f"Endpoint = {host}:{server_interface['ListenPort']}",
+        f"AllowedIPs = {CLIENT_ALLOWED_IPS}",
+        f"PersistentKeepalive = {CLIENT_PERSISTENT_KEEPALIVE}",
+    ]
+    return "\n".join(lines) + "\n"

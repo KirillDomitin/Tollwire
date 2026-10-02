@@ -129,3 +129,15 @@ class SSHClient:
             raise SSHTimeoutError("File write timeout exceeded") from exc
         except (asyncssh.Error, OSError) as exc:
             raise SSHConnectionError(f"File write: host={self.host}, path={remote_path}") from exc
+
+    async def read_file(self, remote_path: str) -> str:
+        if self._conn is None:
+            raise RuntimeError("SSH connection is not established")
+        try:
+            async with self._conn.start_sftp_client() as sftp:
+                async with sftp.open(remote_path, "r") as f:
+                    return _to_str(await f.read())
+        except TimeoutError as exc:
+            raise SSHTimeoutError("File read timeout exceeded") from exc
+        except (asyncssh.Error, OSError) as exc:
+            raise SSHConnectionError(f"File read: host={self.host}, path={remote_path}") from exc

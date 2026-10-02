@@ -3,6 +3,17 @@
 
 CONTAINER_NAME = "amnezia-awg"
 
+# Каталог с конфигом на хосте и он же внутри контейнера (bind-mount, см. AmneziaWGProvider._run_container).
+HOST_CONFIG_DIR = "/opt/vpn-admin/awg"
+CONTAINER_CONFIG_DIR = "/etc/amnezia/awg"
+CONFIG_FILE_NAME = "awg0.conf"
+INTERFACE_NAME = "awg0"
+
+# Параметры конфига клиента.
+CLIENT_DNS = "1.1.1.1, 1.0.0.1"
+CLIENT_ALLOWED_IPS = "0.0.0.0/0, ::/0"
+CLIENT_PERSISTENT_KEEPALIVE = 25
+
 DEFAULT_AWG_CONFIG = """[Interface]
 PrivateKey = {}
 Address = 10.8.1.0/24

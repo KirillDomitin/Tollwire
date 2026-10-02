@@ -56,3 +56,7 @@ class ProtocolError(AppError): ...
 
 
 class UnsupportedProtocolError(ProtocolError): ...
+
+
+class AddressPoolExhaustedError(ProtocolError):
+    """В подсети туннеля не осталось свободных адресов для нового клиента."""

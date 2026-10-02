@@ -5,8 +5,24 @@ import re
 
 from core.ssh_exception import CommandExecutionError, DockerError, InstallError, InvalidServerConfigurationError
 from infrastructure.ssh.client import SSHClient
-from infrastructure.vpn.awg_config import generate_secret_keys, pick_udp_port, render_awg_config
-from infrastructure.vpn.config import CONTAINER_NAME
+from infrastructure.vpn.awg_config import (
+    append_peer,
+    generate_secret_keys,
+    is_valid_public_key,
+    pick_free_address,
+    pick_udp_port,
+    remove_peer,
+    render_awg_config,
+    render_client_config,
+    render_peer_block,
+)
+from infrastructure.vpn.config import (
+    CONFIG_FILE_NAME,
+    CONTAINER_CONFIG_DIR,
+    CONTAINER_NAME,
+    HOST_CONFIG_DIR,
+    INTERFACE_NAME,
+)
 from infrastructure.vpn.provider import (
     ProviderState,
     ProviderStatus,
@@ -18,7 +34,9 @@ from infrastructure.vpn.provider import (
 
 _ALLOWED = re.compile(r"^[a-zA-Z0-9_-]{1,32}$")
 
-CONFIG_PATH = "/opt/vpn-admin/awg"
+CONFIG_PATH = HOST_CONFIG_DIR
+HOST_CONFIG_FILE = f"{HOST_CONFIG_DIR}/{CONFIG_FILE_NAME}"
+CONTAINER_CONFIG_FILE = f"{CONTAINER_CONFIG_DIR}/{CONFIG_FILE_NAME}"
 
 
 def validate_name(name: str) -> None:
@@ -140,12 +158,64 @@ class AmneziaWGProvider(VPNProvider):
         )
 
     async def create_client(self, name: str) -> VPNClientConfig:
-        validate_name(name)
-        raise NotImplementedError("AmneziaWG client creation is not implemented yet")
+        """Добавляет клиента на сервер и возвращает конфиг для его приложения.
 
-    async def revoke_client(self, name: str) -> None:
+        Делает read-modify-write серверного awg0.conf — вызывающий обязан держать ServerLock.
+        """
         validate_name(name)
-        raise NotImplementedError("AmneziaWG client revoke is not implemented yet")
+        server_config = await self.ssh_client.read_file(HOST_CONFIG_FILE)
+        address = pick_free_address(server_config)
+        keys = generate_secret_keys()
+        server_public_key = await self._server_public_key()
+
+        updated = append_peer(server_config, render_peer_block(name, keys.public_key, keys.psk, address))
+        await self.ssh_client.write_file(HOST_CONFIG_FILE, updated)
+        await self._apply_config()
+
+        client_config = render_client_config(
+            server_config=server_config,
+            client_private_key=keys.private_key,
+            client_address=address,
+            psk=keys.psk,
+            server_public_key=server_public_key,
+            endpoint_host=self.ssh_client.host,
+        )
+        return VPNClientConfig(name=name, public_key=keys.public_key, address=str(address), config=client_config)
+
+    async def revoke_client(self, public_key: str) -> None:
+        """Убирает клиента с сервера. Идемпотентно: отсутствующий клиент — не ошибка.
+
+        Вызывающий обязан держать ServerLock (read-modify-write awg0.conf).
+        """
+        if not is_valid_public_key(public_key):
+            raise ValueError("Invalid WireGuard public key")
+        server_config = await self.ssh_client.read_file(HOST_CONFIG_FILE)
+        updated, removed = remove_peer(server_config, public_key)
+        if not removed:
+            return
+        await self.ssh_client.write_file(HOST_CONFIG_FILE, updated)
+        await self._apply_config()
+
+    async def _server_public_key(self) -> str:
+        # Берём публичный ключ у живого интерфейса — приватный ключ сервера не покидает сервер.
+        result = await self.ssh_client.execute(f"docker exec {CONTAINER_NAME} awg show {INTERFACE_NAME} public-key")
+        public_key = result.stdout.strip()
+        if result.exit_status != 0 or not is_valid_public_key(public_key):
+            raise CommandExecutionError(f"Failed to read server public key: {result.stderr.strip()}")
+        return public_key
+
+    async def _apply_config(self) -> None:
+        # awg-quick strip убирает строки, которых не понимает awg (Address, DNS…), а syncconf применяет
+        # конфиг к живому интерфейсу без перезапуска: существующие клиенты не отключаются.
+        # Временный файл содержит приватный ключ сервера — удаляем при любом исходе.
+        stripped = "/tmp/awg0.stripped"
+        script = (
+            f"awg-quick strip {CONTAINER_CONFIG_FILE} > {stripped}"
+            f" && awg syncconf {INTERFACE_NAME} {stripped}; rc=$?; rm -f {stripped}; exit $rc"
+        )
+        result = await self.ssh_client.execute(f"docker exec {CONTAINER_NAME} sh -c '{script}'")
+        if result.exit_status != 0:
+            raise CommandExecutionError(f"Failed to apply AmneziaWG config: {result.stderr.strip()}")
 
     async def list_clients(self) -> list[VPNClientInfo]:
         raise NotImplementedError("AmneziaWG client list is not implemented yet")
