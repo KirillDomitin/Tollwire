@@ -63,10 +63,20 @@ class SubscriptionService:
         return subscription
 
     async def revoke(self, subscription_id: UUID) -> Subscription:
+        """Отзывает подписку и каскадно — все её ещё не завершённые гранты.
+
+        Идемпотентно: повторный вызов не меняет revoked_at. Гранты в терминальном
+        статусе (EXPIRED/REVOKED) не трогаются — их история сохраняется как есть.
+        """
         subscription = await self.get(subscription_id)
         if subscription.status != AccessGrantStatus.REVOKED:
+            now = datetime.now(timezone.utc)
             subscription.status = AccessGrantStatus.REVOKED
-            subscription.revoked_at = datetime.now(timezone.utc)
+            subscription.revoked_at = now
+            for grant in await self.grants.list_by_subscription_id(subscription_id):
+                if grant.status not in _TERMINAL_STATUSES:
+                    grant.status = AccessGrantStatus.REVOKED
+                    grant.revoked_at = now
             await self.session.commit()
         return subscription
 
@@ -209,7 +219,8 @@ class VPNCredentialService:
         return credential
 
     async def _ensure_grant_is_live(self, access_grant_id: UUID) -> None:
-        # Проверяем и грант, и его подписку: отзыв подписки сам по себе не меняет статусы грантов.
+        # Проверяем и грант, и подписку: отзыв/истечение подписки каскадят на гранты,
+        # но проверка подписки страхует от рассинхрона (данные до каскада, ручные правки через PATCH).
         grant = await self.grants.get_by_id(access_grant_id)
         if not grant:
             raise NotFoundError(f"Access grant '{access_grant_id}' not found")
