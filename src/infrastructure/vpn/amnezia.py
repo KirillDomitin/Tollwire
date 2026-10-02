@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import asyncio
 import re
+from datetime import datetime
 
 from core.ssh_exception import CommandExecutionError, DockerError, InstallError, InvalidServerConfigurationError
 from infrastructure.ssh.client import SSHClient
@@ -10,12 +11,16 @@ from infrastructure.vpn.awg_config import (
     ensure_nat_hooks,
     generate_secret_keys,
     is_valid_public_key,
+    list_peers,
+    parse_client_config,
+    parse_latest_handshakes,
     pick_free_address,
     pick_udp_port,
     remove_peer,
     render_awg_config,
     render_client_config,
     render_peer_block,
+    used_peer_addresses,
 )
 from infrastructure.vpn.config import (
     CONFIG_FILE_NAME,
@@ -81,6 +86,13 @@ class AmneziaInstaller:
             result = await self.ssh_client.execute("systemctl enable docker")
             if result.exit_status != 0:
                 print(f"Warning: Docker started, but failed to enable autostart: {result.stderr.strip()}")
+
+    async def docker_version(self) -> str | None:
+        """Версия Docker на сервере или None, если Docker не установлен. Ничего не меняет."""
+        result = await self.ssh_client.execute("docker --version")
+        if result.exit_status != 0:
+            return None
+        return result.stdout.strip() or None
 
     async def ensure_ready(self) -> None:
         await self._validate_server()
@@ -239,11 +251,55 @@ class AmneziaWGProvider(VPNProvider):
         if result.exit_status != 0:
             raise CommandExecutionError(f"Failed to apply AmneziaWG config: {result.stderr.strip()}")
 
+    async def restore_client(self, name: str, client_config: str) -> bool:
+        """Возвращает на сервер peer клиента, у которого уже есть выданный конфиг (его ключи не меняются).
+
+        Нужен sync'у: в БД клиент живой, а на сервере его нет. Идемпотентно: peer уже на месте — False.
+        Вызывающий обязан держать ServerLock (read-modify-write awg0.conf).
+        """
+        validate_name(name)
+        params = parse_client_config(client_config)
+        server_config = await self.ssh_client.read_file(HOST_CONFIG_FILE)
+        peers = list_peers(server_config)
+        if any(peer.public_key == params.public_key for peer in peers):
+            return False
+        if params.address in used_peer_addresses(server_config):
+            raise CommandExecutionError(f"Address {params.address} is already taken by another peer")
+
+        updated = append_peer(server_config, render_peer_block(name, params.public_key, params.psk, params.address))
+        await self.ssh_client.write_file(HOST_CONFIG_FILE, updated)
+        await self._apply_config()
+        return True
+
     async def list_clients(self) -> list[VPNClientInfo]:
-        raise NotImplementedError("AmneziaWG client list is not implemented yet")
+        """Peer'ы из awg0.conf (источник правды о том, кого сервер пустит) + время последнего рукопожатия."""
+        if not await self._config_exists():
+            return []
+        peers = list_peers(await self.ssh_client.read_file(HOST_CONFIG_FILE))
+        handshakes: dict[str, datetime | None] = {}
+        result = await self.ssh_client.execute(
+            f"docker exec {CONTAINER_NAME} awg show {INTERFACE_NAME} latest-handshakes"
+        )
+        if result.exit_status == 0:
+            handshakes = parse_latest_handshakes(result.stdout)
+        return [
+            VPNClientInfo(
+                name=peer.name,
+                public_key=peer.public_key,
+                address=peer.address,
+                latest_handshake=handshakes.get(peer.public_key),
+            )
+            for peer in peers
+        ]
 
     async def sync(self) -> SyncResult:
-        raise NotImplementedError("AmneziaWG sync is not implemented yet")
+        """Снимок реального состояния протокола на сервере. Ничего не меняет — сверку с БД делает сервис."""
+        status = await self.get_status()
+        return SyncResult(provider_status=status, client_list=await self.list_clients())
+
+    async def _config_exists(self) -> bool:
+        result = await self.ssh_client.execute(f"test -f {HOST_CONFIG_FILE}")
+        return result.exit_status == 0
 
     async def _run_container(self, port: int) -> None:
         container_state = await self.ssh_client.execute(

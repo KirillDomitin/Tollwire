@@ -1,5 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
+from collections.abc import Sequence
 from uuid import UUID
 
 from sqlalchemy import select
@@ -19,6 +20,10 @@ class ProtocolRepository:
         query = select(VPNProtocol).where(VPNProtocol.server_id == server_id, VPNProtocol.type == protocol_type)
         result = await self.session.execute(query)
         return result.scalar_one_or_none()
+
+    async def list_by_server_id(self, server_id: UUID) -> Sequence[VPNProtocol]:
+        result = await self.session.execute(select(VPNProtocol).where(VPNProtocol.server_id == server_id))
+        return result.scalars().all()
 
     async def create(self, protocol: VPNProtocol) -> VPNProtocol:
         old_protocol = await self.get_by_server_and_type(protocol.server_id, protocol.type)

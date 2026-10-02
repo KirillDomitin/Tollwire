@@ -113,6 +113,19 @@ class VPNCredentialRepository:
         result = await self.session.execute(sql_request)
         return result.scalar_one_or_none()
 
+    async def list_with_access_by_protocol_id(
+        self, protocol_id: UUID
+    ) -> Sequence[tuple[VPNCredential, AccessGrant, Subscription]]:
+        """Все credential'ы протокола (и живые, и отозванные) вместе с их грантом и подпиской — для sync."""
+        sql_request = (
+            select(VPNCredential, AccessGrant, Subscription)
+            .join(AccessGrant, VPNCredential.access_grant_id == AccessGrant.id)
+            .join(Subscription, AccessGrant.subscription_id == Subscription.id)
+            .where(AccessGrant.protocol_id == protocol_id)
+        )
+        result = await self.session.execute(sql_request)
+        return result.tuples().all()
+
     async def has_live_for_subscription(self, subscription_id: UUID) -> bool:
         sql_request = (
             select(VPNCredential.id)

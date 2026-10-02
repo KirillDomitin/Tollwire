@@ -24,9 +24,12 @@ class ProviderStatus:
 
 @dataclass
 class VPNClientInfo:
-    name: str
-    created_at: datetime | None
-    last_activity: datetime | None
+    """Клиент, как его видит сервер. Секретов нет: публичный ключ и адрес можно показывать."""
+
+    name: str | None
+    public_key: str
+    address: str | None
+    latest_handshake: datetime | None
 
 
 @dataclass
@@ -57,6 +60,8 @@ class VPNProvider(ABC):
     async def create_client(self, name: str) -> VPNClientConfig: ...
     @abstractmethod
     async def revoke_client(self, public_key: str) -> None: ...
+    @abstractmethod
+    async def restore_client(self, name: str, client_config: str) -> bool: ...
     @abstractmethod
     async def list_clients(self) -> list[VPNClientInfo]: ...
     @abstractmethod

@@ -30,6 +30,17 @@ from modules.vpn_users.repository import VPNUserRepository
 
 _TERMINAL_STATUSES = (AccessGrantStatus.EXPIRED, AccessGrantStatus.REVOKED)
 
+# Имя клиента на сервере. По префиксу sync отличает наших peer'ов от добавленных вручную.
+CLIENT_NAME_PREFIX = "grant-"
+
+
+def client_name(access_grant_id: UUID) -> str:
+    return f"{CLIENT_NAME_PREFIX}{access_grant_id.hex[:12]}"
+
+
+def is_terminal(status: AccessGrantStatus) -> bool:
+    return status in _TERMINAL_STATUSES
+
 
 class SubscriptionService:
     def __init__(self, session: AsyncSession):
@@ -225,7 +236,7 @@ class VPNCredentialService:
         ssh_client = await self.connections.create_ssh_client(grant.server_id)
         provider = self.connections.build_provider(ssh_client, protocol.type)
         async with ssh_client:
-            client = await provider.create_client(f"grant-{grant.id.hex[:12]}")
+            client = await provider.create_client(client_name(grant.id))
         # Если коммит ниже упадёт, на сервере останется peer без записи в БД — его подберёт sync (блок 13).
         credential = VPNCredential(
             access_grant_id=grant.id,

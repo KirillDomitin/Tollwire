@@ -6,6 +6,7 @@ import random
 import re
 import secrets
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import x25519
@@ -25,6 +26,8 @@ from infrastructure.vpn.config import (
 # Всё остальное в [Interface] — параметры обфускации AmneziaWG, они обязаны совпадать у сервера и клиента.
 _SERVER_ONLY_INTERFACE_KEYS = frozenset({"PrivateKey", "Address", "ListenPort", "PostUp", "PostDown"})
 _PUBLIC_KEY_RE = re.compile(r"^[A-Za-z0-9+/]{43}=$")
+# Комментарий с именем клиента в [Peer]: WireGuard его игнорирует, а мы по нему узнаём своих peer'ов.
+_PEER_NAME_PREFIX = "# client:"
 
 
 @dataclass
@@ -168,7 +171,10 @@ def pick_free_address(server_config: str) -> ipaddress.IPv4Address:
 
 
 def render_peer_block(name: str, public_key: str, psk: str, address: ipaddress.IPv4Address) -> str:
-    return f"[Peer]\n# client: {name}\nPublicKey = {public_key}\nPresharedKey = {psk}\nAllowedIPs = {address}/32\n"
+    return (
+        f"[Peer]\n{_PEER_NAME_PREFIX} {name}\n"
+        f"PublicKey = {public_key}\nPresharedKey = {psk}\nAllowedIPs = {address}/32\n"
+    )
 
 
 def append_peer(server_config: str, peer_block: str) -> str:
@@ -185,6 +191,83 @@ def remove_peer(server_config: str, public_key: str) -> tuple[str, bool]:
             continue
         kept.append(section)
     return _join_sections(kept), removed
+
+
+@dataclass
+class PeerEntry:
+    name: str | None
+    public_key: str
+    address: str | None
+
+
+@dataclass
+class ClientPeerParams:
+    """Что нужно серверу, чтобы снова пустить клиента: выводится из конфига клиента."""
+
+    public_key: str
+    psk: str
+    address: ipaddress.IPv4Address
+
+
+def public_key_from_private(private_key: str) -> str:
+    raw = base64.b64decode(private_key)
+    public = x25519.X25519PrivateKey.from_private_bytes(raw).public_key()
+    return base64.b64encode(public.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)).decode()
+
+
+def _peer_name(section: list[str]) -> str | None:
+    for line in section[1:]:
+        stripped = line.strip()
+        if stripped.startswith(_PEER_NAME_PREFIX):
+            return stripped.removeprefix(_PEER_NAME_PREFIX).strip() or None
+    return None
+
+
+def list_peers(server_config: str) -> list[PeerEntry]:
+    peers = []
+    for section in _split_sections(server_config):
+        if _section_name(section) != "[Peer]":
+            continue
+        values = _section_values(section)
+        public_key = values.get("PublicKey")
+        if not public_key:
+            continue
+        address = values.get("AllowedIPs", "").split(",")[0].strip().split("/")[0] or None
+        peers.append(PeerEntry(name=_peer_name(section), public_key=public_key, address=address))
+    return peers
+
+
+def parse_client_config(client_config: str) -> ClientPeerParams:
+    """Достаёт из конфига клиента то, что нужно для его [Peer] на сервере. Приватный ключ наружу не отдаём."""
+    interface: dict[str, str] = {}
+    peer: dict[str, str] = {}
+    for section in _split_sections(client_config):
+        if _section_name(section) == "[Interface]":
+            interface = _section_values(section)
+        elif _section_name(section) == "[Peer]":
+            peer = _section_values(section)
+    try:
+        address = ipaddress.ip_interface(interface["Address"].split(",")[0].strip()).ip
+        public_key = public_key_from_private(interface["PrivateKey"])
+        psk = peer["PresharedKey"]
+    except (KeyError, ValueError):
+        # Без цепочки from exc: в тексте исходного исключения могут оказаться куски конфига.
+        raise ValueError("Client config is malformed") from None
+    if not isinstance(address, ipaddress.IPv4Address):
+        raise ValueError("Client config address must be IPv4")
+    return ClientPeerParams(public_key=public_key, psk=psk, address=address)
+
+
+def parse_latest_handshakes(output: str) -> dict[str, datetime | None]:
+    """Разбирает `awg show <iface> latest-handshakes`: строки «ключ<TAB>unix-время», 0 — рукопожатий не было."""
+    handshakes: dict[str, datetime | None] = {}
+    for line in output.splitlines():
+        parts = line.split()
+        if len(parts) != 2 or not parts[1].isdigit():
+            continue
+        timestamp = int(parts[1])
+        handshakes[parts[0]] = datetime.fromtimestamp(timestamp, tz=timezone.utc) if timestamp else None
+    return handshakes
 
 
 def render_client_config(

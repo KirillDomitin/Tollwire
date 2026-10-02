@@ -2,9 +2,11 @@
 # -*- coding: utf-8 -*-
 import enum
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, Uuid, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.database.base import Base, TimestampMixin, UuidPkMixin
@@ -43,5 +45,7 @@ class Job(UuidPkMixin, TimestampMixin, Base):
     progress: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     message: Mapped[str | None] = mapped_column(String(100), default=None)
     error: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    # Итог задачи, если он есть (отчёт sync/health). Без секретов — поле отдаётся в JobRead как есть.
+    result: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, default=None)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, default=None)

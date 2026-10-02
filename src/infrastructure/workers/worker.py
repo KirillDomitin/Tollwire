@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import asyncio
 from datetime import datetime, timezone
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +17,7 @@ from modules.jobs.models.job import Job, JobStatus, JobType
 from modules.jobs.queue import JobQueue
 from modules.protocols.models.protocol import ProtocolType, VPNProtocol
 from modules.servers.service import ServerConnectionService
+from modules.servers.sync import ServerSyncService
 
 
 class JobWorker:
@@ -54,6 +56,7 @@ class JobWorker:
                 JobType.REMOVE_PROTOCOL,
                 JobType.CREATE_USER,
                 JobType.REVOKE_ACCESS,
+                JobType.SYNC_SERVER,
             ]:
                 if not job.server_id:
                     raise JobTypeError(f"Job with type '{job.type}' must have server_id")
@@ -79,7 +82,8 @@ class JobWorker:
                         await self.delete_user()
 
                     case JobType.SYNC_SERVER:
-                        await self.sync_server()
+                        async with ServerLock(server_id):
+                            job.result = await self.sync_server(session, server_id)
 
                     case JobType.HEALTH_CHECK:
                         await self.health_check()
@@ -126,8 +130,8 @@ class JobWorker:
     async def delete_user(self) -> None:
         pass
 
-    async def sync_server(self) -> None:
-        pass
+    async def sync_server(self, session: AsyncSession, server_id: UUID) -> dict[str, Any]:
+        return await ServerSyncService(session).sync(server_id)
 
     async def health_check(self) -> None:
         pass

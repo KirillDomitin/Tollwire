@@ -1,6 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -18,6 +19,7 @@ class JobRead(BaseModel):
     progress: int
     message: str | None = None
     error: str | None = None
+    result: dict[str, Any] | None = None
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
