@@ -11,6 +11,7 @@ from core.database.base import Base
 from modules.access.models.access_grant import AccessGrant  # noqa
 from modules.access.models.subscription import Subscription  # noqa
 from modules.access.models.vpn_credential import VPNCredential  # noqa
+from modules.audit.models.audit_log import AuditLog  # noqa
 from modules.auth.models.admin import Admin  # noqa
 from modules.auth.models.admin_session import AdminSession  # noqa
 from modules.jobs.models.job import Job  # noqa

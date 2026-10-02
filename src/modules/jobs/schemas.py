@@ -16,6 +16,7 @@ class JobRead(BaseModel):
     status: JobStatus
     server_id: UUID | None
     access_grant_id: UUID | None = None
+    admin_id: UUID | None = None
     progress: int
     message: str | None = None
     error: str | None = None

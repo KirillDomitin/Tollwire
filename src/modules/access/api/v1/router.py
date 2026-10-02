@@ -23,6 +23,8 @@ from modules.access.schemas import (
     VPNCredentialRead,
 )
 from modules.access.service import AccessGrantService, SubscriptionService, VPNCredentialService
+from modules.audit.actor import AuditActor
+from modules.audit.dependencies import get_audit_actor
 from modules.auth.dependencies import get_current_admin
 from modules.jobs.models.job import Job
 from modules.jobs.schemas import JobRead
@@ -30,16 +32,20 @@ from modules.jobs.schemas import JobRead
 router = APIRouter(prefix="/api/v1", tags=["access"], dependencies=[Depends(get_current_admin)])
 
 
-def get_subscription_service(session: Annotated[AsyncSession, Depends(get_session)]) -> SubscriptionService:
-    return SubscriptionService(session)
+SessionDep = Annotated[AsyncSession, Depends(get_session)]
+ActorDep = Annotated[AuditActor, Depends(get_audit_actor)]
 
 
-def get_access_grant_service(session: Annotated[AsyncSession, Depends(get_session)]) -> AccessGrantService:
-    return AccessGrantService(session)
+def get_subscription_service(session: SessionDep, actor: ActorDep) -> SubscriptionService:
+    return SubscriptionService(session, actor)
 
 
-def get_credential_service(session: Annotated[AsyncSession, Depends(get_session)]) -> VPNCredentialService:
-    return VPNCredentialService(session)
+def get_access_grant_service(session: SessionDep, actor: ActorDep) -> AccessGrantService:
+    return AccessGrantService(session, actor)
+
+
+def get_credential_service(session: SessionDep, actor: ActorDep) -> VPNCredentialService:
+    return VPNCredentialService(session, actor)
 
 
 @router.post("/vpn-users/{user_id}/subscriptions", response_model=SubscriptionRead, status_code=201)

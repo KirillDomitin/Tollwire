@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database.postgres import get_session
 from core.exceptions import AlreadyExistsError, LiveCredentialExistsError, NotFoundError
+from modules.audit.actor import AuditActor
+from modules.audit.dependencies import get_audit_actor
 from modules.auth.dependencies import get_current_admin
 from modules.vpn_users.models.user import VPNUser
 from modules.vpn_users.schemas import VPNUserCreate, VPNUserRead, VPNUserUpdate
@@ -16,8 +18,10 @@ from modules.vpn_users.service import VPNUserService
 router = APIRouter(prefix="/api/v1/vpn-users", tags=["users"], dependencies=[Depends(get_current_admin)])
 
 
-def get_user_service(session: Annotated[AsyncSession, Depends(get_session)]) -> VPNUserService:
-    return VPNUserService(session)
+def get_user_service(
+    session: Annotated[AsyncSession, Depends(get_session)], actor: Annotated[AuditActor, Depends(get_audit_actor)]
+) -> VPNUserService:
+    return VPNUserService(session, actor)
 
 
 @router.get("", response_model=Sequence[VPNUserRead])

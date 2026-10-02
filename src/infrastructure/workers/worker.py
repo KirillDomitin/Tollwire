@@ -13,8 +13,10 @@ from infrastructure.vpn.provider import ProviderStatus
 from infrastructure.workers.locks import ServerLock
 from modules.access.models.vpn_credential import VPNCredential
 from modules.access.service import VPNCredentialService
+from modules.audit.actor import AuditActor
 from modules.jobs.models.job import Job, JobStatus, JobType
 from modules.jobs.queue import JobQueue
+from modules.jobs.service import JobService
 from modules.protocols.models.protocol import ProtocolType, VPNProtocol
 from modules.servers.health import ServerHealthService
 from modules.servers.service import ServerConnectionService
@@ -73,12 +75,14 @@ class JobWorker:
             job.status = JobStatus.RUNNING
             job.started_at = datetime.now(timezone.utc)
             await session.commit()
+            # Аудит результата пишется от имени админа, запустившего задачу (NULL — система).
+            actor = AuditActor(admin_id=job.admin_id)
 
             try:
                 match job.type:
                     case JobType.CREATE_USER:
                         async with ServerLock(server_id):
-                            await self.create_user(session, access_grant_id)
+                            await self.create_user(session, access_grant_id, actor)
 
                     case JobType.DELETE_USER:
                         await self.delete_user()
@@ -93,7 +97,7 @@ class JobWorker:
 
                     case JobType.REVOKE_ACCESS:
                         async with ServerLock(server_id):
-                            await self.revoke_access(session, access_grant_id)
+                            await self.revoke_access(session, access_grant_id, actor)
 
                     case JobType.INSTALL_SERVER:
                         async with ServerLock(server_id):
@@ -120,15 +124,17 @@ class JobWorker:
                 job.error = str(exc)
                 job.status = JobStatus.FAILED
                 job.finished_at = datetime.now(timezone.utc)
+                JobService(session, actor).record_finished(job)
                 await session.commit()
             else:
                 job.status = JobStatus.SUCCESS
                 job.finished_at = datetime.now(timezone.utc)
                 job.progress = 100
+                JobService(session, actor).record_finished(job)
                 await session.commit()
 
-    async def create_user(self, session: AsyncSession, access_grant_id: UUID) -> VPNCredential:
-        return await VPNCredentialService(session).provision(access_grant_id)
+    async def create_user(self, session: AsyncSession, access_grant_id: UUID, actor: AuditActor) -> VPNCredential:
+        return await VPNCredentialService(session, actor).provision(access_grant_id)
 
     async def delete_user(self) -> None:
         pass
@@ -139,8 +145,10 @@ class JobWorker:
     async def health_check(self, session: AsyncSession, server_id: UUID) -> dict[str, Any]:
         return await ServerHealthService(session).check(server_id)
 
-    async def revoke_access(self, session: AsyncSession, access_grant_id: UUID) -> VPNCredential | None:
-        return await VPNCredentialService(session).deprovision(access_grant_id)
+    async def revoke_access(
+        self, session: AsyncSession, access_grant_id: UUID, actor: AuditActor
+    ) -> VPNCredential | None:
+        return await VPNCredentialService(session, actor).deprovision(access_grant_id)
 
     async def install_server(self, session: AsyncSession, server_id: UUID) -> None:
         return await ServerConnectionService(session).server_install(server_id)

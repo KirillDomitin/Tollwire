@@ -7,15 +7,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.exceptions import InvalidCredentialsError
 from core.security import create_access_token, generate_refresh_token, hash_refresh_token, verify_password
 from core.utils import get_refresh_expires_at
+from modules.audit.actor import AuditActor
+from modules.audit.models.audit_log import AuditAction, AuditEntity
+from modules.audit.service import AuditService
 from modules.auth.models.admin import Admin
 from modules.auth.repository import AdminRepository, AdminSessionRepository
 
 
 class AuthService:
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, actor: AuditActor):
         self.session = session
         self.admins = AdminRepository(session)
         self.sessions = AdminSessionRepository(session)
+        self.actor = actor
 
     async def authenticate(self, email: str, password: str) -> Admin:
         admin = await self.admins.get_by_email(email)
@@ -24,12 +28,19 @@ class AuthService:
         return admin
 
     async def login(self, email: str, password: str) -> tuple[str, str]:
-        admin = await self.authenticate(email, password)
+        try:
+            admin = await self.authenticate(email, password)
+        except InvalidCredentialsError:
+            # Только email: пароль (даже неверный) в журнал не пишем — это мог быть почти верный пароль.
+            AuditService(self.session, self.actor).record(AuditAction.LOGIN_FAILED, meta={"email": email})
+            await self.session.commit()
+            raise
         access = create_access_token(str(admin.id))
         refresh = generate_refresh_token()
         refresh_hash = hash_refresh_token(refresh)
         expires_at = get_refresh_expires_at()
         await self.sessions.create(admin_id=admin.id, token_hash=refresh_hash, expires_at=expires_at)
+        AuditService(self.session, self.actor.as_admin(admin.id)).record(AuditAction.LOGIN, AuditEntity.ADMIN, admin.id)
         await self.session.commit()
         return access, refresh
 
@@ -52,4 +63,6 @@ class AuthService:
         admin_session = await self.sessions.get_by_token_hash(refresh_hash)
         if admin_session:
             await self.sessions.delete(admin_session)
+            audit = AuditService(self.session, self.actor.as_admin(admin_session.admin_id))
+            audit.record(AuditAction.LOGOUT, AuditEntity.ADMIN, admin_session.admin_id)
             await self.session.commit()

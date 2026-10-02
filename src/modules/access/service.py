@@ -20,6 +20,9 @@ from modules.access.schemas import (
     SubscriptionUpdate,
     VPNCredentialConfigRead,
 )
+from modules.audit.actor import AuditActor
+from modules.audit.models.audit_log import AuditAction, AuditEntity
+from modules.audit.service import AuditService, diff_changes
 from modules.jobs.models.job import Job, JobType
 from modules.jobs.repository import JobRepository
 from modules.jobs.service import JobService
@@ -43,12 +46,14 @@ def is_terminal(status: AccessGrantStatus) -> bool:
 
 
 class SubscriptionService:
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, actor: AuditActor):
         self.session = session
+        self.actor = actor
         self.subscriptions = SubscriptionRepository(session)
         self.grants = AccessGrantRepository(session)
         self.credentials = VPNCredentialRepository(session)
         self.users = VPNUserRepository(session)
+        self.audit = AuditService(session, actor)
 
     async def create(self, user_id: UUID, data: SubscriptionCreate) -> Subscription:
         if not await self.users.get_by_id(user_id):
@@ -58,6 +63,12 @@ class SubscriptionService:
 
         new_subscription = Subscription(user_id=user_id, valid_from=data.valid_from, valid_until=data.valid_until)
         subscription = await self.subscriptions.create(new_subscription)
+        self.audit.record(
+            AuditAction.SUBSCRIPTION_CREATED,
+            AuditEntity.SUBSCRIPTION,
+            subscription.id,
+            {"user_id": user_id, "valid_from": data.valid_from, "valid_until": data.valid_until},
+        )
         await self.session.commit()
         return subscription
 
@@ -73,8 +84,13 @@ class SubscriptionService:
     async def update(self, subscription_id: UUID, data: SubscriptionUpdate) -> Subscription:
         subscription = await self.get(subscription_id)
         fields = data.model_dump(exclude_unset=True)
+        changes = diff_changes(subscription, fields)
         for field, value in fields.items():
             setattr(subscription, field, value)
+        if changes:
+            self.audit.record(
+                AuditAction.SUBSCRIPTION_UPDATED, AuditEntity.SUBSCRIPTION, subscription.id, {"changes": changes}
+            )
         await self.session.commit()
         return subscription
 
@@ -95,8 +111,22 @@ class SubscriptionService:
                     grant.status = AccessGrantStatus.REVOKED
                     grant.revoked_at = now
                     revoked.append(grant)
+            self.audit.record(
+                AuditAction.SUBSCRIPTION_REVOKED,
+                AuditEntity.SUBSCRIPTION,
+                subscription.id,
+                {"user_id": subscription.user_id, "access_grant_ids": [grant.id for grant in revoked]},
+            )
+            # Запись на каждый грант — чтобы история гранта (фильтр по entity_id) была полной.
+            for grant in revoked:
+                self.audit.record(
+                    AuditAction.ACCESS_REVOKED,
+                    AuditEntity.ACCESS_GRANT,
+                    grant.id,
+                    {"reason": "subscription_revoked", "subscription_id": subscription.id},
+                )
             await self.session.commit()
-            await VPNCredentialService(self.session).schedule_revoke_for_grants(revoked)
+            await VPNCredentialService(self.session, self.actor).schedule_revoke_for_grants(revoked)
         return subscription
 
     async def delete(self, subscription_id: UUID) -> None:
@@ -104,6 +134,12 @@ class SubscriptionService:
         if await self.credentials.has_live_for_subscription(subscription_id):
             raise LiveCredentialExistsError("Subscription has live VPN clients, revoke it first")
         await self.subscriptions.delete(subscription)
+        self.audit.record(
+            AuditAction.SUBSCRIPTION_DELETED,
+            AuditEntity.SUBSCRIPTION,
+            subscription.id,
+            {"user_id": subscription.user_id},
+        )
         await self.session.commit()
 
     async def expire(self, subscription_id: UUID) -> Subscription:
@@ -125,19 +161,31 @@ class SubscriptionService:
             if grant.status not in _TERMINAL_STATUSES:
                 grant.status = AccessGrantStatus.EXPIRED
                 expired.append(grant)
+        self.audit.record(
+            AuditAction.SUBSCRIPTION_EXPIRED,
+            AuditEntity.SUBSCRIPTION,
+            subscription.id,
+            {"user_id": subscription.user_id, "valid_until": subscription.valid_until},
+        )
+        for grant in expired:
+            self.audit.record(
+                AuditAction.ACCESS_EXPIRED, AuditEntity.ACCESS_GRANT, grant.id, {"subscription_id": subscription.id}
+            )
         await self.session.commit()
-        await VPNCredentialService(self.session).schedule_revoke_for_grants(expired)
+        await VPNCredentialService(self.session, self.actor).schedule_revoke_for_grants(expired)
         return subscription
 
 
 class AccessGrantService:
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, actor: AuditActor):
         self.session = session
+        self.actor = actor
         self.grants = AccessGrantRepository(session)
         self.subscriptions = SubscriptionRepository(session)
         self.credentials = VPNCredentialRepository(session)
         self.servers = ServerRepository(session)
         self.protocols = ProtocolRepository(session)
+        self.audit = AuditService(session, actor)
 
     async def create(self, subscription_id: UUID, data: AccessGrantCreate) -> AccessGrant:
         subscription = await self.subscriptions.get_by_id(subscription_id)
@@ -158,6 +206,17 @@ class AccessGrantService:
             protocol_id=protocol.id,
         )
         grant = await self.grants.create(new_grant)
+        self.audit.record(
+            AuditAction.ACCESS_GRANTED,
+            AuditEntity.ACCESS_GRANT,
+            grant.id,
+            {
+                "user_id": subscription.user_id,
+                "subscription_id": subscription_id,
+                "server_id": protocol.server_id,
+                "protocol_id": protocol.id,
+            },
+        )
         await self.session.commit()
         return grant
 
@@ -173,8 +232,11 @@ class AccessGrantService:
     async def update(self, access_grant_id: UUID, data: AccessGrantUpdate) -> AccessGrant:
         grant = await self.get(access_grant_id)
         fields = data.model_dump(exclude_unset=True)
+        changes = diff_changes(grant, fields)
         for field, value in fields.items():
             setattr(grant, field, value)
+        if changes:
+            self.audit.record(AuditAction.ACCESS_UPDATED, AuditEntity.ACCESS_GRANT, grant.id, {"changes": changes})
         await self.session.commit()
         return grant
 
@@ -183,8 +245,9 @@ class AccessGrantService:
         if grant.status != AccessGrantStatus.REVOKED:
             grant.status = AccessGrantStatus.REVOKED
             grant.revoked_at = datetime.now(timezone.utc)
+            self.audit.record(AuditAction.ACCESS_REVOKED, AuditEntity.ACCESS_GRANT, grant.id, {"reason": "manual"})
             await self.session.commit()
-            await VPNCredentialService(self.session).schedule_revoke_for_grants([grant])
+            await VPNCredentialService(self.session, self.actor).schedule_revoke_for_grants([grant])
         return grant
 
     async def delete(self, access_grant_id: UUID) -> None:
@@ -192,19 +255,26 @@ class AccessGrantService:
         if await self.credentials.get_live_by_access_grant_id(access_grant_id):
             raise LiveCredentialExistsError("Access grant has a live VPN client, revoke it first")
         await self.grants.delete(grant)
+        self.audit.record(
+            AuditAction.ACCESS_DELETED,
+            AuditEntity.ACCESS_GRANT,
+            grant.id,
+            {"subscription_id": grant.subscription_id, "server_id": grant.server_id},
+        )
         await self.session.commit()
 
 
 class VPNCredentialService:
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, actor: AuditActor):
         self.session = session
         self.credentials = VPNCredentialRepository(session)
         self.grants = AccessGrantRepository(session)
         self.subscriptions = SubscriptionRepository(session)
         self.protocols = ProtocolRepository(session)
-        self.jobs = JobService(session)
+        self.jobs = JobService(session, actor)
         self.job_repository = JobRepository(session)
         self.connections = ServerConnectionService(session)
+        self.audit = AuditService(session, actor)
 
     async def schedule_issue(self, access_grant_id: UUID) -> Job:
         """Ставит задачу CREATE_USER: воркер создаст клиента на сервере и сохранит credential.
@@ -246,6 +316,17 @@ class VPNCredentialService:
         )
         await self.credentials.create(credential)
         grant.status = AccessGrantStatus.ACTIVE
+        self.audit.record(
+            AuditAction.CREDENTIAL_ISSUED,
+            AuditEntity.VPN_CREDENTIAL,
+            credential.id,
+            {
+                "access_grant_id": grant.id,
+                "server_id": grant.server_id,
+                "address": client.address,
+                "public_key": client.public_key,
+            },
+        )
         await self.session.commit()
         return credential
 
@@ -270,6 +351,12 @@ class VPNCredentialService:
         async with ssh_client:
             await provider.revoke_client(credential.client_public_key)
         credential.revoked_at = datetime.now(timezone.utc)
+        self.audit.record(
+            AuditAction.CREDENTIAL_REVOKED,
+            AuditEntity.VPN_CREDENTIAL,
+            credential.id,
+            {"access_grant_id": grant.id, "server_id": grant.server_id, "public_key": credential.client_public_key},
+        )
         await self.session.commit()
         return credential
 
@@ -300,12 +387,19 @@ class VPNCredentialService:
         return await self.credentials.list_by_access_grant_id(access_grant_id)
 
     async def reveal_config(self, credential_id: UUID) -> VPNCredentialConfigRead:
-        """Единственное место, где конфиг расшифровывается. Не логировать результат."""
+        """Выдаёт расшифрованный конфиг админу. Сам конфиг не логировать — в журнал идёт только факт выдачи."""
         credential = await self.get(credential_id)
         if credential.revoked_at is not None:
             raise InactiveAccessError("Credential is revoked")
         await self._ensure_grant_is_live(credential.access_grant_id)
-        # TODO(блок 14): записать в AuditLog факт выдачи конфига (кто, какой credential, когда).
+        self.audit.record(
+            AuditAction.CONFIG_VIEWED,
+            AuditEntity.VPN_CREDENTIAL,
+            credential.id,
+            {"access_grant_id": credential.access_grant_id},
+        )
+        # Сначала фиксируем факт выдачи: если запись не сохранится, конфиг не уйдёт.
+        await self.session.commit()
         return VPNCredentialConfigRead(
             id=credential.id,
             access_grant_id=credential.access_grant_id,

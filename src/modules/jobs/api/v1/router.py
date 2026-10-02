@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database.postgres import get_session
 from core.exceptions import NotFoundError
+from modules.audit.actor import AuditActor
+from modules.audit.dependencies import get_audit_actor
 from modules.auth.dependencies import get_current_admin
 from modules.jobs.models.job import Job, JobStatus
 from modules.jobs.schemas import JobRead
@@ -17,8 +19,10 @@ from modules.jobs.service import JobService
 router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"], dependencies=[Depends(get_current_admin)])
 
 
-def get_job_service(session: Annotated[AsyncSession, Depends(get_session)]) -> JobService:
-    return JobService(session)
+def get_job_service(
+    session: Annotated[AsyncSession, Depends(get_session)], actor: Annotated[AuditActor, Depends(get_audit_actor)]
+) -> JobService:
+    return JobService(session, actor)
 
 
 @router.get("/{job_id}", response_model=JobRead)

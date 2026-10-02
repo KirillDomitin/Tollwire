@@ -11,6 +11,9 @@ from core.security import decrypt_secret, encrypt_secret
 from infrastructure.ssh.client import SSHClient
 from infrastructure.vpn.amnezia import AmneziaInstaller, AmneziaWGProvider
 from infrastructure.vpn.provider import ProviderStatus, VPNProvider
+from modules.audit.actor import SYSTEM_ACTOR, AuditActor
+from modules.audit.models.audit_log import AuditAction, AuditEntity
+from modules.audit.service import AuditService, diff_changes
 from modules.protocols.models.protocol import ProtocolType, VPNProtocol
 from modules.protocols.repository import ProtocolRepository
 from modules.servers.models.credential import AuthType, ServerCredential
@@ -20,15 +23,22 @@ from modules.servers.schemas import CredentialCreate, ServerCreate, ServerUpdate
 
 
 class ServerService:
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, actor: AuditActor):
         self.session = session
         self.servers = ServerRepository(session)
+        self.audit = AuditService(session, actor)
 
     async def create(self, data: ServerCreate) -> VPNServer:
         if await self.servers.get_by_name(data.name):
             raise AlreadyExistsError
         new_server = VPNServer(name=data.name, host=data.host, ssh_port=data.ssh_port, description=data.description)
         server = await self.servers.create(new_server)
+        self.audit.record(
+            AuditAction.SERVER_CREATED,
+            AuditEntity.SERVER,
+            server.id,
+            {"name": server.name, "host": server.host, "ssh_port": server.ssh_port},
+        )
         await self.session.commit()
         return server
 
@@ -44,28 +54,42 @@ class ServerService:
     async def update(self, server_id: UUID, data: ServerUpdate) -> VPNServer:
         server = await self.get(server_id)
         fields = data.model_dump(exclude_unset=True)
+        changes = diff_changes(server, fields)
         for field, value in fields.items():
             setattr(server, field, value)
+        if changes:
+            self.audit.record(AuditAction.SERVER_UPDATED, AuditEntity.SERVER, server.id, {"changes": changes})
         await self.session.commit()
         return server
 
     async def delete(self, server_id: UUID) -> None:
         server = await self.get(server_id)
         await self.servers.delete(server)
+        self.audit.record(
+            AuditAction.SERVER_DELETED, AuditEntity.SERVER, server.id, {"name": server.name, "host": server.host}
+        )
         await self.session.commit()
 
 
 class CredentialService:
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, actor: AuditActor):
         self.session = session
         self.credentials = CredentialRepository(session)
         self.servers = ServerRepository(session)
+        self.audit = AuditService(session, actor)
 
     async def set_credential(self, server_id: UUID, data: CredentialCreate) -> ServerCredential:
         server = await self.servers.get_by_id(server_id)
         if not server:
             raise NotFoundError
         encrypted_secret = encrypt_secret(data.secret)
+        # Секрет в журнал не попадает — только факт смены и несекретные поля.
+        self.audit.record(
+            AuditAction.SERVER_CREDENTIALS_SET,
+            AuditEntity.SERVER,
+            server_id,
+            {"username": data.username, "auth_type": data.auth_type},
+        )
         cred = await self.credentials.get_by_server_id(server_id)
         if cred:
             cred.username = data.username
@@ -92,6 +116,7 @@ class CredentialService:
         if not cred:
             raise CredentialNotFound
         await self.credentials.delete(cred)
+        self.audit.record(AuditAction.SERVER_CREDENTIALS_DELETED, AuditEntity.SERVER, server_id)
         await self.session.commit()
 
     async def get_decrypted_secret(self, server_id: UUID) -> str:
@@ -104,7 +129,8 @@ class CredentialService:
 class ServerConnectionService:
     def __init__(self, session: AsyncSession):
         self.session = session
-        self.credentials = CredentialService(session)
+        # Только чтение учётки для SSH — в журнал ничего не пишется, поэтому системный актор.
+        self.credentials = CredentialService(session, SYSTEM_ACTOR)
         self.servers = ServerRepository(session)
         self.protocols = ProtocolRepository(session)
 

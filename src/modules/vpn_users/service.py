@@ -7,21 +7,31 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions import AlreadyExistsError, LiveCredentialExistsError, NotFoundError
 from modules.access.repository import VPNCredentialRepository
+from modules.audit.actor import AuditActor
+from modules.audit.models.audit_log import AuditAction, AuditEntity
+from modules.audit.service import AuditService, diff_changes
 from modules.vpn_users.models.user import VPNUser
 from modules.vpn_users.repository import VPNUserRepository
 from modules.vpn_users.schemas import VPNUserCreate, VPNUserUpdate
 
 
 class VPNUserService:
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, actor: AuditActor):
         self.session = session
         self.users = VPNUserRepository(session)
+        self.audit = AuditService(session, actor)
 
     async def create(self, data: VPNUserCreate) -> VPNUser:
         if await self.users.get_by_email(data.email):
             raise AlreadyExistsError
         new_user = VPNUser(username=data.username, email=data.email, description=data.description)
         user = await self.users.create(new_user)
+        self.audit.record(
+            AuditAction.VPN_USER_CREATED,
+            AuditEntity.VPN_USER,
+            user.id,
+            {"username": user.username, "email": user.email},
+        )
         await self.session.commit()
         return user
 
@@ -43,8 +53,11 @@ class VPNUserService:
     async def update(self, user_id: UUID, data: VPNUserUpdate) -> VPNUser:
         user = await self.get(user_id)
         fields = data.model_dump(exclude_unset=True)
+        changes = diff_changes(user, fields)
         for field, value in fields.items():
             setattr(user, field, value)
+        if changes:
+            self.audit.record(AuditAction.VPN_USER_UPDATED, AuditEntity.VPN_USER, user.id, {"changes": changes})
         await self.session.commit()
         return user
 
@@ -54,4 +67,10 @@ class VPNUserService:
         if await VPNCredentialRepository(self.session).has_live_for_user(user_id):
             raise LiveCredentialExistsError("User has live VPN clients, revoke access first")
         await self.users.delete(user)
+        self.audit.record(
+            AuditAction.VPN_USER_DELETED,
+            AuditEntity.VPN_USER,
+            user.id,
+            {"username": user.username, "email": user.email},
+        )
         await self.session.commit()

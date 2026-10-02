@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.config import settings
 from core.database.postgres import get_session
 from core.exceptions import InvalidCredentialsError
+from modules.audit.actor import AuditActor
+from modules.audit.dependencies import get_anonymous_actor
 from modules.auth.dependencies import get_current_admin
 from modules.auth.models.admin import Admin
 from modules.auth.schemas import AdminRead, LoginRequest, TokenResponse
@@ -16,8 +18,11 @@ from modules.auth.service import AuthService
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
 
-def get_auth_service(session: Annotated[AsyncSession, Depends(get_session)]) -> AuthService:
-    return AuthService(session)
+def get_auth_service(
+    session: Annotated[AsyncSession, Depends(get_session)], actor: Annotated[AuditActor, Depends(get_anonymous_actor)]
+) -> AuthService:
+    # Эндпоинты auth работают без access-токена: админ определяется внутри сервиса (по паролю или refresh-токену).
+    return AuthService(session, actor)
 
 
 def set_cookie(response: Response, token: str) -> None:

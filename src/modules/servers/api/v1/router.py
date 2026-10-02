@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database.postgres import get_session
 from core.exceptions import AlreadyExistsError, CredentialNotFound, NotFoundError
+from modules.audit.actor import AuditActor
+from modules.audit.dependencies import get_audit_actor
 from modules.auth.dependencies import get_current_admin
 from modules.jobs.api.v1.router import get_job_service
 from modules.jobs.models.job import Job, JobType
@@ -29,12 +31,16 @@ from modules.servers.service import CredentialService, ServerConnectionService, 
 router = APIRouter(prefix="/api/v1/servers", tags=["servers"], dependencies=[Depends(get_current_admin)])
 
 
-def get_server_service(session: Annotated[AsyncSession, Depends(get_session)]) -> ServerService:
-    return ServerService(session)
+def get_server_service(
+    session: Annotated[AsyncSession, Depends(get_session)], actor: Annotated[AuditActor, Depends(get_audit_actor)]
+) -> ServerService:
+    return ServerService(session, actor)
 
 
-def get_credential_service(session: Annotated[AsyncSession, Depends(get_session)]) -> CredentialService:
-    return CredentialService(session)
+def get_credential_service(
+    session: Annotated[AsyncSession, Depends(get_session)], actor: Annotated[AuditActor, Depends(get_audit_actor)]
+) -> CredentialService:
+    return CredentialService(session, actor)
 
 
 def get_connection_service(session: Annotated[AsyncSession, Depends(get_session)]) -> ServerConnectionService:
@@ -87,7 +93,7 @@ async def put(
 ) -> ServerCredential:
     try:
         cred = await service.set_credential(server_id, body)
-    except CredentialNotFound:
+    except NotFoundError:
         raise HTTPException(404, detail=f"Server '{server_id}' not found")
     return cred
 

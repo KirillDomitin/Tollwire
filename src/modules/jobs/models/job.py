@@ -42,6 +42,8 @@ class Job(UuidPkMixin, TimestampMixin, Base):
     access_grant_id: Mapped[UUID | None] = mapped_column(
         Uuid, ForeignKey("access_grants.id", ondelete="SET NULL"), default=None
     )
+    # Кто запустил задачу: воркер пишет аудит её результата от имени этого админа. NULL — система.
+    admin_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("admins.id", ondelete="SET NULL"), default=None)
     progress: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     message: Mapped[str | None] = mapped_column(String(100), default=None)
     error: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
