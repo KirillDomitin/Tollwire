@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from modules.access.models import AccessGrantStatus
 from modules.access.models.access_grant import AccessGrant
 from modules.access.models.subscription import Subscription
+from modules.access.models.vpn_credential import VPNCredential
 
 _ACTIVE_STATUSES = (AccessGrantStatus.PENDING, AccessGrantStatus.ACTIVE)
 
@@ -80,3 +81,34 @@ class AccessGrantRepository:
 
     async def delete(self, access_grant: AccessGrant) -> None:
         await self.session.delete(access_grant)
+
+
+class VPNCredentialRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def create(self, credential: VPNCredential) -> VPNCredential:
+        self.session.add(credential)
+        await self.session.flush()
+        return credential
+
+    async def get_by_id(self, credential_id: UUID) -> VPNCredential | None:
+        return await self.session.get(VPNCredential, credential_id)
+
+    async def list_by_access_grant_id(self, access_grant_id: UUID) -> Sequence[VPNCredential]:
+        sql_request = (
+            select(VPNCredential)
+            .where(VPNCredential.access_grant_id == access_grant_id)
+            .order_by(VPNCredential.created_at.desc())
+        )
+        result = await self.session.execute(sql_request)
+        return result.scalars().all()
+
+    async def get_live_by_access_grant_id(self, access_grant_id: UUID) -> VPNCredential | None:
+        # Не больше одной строки гарантирует частичный уникальный индекс uq_vpn_credentials_live_per_grant.
+        sql_request = select(VPNCredential).where(
+            VPNCredential.access_grant_id == access_grant_id,
+            VPNCredential.revoked_at.is_(None),
+        )
+        result = await self.session.execute(sql_request)
+        return result.scalar_one_or_none()

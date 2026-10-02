@@ -48,6 +48,10 @@ class JobExecutionError(JobError): ...
 class ServerBusyError(JobError): ...
 
 
+class InactiveAccessError(AppError):
+    """Объект существует, но доступ по нему уже не действует (отозван или истёк)."""
+
+
 class ProtocolError(AppError): ...
 
 

@@ -6,12 +6,20 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions import AlreadyExistsError, NotFoundError
+from core.exceptions import AlreadyExistsError, InactiveAccessError, NotFoundError
+from core.security import decrypt_secret, encrypt_secret
 from modules.access.models import AccessGrantStatus
 from modules.access.models.access_grant import AccessGrant
 from modules.access.models.subscription import Subscription
-from modules.access.repository import AccessGrantRepository, SubscriptionRepository
-from modules.access.schemas import AccessGrantCreate, AccessGrantUpdate, SubscriptionCreate, SubscriptionUpdate
+from modules.access.models.vpn_credential import VPNCredential
+from modules.access.repository import AccessGrantRepository, SubscriptionRepository, VPNCredentialRepository
+from modules.access.schemas import (
+    AccessGrantCreate,
+    AccessGrantUpdate,
+    SubscriptionCreate,
+    SubscriptionUpdate,
+    VPNCredentialConfigRead,
+)
 from modules.protocols.repository import ProtocolRepository
 from modules.servers.repository import ServerRepository
 from modules.vpn_users.repository import VPNUserRepository
@@ -147,3 +155,66 @@ class AccessGrantService:
         grant = await self.get(access_grant_id)
         await self.grants.delete(grant)
         await self.session.commit()
+
+
+class VPNCredentialService:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+        self.credentials = VPNCredentialRepository(session)
+        self.grants = AccessGrantRepository(session)
+        self.subscriptions = SubscriptionRepository(session)
+
+    async def issue(self, access_grant_id: UUID, config: str) -> VPNCredential:
+        """Сохраняет конфиг клиента в зашифрованном виде для живого гранта.
+
+        Сюда приходит уже собранный конфиг (в 12.2 его будет собирать провайдер).
+        Второй живой credential на тот же грант не создаётся.
+        """
+        await self._ensure_grant_is_live(access_grant_id)
+        if await self.credentials.get_live_by_access_grant_id(access_grant_id):
+            raise AlreadyExistsError("Access grant already has a live credential")
+
+        credential = VPNCredential(access_grant_id=access_grant_id, encrypted_config=encrypt_secret(config))
+        await self.credentials.create(credential)
+        await self.session.commit()
+        return credential
+
+    async def get(self, credential_id: UUID) -> VPNCredential:
+        credential = await self.credentials.get_by_id(credential_id)
+        if not credential:
+            raise NotFoundError(f"Credential '{credential_id}' not found")
+        return credential
+
+    async def list_by_access_grant(self, access_grant_id: UUID) -> Sequence[VPNCredential]:
+        return await self.credentials.list_by_access_grant_id(access_grant_id)
+
+    async def reveal_config(self, credential_id: UUID) -> VPNCredentialConfigRead:
+        """Единственное место, где конфиг расшифровывается. Не логировать результат."""
+        credential = await self.get(credential_id)
+        if credential.revoked_at is not None:
+            raise InactiveAccessError("Credential is revoked")
+        await self._ensure_grant_is_live(credential.access_grant_id)
+        # TODO(блок 14): записать в AuditLog факт выдачи конфига (кто, какой credential, когда).
+        return VPNCredentialConfigRead(
+            id=credential.id,
+            access_grant_id=credential.access_grant_id,
+            config=decrypt_secret(credential.encrypted_config),
+        )
+
+    async def revoke(self, credential_id: UUID) -> VPNCredential:
+        credential = await self.get(credential_id)
+        if credential.revoked_at is None:
+            credential.revoked_at = datetime.now(timezone.utc)
+            await self.session.commit()
+        return credential
+
+    async def _ensure_grant_is_live(self, access_grant_id: UUID) -> None:
+        # Проверяем и грант, и его подписку: отзыв подписки сам по себе не меняет статусы грантов.
+        grant = await self.grants.get_by_id(access_grant_id)
+        if not grant:
+            raise NotFoundError(f"Access grant '{access_grant_id}' not found")
+        if grant.status in _TERMINAL_STATUSES:
+            raise InactiveAccessError(f"Access grant is {grant.status.value}")
+        subscription = await self.subscriptions.get_by_id(grant.subscription_id)
+        if not subscription or subscription.status in _TERMINAL_STATUSES:
+            raise InactiveAccessError("Subscription is not active")

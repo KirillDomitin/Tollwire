@@ -4,13 +4,14 @@ from collections.abc import Sequence
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database.postgres import get_session
-from core.exceptions import AlreadyExistsError, NotFoundError
+from core.exceptions import AlreadyExistsError, InactiveAccessError, NotFoundError
 from modules.access.models.access_grant import AccessGrant
 from modules.access.models.subscription import Subscription
+from modules.access.models.vpn_credential import VPNCredential
 from modules.access.schemas import (
     AccessGrantCreate,
     AccessGrantRead,
@@ -18,8 +19,10 @@ from modules.access.schemas import (
     SubscriptionCreate,
     SubscriptionRead,
     SubscriptionUpdate,
+    VPNCredentialConfigRead,
+    VPNCredentialRead,
 )
-from modules.access.service import AccessGrantService, SubscriptionService
+from modules.access.service import AccessGrantService, SubscriptionService, VPNCredentialService
 from modules.auth.dependencies import get_current_admin
 
 router = APIRouter(prefix="/api/v1", tags=["access"], dependencies=[Depends(get_current_admin)])
@@ -31,6 +34,10 @@ def get_subscription_service(session: Annotated[AsyncSession, Depends(get_sessio
 
 def get_access_grant_service(session: Annotated[AsyncSession, Depends(get_session)]) -> AccessGrantService:
     return AccessGrantService(session)
+
+
+def get_credential_service(session: Annotated[AsyncSession, Depends(get_session)]) -> VPNCredentialService:
+    return VPNCredentialService(session)
 
 
 @router.post("/vpn-users/{user_id}/subscriptions", response_model=SubscriptionRead, status_code=201)
@@ -122,9 +129,7 @@ async def update_grant(
 
 
 @router.delete("/access/{access_grant_id}", status_code=204)
-async def delete_grant(
-    access_grant_id: UUID, service: AccessGrantService = Depends(get_access_grant_service)
-) -> None:
+async def delete_grant(access_grant_id: UUID, service: AccessGrantService = Depends(get_access_grant_service)) -> None:
     try:
         await service.delete(access_grant_id)
     except NotFoundError:
@@ -139,3 +144,44 @@ async def revoke_grant(
         return await service.revoke(access_grant_id)
     except NotFoundError:
         raise HTTPException(404, detail="Access grant not found")
+
+
+@router.get("/access/{access_grant_id}/credentials", response_model=list[VPNCredentialRead])
+async def list_credentials(
+    access_grant_id: UUID, service: VPNCredentialService = Depends(get_credential_service)
+) -> Sequence[VPNCredential]:
+    return await service.list_by_access_grant(access_grant_id)
+
+
+@router.get("/credentials/{credential_id}", response_model=VPNCredentialRead)
+async def get_credential(
+    credential_id: UUID, service: VPNCredentialService = Depends(get_credential_service)
+) -> VPNCredential:
+    try:
+        return await service.get(credential_id)
+    except NotFoundError:
+        raise HTTPException(404, detail="Credential not found")
+
+
+@router.post("/credentials/{credential_id}/config", response_model=VPNCredentialConfigRead)
+async def reveal_credential_config(
+    credential_id: UUID, response: Response, service: VPNCredentialService = Depends(get_credential_service)
+) -> VPNCredentialConfigRead:
+    # POST, а не GET: это действие с последствиями (будущий аудит), и такие ответы не кэшируются.
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        return await service.reveal_config(credential_id)
+    except NotFoundError as exc:
+        raise HTTPException(404, detail=str(exc))
+    except InactiveAccessError as exc:
+        raise HTTPException(409, detail=str(exc))
+
+
+@router.post("/credentials/{credential_id}/revoke", response_model=VPNCredentialRead)
+async def revoke_credential(
+    credential_id: UUID, service: VPNCredentialService = Depends(get_credential_service)
+) -> VPNCredential:
+    try:
+        return await service.revoke(credential_id)
+    except NotFoundError:
+        raise HTTPException(404, detail="Credential not found")
