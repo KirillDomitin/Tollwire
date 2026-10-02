@@ -16,11 +16,14 @@ from infrastructure.vpn.config import (
     CLIENT_DNS,
     CLIENT_PERSISTENT_KEEPALIVE,
     DEFAULT_AWG_CONFIG,
+    NAT_POST_DOWN,
+    NAT_POST_UP,
 )
 
-# Ключи серверного [Interface], которые клиенту не копируются: у клиента свои ключ и адрес, порт он не слушает.
+# Ключи серверного [Interface], которые клиенту не копируются: у клиента свои ключ и адрес, порт он не слушает,
+# а хуки PostUp/PostDown настраивают NAT на сервере и на устройстве клиента выполняться не должны.
 # Всё остальное в [Interface] — параметры обфускации AmneziaWG, они обязаны совпадать у сервера и клиента.
-_SERVER_ONLY_INTERFACE_KEYS = frozenset({"PrivateKey", "Address", "ListenPort"})
+_SERVER_ONLY_INTERFACE_KEYS = frozenset({"PrivateKey", "Address", "ListenPort", "PostUp", "PostDown"})
 _PUBLIC_KEY_RE = re.compile(r"^[A-Za-z0-9+/]{43}=$")
 
 
@@ -105,6 +108,26 @@ def _section_values(section: list[str]) -> dict[str, str]:
 
 def _join_sections(sections: list[list[str]]) -> str:
     return "\n".join(line for section in sections for line in section).rstrip("\n") + "\n"
+
+
+def ensure_nat_hooks(server_config: str) -> tuple[str, bool]:
+    """Дописывает в серверный [Interface] хуки NAT, если их там нет (конфиги, созданные до фикса NAT).
+
+    Возвращает новый текст и флаг «что-то изменилось». Чужие PostUp не трогаются — wg-quick
+    выполняет все PostUp по порядку.
+    """
+    sections = _split_sections(server_config)
+    for section in sections:
+        if _section_name(section) != "[Interface]":
+            continue
+        post_ups = [p[1] for line in section[1:] if (p := _parse_line(line)) and p[0] == "PostUp"]
+        if NAT_POST_UP in post_ups:
+            return server_config, False
+        # Вставляем после последней содержательной строки секции, чтобы пустые строки-разделители остались ниже.
+        insert_at = max(i for i, line in enumerate(section) if line.strip()) + 1
+        section[insert_at:insert_at] = [f"PostUp = {NAT_POST_UP}", f"PostDown = {NAT_POST_DOWN}"]
+        return _join_sections(sections), True
+    raise ValueError("Server config has no [Interface] section")
 
 
 def interface_values(server_config: str) -> dict[str, str]:

@@ -14,11 +14,23 @@ CLIENT_DNS = "1.1.1.1, 1.0.0.1"
 CLIENT_ALLOWED_IPS = "0.0.0.0/0, ::/0"
 CLIENT_PERSISTENT_KEEPALIVE = 25
 
-DEFAULT_AWG_CONFIG = """[Interface]
-PrivateKey = {}
-Address = 10.8.1.0/24
-ListenPort = {}
-Jc = 5
+# Выход клиентов в интернет: пакеты из подсети туннеля уходят наружу через eth0 контейнера
+# с подменой адреса отправителя (MASQUERADE), иначе ответы не вернутся. Подсеть должна совпадать
+# с Address в шаблоне ниже. PostUp идемпотентен (-C проверяет наличие правила перед -A).
+TUNNEL_SUBNET = "10.8.1.0/24"
+NAT_RULE = f"POSTROUTING -s {TUNNEL_SUBNET} -o eth0 -j MASQUERADE"
+NAT_POST_UP = f"iptables -t nat -C {NAT_RULE} 2>/dev/null || iptables -t nat -A {NAT_RULE}"
+NAT_POST_DOWN = f"iptables -t nat -D {NAT_RULE}"
+
+# Шаблон серверного конфига; {} — приватный ключ и порт (подставляются через str.format).
+DEFAULT_AWG_CONFIG = (
+    "[Interface]\n"
+    "PrivateKey = {}\n"
+    f"Address = {TUNNEL_SUBNET}\n"
+    "ListenPort = {}\n"
+    f"PostUp = {NAT_POST_UP}\n"
+    f"PostDown = {NAT_POST_DOWN}\n"
+    """Jc = 5
 Jmin = 10
 Jmax = 50
 S1 = 116
@@ -37,3 +49,4 @@ KeepaliveTimeout = 5-15
 MaxHandshakeAttempts = 15-20
 RandomTrailers = on
 DisableCookies = on"""
+)

@@ -7,6 +7,7 @@ from core.ssh_exception import CommandExecutionError, DockerError, InstallError,
 from infrastructure.ssh.client import SSHClient
 from infrastructure.vpn.awg_config import (
     append_peer,
+    ensure_nat_hooks,
     generate_secret_keys,
     is_valid_public_key,
     pick_free_address,
@@ -22,6 +23,7 @@ from infrastructure.vpn.config import (
     CONTAINER_NAME,
     HOST_CONFIG_DIR,
     INTERFACE_NAME,
+    NAT_POST_UP,
 )
 from infrastructure.vpn.provider import (
     ProviderState,
@@ -94,6 +96,8 @@ class AmneziaWGProvider(VPNProvider):
     async def install(self) -> ProviderStatus:
         test = await self.ssh_client.execute(f"test -f {CONFIG_PATH}/awg0.conf")
         if test.exit_status == 0:
+            # Повторная установка чинит серверы, поставленные до появления NAT-хуков.
+            await self._ensure_nat()
             return await self.get_status()
         port = pick_udp_port()
         keys = generate_secret_keys()
@@ -195,6 +199,24 @@ class AmneziaWGProvider(VPNProvider):
             return
         await self.ssh_client.write_file(HOST_CONFIG_FILE, updated)
         await self._apply_config()
+
+    async def _ensure_nat(self) -> None:
+        """Гарантирует выход клиентов в интернет: хуки NAT в конфиге и правило в работающем контейнере.
+
+        Хуки сработают при следующем старте контейнера; чтобы не перезапускать его (и не рвать
+        соединения клиентов), правило дополнительно применяется сразу. Обе операции идемпотентны.
+        """
+        server_config = await self.ssh_client.read_file(HOST_CONFIG_FILE)
+        updated, changed = ensure_nat_hooks(server_config)
+        if changed:
+            await self.ssh_client.write_file(HOST_CONFIG_FILE, updated)
+
+        running = await self.ssh_client.execute(f"docker inspect -f '{{{{.State.Running}}}}' {CONTAINER_NAME}")
+        if running.stdout.strip() != "true":
+            return
+        result = await self.ssh_client.execute(f"docker exec {CONTAINER_NAME} sh -c '{NAT_POST_UP}'")
+        if result.exit_status != 0:
+            raise CommandExecutionError(f"Failed to apply NAT rule: {result.stderr.strip()}")
 
     async def _server_public_key(self) -> str:
         # Берём публичный ключ у живого интерфейса — приватный ключ сервера не покидает сервер.
