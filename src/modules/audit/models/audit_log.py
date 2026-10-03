@@ -24,6 +24,9 @@ class AuditAction(enum.Enum):
     SERVER_DELETED = "server_deleted"
     SERVER_CREDENTIALS_SET = "server_credentials_set"
     SERVER_CREDENTIALS_DELETED = "server_credentials_deleted"
+    SERVER_HOST_KEY_PINNED = "server_host_key_pinned"  # ключ SSH-сервера закреплён (TOFU или вручную)
+    SERVER_HOST_KEY_RESET = "server_host_key_reset"
+    SERVER_HOST_KEY_MISMATCH = "server_host_key_mismatch"  # сервер предъявил другой ключ: возможна подмена
     SERVER_INSTALL_STARTED = "server_install_started"
     SERVER_INSTALL_COMPLETED = "server_install_completed"
     SERVER_INSTALL_FAILED = "server_install_failed"

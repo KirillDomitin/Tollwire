@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database.postgres import get_session
-from core.exceptions import AlreadyExistsError, CredentialNotFound, NotFoundError
+from core.exceptions import AlreadyExistsError, CredentialNotFound, NotFoundError, SSHError
 from modules.audit.actor import AuditActor
 from modules.audit.dependencies import get_audit_actor
 from modules.auth.dependencies import get_current_admin
@@ -18,11 +18,14 @@ from modules.jobs.schemas import JobRead
 from modules.jobs.service import JobService
 from modules.protocols.models.protocol import VPNProtocol
 from modules.protocols.schemas import ProtocolRead
+from modules.servers.host_key import ServerHostKeyService
 from modules.servers.models.credential import ServerCredential
 from modules.servers.models.server import VPNServer
 from modules.servers.schemas import (
     CredentialCreate,
     CredentialRead,
+    HostKeyPin,
+    HostKeyScan,
     ServerCreate,
     ServerRead,
     ServerUpdate,
@@ -43,6 +46,12 @@ def get_credential_service(
     session: Annotated[AsyncSession, Depends(get_session)], actor: Annotated[AuditActor, Depends(get_audit_actor)]
 ) -> CredentialService:
     return CredentialService(session, actor)
+
+
+def get_host_key_service(
+    session: Annotated[AsyncSession, Depends(get_session)], actor: Annotated[AuditActor, Depends(get_audit_actor)]
+) -> ServerHostKeyService:
+    return ServerHostKeyService(session, actor)
 
 
 def get_connection_service(session: Annotated[AsyncSession, Depends(get_session)]) -> ServerConnectionService:
@@ -233,3 +242,38 @@ async def protocol_uninstall(
 
     job = await job_service.create(job_type=JobType.REMOVE_PROTOCOL, server_id=server_id)
     return job
+
+
+@router.post("/{server_id}/host-key/scan", response_model=HostKeyScan)
+async def scan_host_key(
+    server_id: UUID, service: Annotated[ServerHostKeyService, Depends(get_host_key_service)]
+) -> HostKeyScan:
+    """Ключ, который сервер предъявляет сейчас, — без входа на сервер (пароль не отправляется)."""
+    try:
+        return await service.scan(server_id)
+    except NotFoundError:
+        raise HTTPException(404, detail="Server not found")
+    except SSHError as exc:
+        raise HTTPException(502, detail=str(exc))
+
+
+@router.put("/{server_id}/host-key", response_model=ServerRead)
+async def pin_host_key(
+    server_id: UUID, body: HostKeyPin, service: Annotated[ServerHostKeyService, Depends(get_host_key_service)]
+) -> VPNServer:
+    try:
+        return await service.pin(server_id, body.public_key)
+    except NotFoundError:
+        raise HTTPException(404, detail="Server not found")
+    except ValueError:
+        raise HTTPException(422, detail="Not a valid SSH public key")
+
+
+@router.delete("/{server_id}/host-key", response_model=ServerRead)
+async def reset_host_key(
+    server_id: UUID, service: Annotated[ServerHostKeyService, Depends(get_host_key_service)]
+) -> VPNServer:
+    try:
+        return await service.reset(server_id)
+    except NotFoundError:
+        raise HTTPException(404, detail="Server not found")

@@ -4,7 +4,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, text
+from sqlalchemy import DateTime, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.database.base import Base, TimestampMixin, UuidPkMixin
@@ -34,3 +34,7 @@ class VPNServer(UuidPkMixin, TimestampMixin, Base):
     # Сводка последнего health-чека; полный отчёт — в Job.result задачи HEALTH_CHECK.
     health_status: Mapped[HealthStatus | None] = mapped_column(default=None)
     last_health_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    # Закреплённый ключ SSH-сервера (host key) — публичный, не секрет. NULL — ещё не закреплён: при следующем
+    # подключении ключ запомнится (TOFU). Подключение с другим ключом отклоняется до отправки пароля.
+    ssh_host_key: Mapped[str | None] = mapped_column(Text, default=None)
+    ssh_host_key_fingerprint: Mapped[str | None] = mapped_column(String(100), default=None)

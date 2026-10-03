@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from uuid import UUID
 
-from sqlalchemy import exists, select
+from sqlalchemy import exists, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from modules.protocols.models.protocol import VPNProtocol
@@ -35,6 +35,17 @@ class ServerRepository:
 
     async def delete(self, server: VPNServer) -> None:
         await self.session.delete(server)
+
+    async def pin_host_key_if_absent(self, server_id: UUID, public_key: str, fingerprint: str) -> bool:
+        """Закрепить ключ, только если закреплённого ещё нет — одним UPDATE, без гонки двух подключений.
+        True — закрепили; False — ключ уже был (или сервера нет)."""
+        query = (
+            update(VPNServer)
+            .where(VPNServer.id == server_id, VPNServer.ssh_host_key.is_(None))
+            .values(ssh_host_key=public_key, ssh_host_key_fingerprint=fingerprint)
+            .returning(VPNServer.id)
+        )
+        return (await self.session.execute(query)).first() is not None
 
     async def list_checkable_ids(self, with_protocol: bool) -> Sequence[UUID]:
         """Серверы для периодических проверок: есть SSH-учётка и сейчас не идёт установка.

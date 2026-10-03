@@ -4,12 +4,14 @@ import asyncio
 import logging
 import posixpath
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 import asyncssh
 
 from core.config import settings
-from core.exceptions import SSHAuthError, SSHConnectionError, SSHTimeoutError
+from core.exceptions import SSHAuthError, SSHConnectionError, SSHHostKeyError, SSHTimeoutError
+from infrastructure.ssh.host_keys import HostKey, scan_host_key
 
 # Что логируем: подключение, сбои, текст команды/путь файла (DEBUG), код возврата, длительность.
 # Что НЕ логируем никогда: stdout/stderr команд и содержимое файлов (там конфиги и ключи), пароль/ключ SSH.
@@ -44,7 +46,12 @@ class SSHClient:
         retry_delay: float = 1.0,
         connect_timeout: int = settings.ssh_connect_timeout,
         command_timeout: int = settings.ssh_command_timeout,
+        host_key: HostKey | None = None,
+        on_host_key_learned: Callable[[HostKey], Awaitable[None]] | None = None,
+        on_host_key_mismatch: Callable[[SSHHostKeyError], Awaitable[None]] | None = None,
     ) -> None:
+        """host_key — закреплённый ключ сервера: подключение пройдёт, только если сервер докажет владение им.
+        None — TOFU: ключ принимается и передаётся в on_host_key_learned (вызывающий его закрепляет)."""
         if bool(password) == bool(private_key):
             raise ValueError("Provide exactly one of: password or private_key")
         self.host = host
@@ -56,6 +63,9 @@ class SSHClient:
         self.retry_delay = retry_delay
         self.connect_timeout = connect_timeout
         self.command_timeout = command_timeout
+        self.host_key = host_key
+        self._on_host_key_learned = on_host_key_learned
+        self._on_host_key_mismatch = on_host_key_mismatch
         self._conn: asyncssh.SSHClientConnection | None = None
 
     async def __aenter__(self) -> "SSHClient":
@@ -87,16 +97,23 @@ class SSHClient:
         auth: dict[str, object] = (
             {"password": self._password} if self._password else {"client_keys": [self._private_key]}
         )
+        # Ключ проверяется ВНУТРИ рукопожатия, до отправки пароля: сервер-подмена пароль не получит.
+        # (доверенные ключи, ключи CA, отозванные) — asyncssh сам сузит алгоритмы до типа закреплённого ключа.
+        known_hosts: tuple[list[asyncssh.SSHKey], list[asyncssh.SSHKey], list[asyncssh.SSHKey]] | None = (
+            ([self.host_key.to_ssh_key()], [], []) if self.host_key else None
+        )
         try:
             self._conn = await asyncssh.connect(
                 host=self.host,
                 port=self.port,
                 username=self.username,
                 connect_timeout=self.connect_timeout,
-                known_hosts=None,  # осознанный компромисс MVP: см. долг про TOFU/fingerprint
+                known_hosts=known_hosts,
                 **auth,
             )
             logger.info("ssh connected", extra=self._target())
+        except asyncssh.HostKeyNotVerifiable as exc:
+            raise await self._host_key_mismatch() from exc
         except asyncssh.PermissionDenied as exc:
             logger.warning("ssh auth failed", extra=self._target())
             raise SSHAuthError("Incorrect username or password/secret_key") from exc
@@ -104,6 +121,41 @@ class SSHClient:
             raise SSHTimeoutError("Connection timeout exceeded") from exc
         except (asyncssh.Error, OSError) as exc:
             raise SSHConnectionError(f"Connection error: host={self.host}, port={self.port}") from exc
+
+        if self.host_key is None:
+            await self._learn_host_key(self._conn)
+
+    async def _learn_host_key(self, conn: asyncssh.SSHClientConnection) -> None:
+        server_key = conn.get_server_host_key()
+        if server_key is None:
+            return
+        learned = HostKey.from_ssh_key(server_key)
+        logger.info(
+            "ssh host key learned (trust on first use)", extra={"host": self.host, "fingerprint": learned.fingerprint}
+        )
+        if self._on_host_key_learned:
+            try:
+                await self._on_host_key_learned(learned)
+            except SSHHostKeyError:
+                # Пока мы подключались, другой процесс закрепил ДРУГОЙ ключ — не работаем с этим сервером.
+                await self.close()
+                raise
+        self.host_key = learned
+
+    async def _host_key_mismatch(self) -> SSHHostKeyError:
+        assert self.host_key is not None
+        try:  # какой ключ предъявлен — для отчёта; получаем без входа, пароль не отправляется
+            presented = await scan_host_key(self.host, self.port, self.connect_timeout)
+        except (SSHTimeoutError, SSHConnectionError):
+            presented = None
+        error = SSHHostKeyError(self.host, self.host_key.fingerprint, presented.fingerprint if presented else None)
+        logger.warning(
+            "ssh host key mismatch",
+            extra={"host": self.host, "expected": error.expected, "presented": error.presented},
+        )
+        if self._on_host_key_mismatch:
+            await self._on_host_key_mismatch(error)
+        return error
 
     async def execute(self, command: str, timeout: int | None = None) -> CommandResult:
         effective = timeout if timeout is not None else self.command_timeout

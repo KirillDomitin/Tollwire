@@ -30,6 +30,18 @@ class SSHAuthError(SSHError): ...
 class SSHTimeoutError(SSHError): ...
 
 
+class SSHHostKeyError(SSHError):
+    """Ключ SSH-сервера не совпал с закреплённым: возможна подмена сервера (MITM). Не повторяется автоматически."""
+
+    def __init__(self, host: str, expected: str, presented: str | None):
+        self.host = host
+        self.expected = expected  # отпечаток закреплённого ключа
+        self.presented = presented  # отпечаток предъявленного (None — не удалось получить)
+        super().__init__(
+            f"SSH host key mismatch for {host}: expected {expected}, server presented {presented or 'unknown'}"
+        )
+
+
 class JobError(AppError): ...
 
 
