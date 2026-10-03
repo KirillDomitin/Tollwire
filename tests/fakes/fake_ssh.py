@@ -71,6 +71,8 @@ class FakeServer:
         cmd = " ".join(command.split())  # docker run в коде многострочный — схлопываем пробелы
         if cmd == "uname -s":
             return _ok("Linux\n")
+        if cmd == "uname -a":  # test-connection
+            return _ok("Linux fake 6.8.0 #1 SMP x86_64 GNU/Linux\n")
         if cmd == "id -u":
             return _ok("0\n")
         if cmd == "command -v docker":

@@ -13,7 +13,7 @@ from modules.servers.health import ServerHealthService
 from modules.servers.models.server import HealthStatus, ServerStatus
 from modules.servers.sync import ServerSyncService
 from tests.fakes.fake_ssh import CONFIG_FILE, FakeServer, FakeSSHClient
-from tests.services.conftest import World
+from tests.fixtures import World
 
 
 def keys(items: list[dict[str, object]]) -> set[object]:

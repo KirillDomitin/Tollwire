@@ -41,6 +41,9 @@ os.environ.update(
 
 from infrastructure.vpn import amnezia  # noqa: E402 — только после настройки окружения
 
+# Общие фикстуры с БД (session, fakes, world) — для tests/services и tests/integration.
+pytest_plugins = ["tests.fixtures"]
+
 
 @pytest.fixture(autouse=True)
 def no_container_wait(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:

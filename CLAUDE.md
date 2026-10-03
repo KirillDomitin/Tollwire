@@ -188,7 +188,7 @@ src/
 
 ### Блок 16. Тесты
 - [x] 16.1 Unit: сервисы, репозитории, провайдеры, переходы статусов, expiration
-- [ ] 16.2 Integration: PostgreSQL, Redis, API, auth (fake/mock SSH-слой)
+- [x] 16.2 Integration: PostgreSQL, Redis, API, auth (fake/mock SSH-слой)
 
 ### Блок 17. Production
 - [ ] 17.1 Docker: единый image для api+worker; compose: api/worker/postgres/redis/nginx

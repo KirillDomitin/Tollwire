@@ -26,6 +26,7 @@ class ServerService:
     def __init__(self, session: AsyncSession, actor: AuditActor):
         self.session = session
         self.servers = ServerRepository(session)
+        self.protocols = ProtocolRepository(session)
         self.audit = AuditService(session, actor)
 
     async def create(self, data: ServerCreate) -> VPNServer:
@@ -50,6 +51,11 @@ class ServerService:
 
     async def list_all(self) -> Sequence[VPNServer]:
         return await self.servers.list_all()
+
+    async def list_protocols(self, server_id: UUID) -> Sequence[VPNProtocol]:
+        """Установленные протоколы сервера — отсюда админ берёт protocol_id для выдачи доступа."""
+        await self.get(server_id)
+        return await self.protocols.list_by_server_id(server_id)
 
     async def update(self, server_id: UUID, data: ServerUpdate) -> VPNServer:
         server = await self.get(server_id)

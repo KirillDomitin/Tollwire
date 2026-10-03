@@ -3,20 +3,22 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, EmailStr
 
 from modules.vpn_users.models.user import VPNUserStatus
 
 
+# Email — идентификатор пользователя (будущая регистрация), поэтому на входе он проверяется (EmailStr).
+# В Read — обычная строка: ответ не должен падать на старых записях, сохранённых до проверки.
 class VPNUserCreate(BaseModel):
     username: str
-    email: str
+    email: EmailStr
     description: str | None = None
 
 
 class VPNUserUpdate(BaseModel):
     username: str | None = None
-    email: str | None = None
+    email: EmailStr | None = None
     description: str | None = None
 
 

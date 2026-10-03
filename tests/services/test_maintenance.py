@@ -16,7 +16,7 @@ from modules.jobs.service import JobService
 from modules.servers.maintenance import ServerMaintenanceService
 from modules.servers.models.server import ServerStatus
 from modules.servers.repository import ServerRepository
-from tests.services.conftest import World
+from tests.fixtures import World
 
 
 async def make_admin(world: World) -> Admin:

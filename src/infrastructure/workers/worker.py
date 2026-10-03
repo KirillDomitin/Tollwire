@@ -33,14 +33,21 @@ class JobWorker:
 
     async def run(self) -> None:
         while not self._stopping:
-            job_id = await self.job_queue.dequeue()
-            if job_id is None:
-                continue
-            try:
-                await self._handle(job_id)
-            except Exception as exc:
-                print(f"Job execution error: {exc}")
-                continue
+            await self.process_next()
+
+    async def process_next(self, timeout: int = 2) -> bool:
+        """Берёт из очереди одну задачу и выполняет её. False — очередь пуста (ждали timeout секунд).
+
+        Ошибка задачи не роняет воркер: её итог уже записан в Job, а цикл run() идёт дальше.
+        """
+        job_id = await self.job_queue.dequeue(timeout)
+        if job_id is None:
+            return False
+        try:
+            await self._handle(job_id)
+        except Exception as exc:
+            print(f"Job execution error: {exc}")
+        return True
 
     async def _handle(self, job_id: UUID) -> None:
         async with session_factory() as session:

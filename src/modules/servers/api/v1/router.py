@@ -16,6 +16,8 @@ from modules.jobs.api.v1.router import get_job_service
 from modules.jobs.models.job import Job, JobType
 from modules.jobs.schemas import JobRead
 from modules.jobs.service import JobService
+from modules.protocols.models.protocol import VPNProtocol
+from modules.protocols.schemas import ProtocolRead
 from modules.servers.models.credential import ServerCredential
 from modules.servers.models.server import VPNServer
 from modules.servers.schemas import (
@@ -164,6 +166,16 @@ async def protocol_install(
 
     job = await job_service.create(job_type=JobType.INSTALL_PROTOCOL, server_id=server_id)
     return job
+
+
+@router.get("/{server_id}/protocols", response_model=list[ProtocolRead])
+async def list_protocols(
+    server_id: UUID, service: ServerService = Depends(get_server_service)
+) -> Sequence[VPNProtocol]:
+    try:
+        return await service.list_protocols(server_id)
+    except NotFoundError:
+        raise HTTPException(404, detail="Server not found")
 
 
 @router.post("/{server_id}/sync", response_model=JobRead, status_code=202)

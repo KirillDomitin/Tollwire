@@ -16,7 +16,7 @@ from modules.audit.models.audit_log import AuditAction
 from modules.jobs.models.job import JobType
 from modules.vpn_users.service import VPNUserService
 from tests.fakes.fake_ssh import CONFIG_FILE
-from tests.services.conftest import World
+from tests.fixtures import World
 
 HOUR = timedelta(hours=1)
 
