@@ -3,11 +3,12 @@
 from collections.abc import Sequence
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from modules.protocols.models.protocol import VPNProtocol
 from modules.servers.models.credential import ServerCredential
-from modules.servers.models.server import VPNServer
+from modules.servers.models.server import ServerStatus, VPNServer
 
 
 class ServerRepository:
@@ -34,6 +35,21 @@ class ServerRepository:
 
     async def delete(self, server: VPNServer) -> None:
         await self.session.delete(server)
+
+    async def list_checkable_ids(self, with_protocol: bool) -> Sequence[UUID]:
+        """Серверы для периодических проверок: есть SSH-учётка и сейчас не идёт установка.
+
+        with_protocol — только серверы с установленным протоколом (sync'у без протокола сверять нечего).
+        """
+        sql_request = (
+            select(VPNServer.id)
+            .join(ServerCredential, ServerCredential.server_id == VPNServer.id)
+            .where(VPNServer.status != ServerStatus.INSTALLING)
+        )
+        if with_protocol:
+            sql_request = sql_request.where(exists().where(VPNProtocol.server_id == VPNServer.id))
+        result = await self.session.execute(sql_request)
+        return result.scalars().all()
 
 
 class CredentialRepository:

@@ -58,6 +58,12 @@ class AuthService:
         await self.session.commit()
         return new_access, new_refresh
 
+    async def cleanup_expired_sessions(self) -> int:
+        """Удаляет сессии с истёкшим refresh-токеном (вызывает планировщик). Войти по ним и так нельзя."""
+        deleted = await self.sessions.delete_expired(datetime.now(timezone.utc))
+        await self.session.commit()
+        return deleted
+
     async def logout(self, refresh_token: str) -> None:
         refresh_hash = hash_refresh_token(refresh_token)
         admin_session = await self.sessions.get_by_token_hash(refresh_hash)

@@ -28,6 +28,7 @@ from infrastructure.vpn.config import (
     CONFIG_FILE_NAME,
     CONTAINER_CONFIG_DIR,
     CONTAINER_NAME,
+    CONTAINER_NAME_FILTER,
     HOST_CONFIG_DIR,
     INTERFACE_NAME,
     INTERNET_PROBE_COMMAND,
@@ -145,7 +146,7 @@ class AmneziaWGProvider(VPNProvider):
 
     async def get_status(self) -> ProviderStatus:
         status = await self.ssh_client.execute(
-            "docker ps -a --filter name=" + CONTAINER_NAME + " --format '{{.State}}'"
+            "docker ps -a --filter " + CONTAINER_NAME_FILTER + " --format '{{.State}}'"
         )
         if status.exit_status == 0 and status.stdout.strip():
             raw_state = status.stdout.strip().lower()
@@ -175,10 +176,10 @@ class AmneziaWGProvider(VPNProvider):
             raise CommandExecutionError(f"Unexpected error (Code {port.exit_status}): {port.stderr.strip()}")
 
         uptime = await self.ssh_client.execute(
-            "docker ps -a --filter name=" + CONTAINER_NAME + " --format '{{.Status}}'"
+            "docker ps -a --filter " + CONTAINER_NAME_FILTER + " --format '{{.Status}}'"
         )
         version = await self.ssh_client.execute(
-            "docker ps -a --filter name=" + CONTAINER_NAME + " --format '{{.Image}}'"
+            "docker ps -a --filter " + CONTAINER_NAME_FILTER + " --format '{{.Image}}'"
         )
         if uptime.exit_status == 0 and uptime.stdout.strip():
             uptime_result = uptime.stdout.strip()
@@ -321,7 +322,9 @@ class AmneziaWGProvider(VPNProvider):
     async def health_check(self) -> ProviderHealth:
         """Проверки протокола на сервере: контейнер, конфиг, интерфейс, порт, NAT, клиенты. Ничего не меняет."""
         checks: list[HealthCheck] = []
-        state = await self.ssh_client.execute("docker ps -a --filter name=" + CONTAINER_NAME + " --format '{{.State}}'")
+        state = await self.ssh_client.execute(
+            "docker ps -a --filter " + CONTAINER_NAME_FILTER + " --format '{{.State}}'"
+        )
         raw_state = state.stdout.strip()
         running = raw_state == "running"
         checks.append(HealthCheck("container", running, raw_state or "container not found"))
@@ -379,7 +382,7 @@ class AmneziaWGProvider(VPNProvider):
 
     async def _run_container(self, port: int) -> None:
         container_state = await self.ssh_client.execute(
-            "docker ps -a --filter name=" + CONTAINER_NAME + " --format '{{.State}}'"
+            "docker ps -a --filter " + CONTAINER_NAME_FILTER + " --format '{{.State}}'"
         )
 
         if not container_state.stdout:
@@ -401,14 +404,14 @@ class AmneziaWGProvider(VPNProvider):
 
         await asyncio.sleep(5)
         container_state = await self.ssh_client.execute(
-            "docker ps -a --filter name=" + CONTAINER_NAME + " --format '{{.State}}'"
+            "docker ps -a --filter " + CONTAINER_NAME_FILTER + " --format '{{.State}}'"
         )
         if container_state.stdout.strip() != "running":
             raise DockerError("Failed to start container.")
 
     async def _rm_container(self) -> None:
         container_state = await self.ssh_client.execute(
-            "docker ps -a --filter name=" + CONTAINER_NAME + " --format '{{.State}}'"
+            "docker ps -a --filter " + CONTAINER_NAME_FILTER + " --format '{{.State}}'"
         )
         if container_state.stdout:
             container_stop = await self.ssh_client.execute(
@@ -422,7 +425,7 @@ class AmneziaWGProvider(VPNProvider):
                 raise OSError(f"Error deleting directory: {rm_config.stderr} (Code: {rm_config.exit_status})")
 
             container_state = await self.ssh_client.execute(
-                "docker ps -a --filter name=" + CONTAINER_NAME + " --format '{{.State}}'"
+                "docker ps -a --filter " + CONTAINER_NAME_FILTER + " --format '{{.State}}'"
             )
 
             if container_state.stdout:

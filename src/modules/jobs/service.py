@@ -1,6 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 from collections.abc import Sequence
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
@@ -67,6 +68,21 @@ class JobService:
             if job.access_grant_id:
                 meta["access_grant_id"] = job.access_grant_id
             self.audit.record(_FAILED[job.type], AuditEntity.SERVER, job.server_id, meta)
+
+    async def fail_stale_running(self, max_age_seconds: int) -> int:
+        """RUNNING дольше max_age — воркер умер посреди задачи. Переводим в FAILED (вызывает планировщик).
+
+        Иначе такая задача навсегда считается «незавершённой» и блокирует плановые проверки сервера.
+        """
+        now = datetime.now(timezone.utc)
+        stale = await self.jobs.list_running_started_before(now - timedelta(seconds=max_age_seconds))
+        for job in stale:
+            job.status = JobStatus.FAILED
+            job.error = "Job was interrupted: worker stopped while it was running"
+            job.finished_at = now
+            self.record_finished(job)
+        await self.session.commit()
+        return len(stale)
 
     @staticmethod
     def _meta(job: Job) -> dict[str, Any]:

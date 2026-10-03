@@ -43,6 +43,7 @@ class AuditAction(enum.Enum):
     # Подписки
     SUBSCRIPTION_CREATED = "subscription_created"
     SUBSCRIPTION_UPDATED = "subscription_updated"
+    SUBSCRIPTION_ACTIVATED = "subscription_activated"
     SUBSCRIPTION_REVOKED = "subscription_revoked"
     SUBSCRIPTION_EXPIRED = "subscription_expired"
     SUBSCRIPTION_DELETED = "subscription_deleted"

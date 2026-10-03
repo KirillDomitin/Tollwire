@@ -1,6 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 from collections.abc import Sequence
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import select
@@ -31,6 +32,23 @@ class JobRepository:
         query = query.order_by(Job.created_at.desc()).limit(limit).offset(offset)
         result = await self.session.execute(query)
         return result.scalars().all()
+
+    async def list_running_started_before(self, before: datetime) -> Sequence[Job]:
+        query = select(Job).where(Job.status == JobStatus.RUNNING, Job.started_at < before)
+        result = await self.session.execute(query)
+        return result.scalars().all()
+
+    async def has_unfinished_for_server(self, job_type: JobType, server_id: UUID) -> bool:
+        query = (
+            select(Job.id)
+            .where(
+                Job.type == job_type,
+                Job.server_id == server_id,
+                Job.status.in_((JobStatus.PENDING, JobStatus.RUNNING)),
+            )
+            .limit(1)
+        )
+        return (await self.session.execute(query)).first() is not None
 
     async def has_unfinished_for_grant(self, job_type: JobType, access_grant_id: UUID) -> bool:
         query = (

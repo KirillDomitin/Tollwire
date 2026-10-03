@@ -2,6 +2,10 @@
 # -*- coding: utf-8 -*-
 
 CONTAINER_NAME = "amnezia-awg"
+# Фильтр docker ps по имени ищет ПОДСТРОКУ: name=amnezia-awg совпал бы и с чужим amnezia-awg2.
+# Якоря ^…$ делают совпадение точным; /? — docker хранит имена с ведущим слэшем.
+# В одинарных кавычках: иначе shell принял бы ? за glob-шаблон, а $ — за начало переменной.
+CONTAINER_NAME_FILTER = f"'name=^/?{CONTAINER_NAME}$'"
 
 # Каталог с конфигом на хосте и он же внутри контейнера (bind-mount, см. AmneziaWGProvider._run_container).
 HOST_CONFIG_DIR = "/opt/vpn-admin/awg"

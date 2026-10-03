@@ -1,5 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
+from datetime import datetime
 from typing import Sequence
 from uuid import UUID
 
@@ -41,6 +42,24 @@ class SubscriptionRepository:
 
     async def list_all(self) -> Sequence[Subscription]:
         sql_request = select(Subscription)
+        result = await self.session.execute(sql_request)
+        return result.scalars().all()
+
+    async def list_due_for_expiry(self, now: datetime) -> Sequence[UUID]:
+        """Ещё не завершённые подписки, у которых valid_until уже наступил."""
+        sql_request = select(Subscription.id).where(
+            Subscription.status.in_(_ACTIVE_STATUSES), Subscription.valid_until <= now
+        )
+        result = await self.session.execute(sql_request)
+        return result.scalars().all()
+
+    async def list_due_for_activation(self, now: datetime) -> Sequence[UUID]:
+        """PENDING-подписки, чей период уже начался и ещё не закончился."""
+        sql_request = select(Subscription.id).where(
+            Subscription.status == AccessGrantStatus.PENDING,
+            Subscription.valid_from <= now,
+            Subscription.valid_until > now,
+        )
         result = await self.session.execute(sql_request)
         return result.scalars().all()
 

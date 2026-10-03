@@ -17,6 +17,17 @@ class Settings(BaseSettings):
     ssh_command_timeout: int
     log_level: str = "info"
 
+    # Периодический планировщик внутри воркера. Интервалы в секундах; 0 — правило выключено.
+    scheduler_enabled: bool = True
+    scheduler_tick_seconds: int = 15
+    access_rules_interval_seconds: int = 60  # истечение и активация подписок
+    session_cleanup_interval_seconds: int = 3600
+    health_interval_seconds: int = 600
+    sync_interval_seconds: int = 3600
+    stale_jobs_interval_seconds: int = 300
+    # Дольше любой нормальной задачи (установка с docker pull — до ~10 мин) с запасом.
+    stale_job_timeout_seconds: int = 1800
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 

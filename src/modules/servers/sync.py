@@ -13,7 +13,7 @@ from infrastructure.vpn.amnezia import AmneziaInstaller
 from infrastructure.vpn.provider import ProviderState, VPNClientInfo, VPNProvider
 from modules.access.models.vpn_credential import VPNCredential
 from modules.access.repository import VPNCredentialRepository
-from modules.access.service import CLIENT_NAME_PREFIX, client_name, is_terminal
+from modules.access.service import CLIENT_NAME_PREFIX, client_name, inactive_reason
 from modules.protocols.models.protocol import ProtocolType, VPNProtocol
 from modules.protocols.repository import ProtocolRepository
 from modules.servers.reachability import mark_reachable, mark_unreachable
@@ -118,10 +118,11 @@ class ServerSyncService:
         live: dict[str, tuple[VPNCredential, UUID]] = {}
         stale: list[VPNCredential] = []
         revoked_keys: set[str] = set()
+        now = datetime.now(timezone.utc)
         for credential, grant, subscription in await self.credentials.list_with_access_by_protocol_id(protocol.id):
             if credential.revoked_at is not None:
                 revoked_keys.add(credential.client_public_key)
-            elif is_terminal(grant.status) or is_terminal(subscription.status):
+            elif inactive_reason(grant, subscription, now):
                 stale.append(credential)
             else:
                 live[credential.client_public_key] = (credential, grant.id)

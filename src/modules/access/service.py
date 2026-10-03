@@ -45,6 +45,23 @@ def is_terminal(status: AccessGrantStatus) -> bool:
     return status in _TERMINAL_STATUSES
 
 
+def inactive_reason(grant: AccessGrant, subscription: Subscription, now: datetime) -> str | None:
+    """Почему доступ по гранту сейчас не действует (None — действует).
+
+    Статусы меняет планировщик с задержкой до интервала, поэтому сверяемся и с датами подписки:
+    VPN не должен заработать раньше срока и продолжать работать после него.
+    """
+    if is_terminal(grant.status):
+        return f"Access grant is {grant.status.value}"
+    if is_terminal(subscription.status):
+        return "Subscription is not active"
+    if now < subscription.valid_from:
+        return "Subscription period has not started yet"
+    if now >= subscription.valid_until:
+        return "Subscription period has ended"
+    return None
+
+
 class SubscriptionService:
     def __init__(self, session: AsyncSession, actor: AuditActor):
         self.session = session
@@ -141,6 +158,34 @@ class SubscriptionService:
             {"user_id": subscription.user_id},
         )
         await self.session.commit()
+
+    async def list_due_for_expiry(self) -> Sequence[UUID]:
+        return await self.subscriptions.list_due_for_expiry(datetime.now(timezone.utc))
+
+    async def list_due_for_activation(self) -> Sequence[UUID]:
+        return await self.subscriptions.list_due_for_activation(datetime.now(timezone.utc))
+
+    async def activate(self, subscription_id: UUID) -> Subscription:
+        """PENDING → ACTIVE, когда начался период (valid_from <= сейчас < valid_until).
+
+        Идемпотентно: не-PENDING подписку и подписку вне периода не трогает. Гранты не меняются —
+        грант становится ACTIVE, когда для него реально создан клиент на сервере (provision).
+        """
+        subscription = await self.get(subscription_id)
+        now = datetime.now(timezone.utc)
+        if subscription.status != AccessGrantStatus.PENDING:
+            return subscription
+        if not subscription.valid_from <= now < subscription.valid_until:
+            return subscription
+        subscription.status = AccessGrantStatus.ACTIVE
+        self.audit.record(
+            AuditAction.SUBSCRIPTION_ACTIVATED,
+            AuditEntity.SUBSCRIPTION,
+            subscription.id,
+            {"user_id": subscription.user_id, "valid_from": subscription.valid_from},
+        )
+        await self.session.commit()
+        return subscription
 
     async def expire(self, subscription_id: UUID) -> Subscription:
         """Переводит подписку и её гранты в EXPIRED, если valid_until уже наступил.
@@ -425,9 +470,10 @@ class VPNCredentialService:
         grant = await self.grants.get_by_id(access_grant_id)
         if not grant:
             raise NotFoundError(f"Access grant '{access_grant_id}' not found")
-        if grant.status in _TERMINAL_STATUSES:
-            raise InactiveAccessError(f"Access grant is {grant.status.value}")
         subscription = await self.subscriptions.get_by_id(grant.subscription_id)
-        if not subscription or subscription.status in _TERMINAL_STATUSES:
+        if not subscription:
             raise InactiveAccessError("Subscription is not active")
+        reason = inactive_reason(grant, subscription, datetime.now(timezone.utc))
+        if reason:
+            raise InactiveAccessError(reason)
         return grant
