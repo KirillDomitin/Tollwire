@@ -1,5 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
+import asyncio
 from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,10 +33,11 @@ class AuthService:
 
     async def authenticate(self, email: str, password: str) -> Admin:
         admin = await self.admins.get_by_email(email)
+        # Argon2 — ~100 мс CPU. В отдельном потоке: иначе на это время встаёт весь event loop (все запросы API).
         if admin is None:
-            verify_password(password, DUMMY_PASSWORD_HASH)  # то же время ответа, что и при неверном пароле
+            await asyncio.to_thread(verify_password, password, DUMMY_PASSWORD_HASH)  # то же время, что и неверный
             raise InvalidCredentialsError
-        if not verify_password(password, admin.password_hash) or not admin.is_active:
+        if not await asyncio.to_thread(verify_password, password, admin.password_hash) or not admin.is_active:
             raise InvalidCredentialsError
         return admin
 

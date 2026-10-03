@@ -33,10 +33,6 @@ class AccessGrantCreate(BaseModel):
     protocol_id: UUID
 
 
-class AccessGrantUpdate(BaseModel):
-    status: AccessGrantStatus | None = None
-
-
 class VPNCredentialRead(BaseModel):
     """Метаданные credential. Конфига здесь нет намеренно — его отдаёт только отдельный эндпоинт."""
 

@@ -10,7 +10,13 @@ from dataclasses import dataclass
 import asyncssh
 
 from core.config import settings
-from core.exceptions import SSHAuthError, SSHConnectionError, SSHHostKeyError, SSHTimeoutError
+from core.exceptions import (
+    SSHAuthError,
+    SSHConnectionError,
+    SSHHostKeyError,
+    SSHHostKeyNotPinnedError,
+    SSHTimeoutError,
+)
 from infrastructure.ssh.host_keys import HostKey, scan_host_key
 
 # Что логируем: подключение, сбои, текст команды/путь файла (DEBUG), код возврата, длительность.
@@ -32,6 +38,17 @@ def _to_str(value: str | bytes | None) -> str:
     if isinstance(value, bytes):
         return value.decode(errors="replace")
     return value
+
+
+def load_private_key(text: str) -> asyncssh.SSHKey:
+    """Приватный SSH-ключ из текста (PEM / OpenSSH). Ключи с паролем (passphrase) не поддерживаются.
+
+    Строку нельзя передавать в asyncssh как есть: client_keys=[str] он понимает как ПУТЬ к файлу.
+    """
+    try:
+        return asyncssh.import_private_key(text.strip())
+    except (asyncssh.KeyImportError, asyncssh.KeyEncryptionError, ValueError):
+        raise ValueError("Not a valid unencrypted SSH private key") from None
 
 
 class SSHClient:
@@ -76,6 +93,14 @@ class SSHClient:
         await self.close()
 
     async def connect(self) -> None:
+        if self._password and self.host_key is None:
+            # Пароль уходит серверу в открытом (внутри SSH) виде: подменённый сервер его получит. Поэтому по
+            # паролю — только на сервер с закреплённым ключом (scan → сверить отпечаток → PUT host-key).
+            # По ключу TOFU допустим: приватный ключ клиента серверу не передаётся.
+            logger.warning("ssh password login refused: host key not pinned", extra=self._target())
+            raise SSHHostKeyNotPinnedError(
+                f"Host key of {self.host} is not pinned: scan and pin it before connecting with a password"
+            )
         delay = self.retry_delay
         for attempt in range(1, self.retries + 1):
             try:
@@ -94,9 +119,20 @@ class SSHClient:
     async def _connect_once(self) -> None:
         if self._conn is not None:
             return
-        auth: dict[str, object] = (
-            {"password": self._password} if self._password else {"client_keys": [self._private_key]}
-        )
+        # Только учётка из БД. По умолчанию asyncssh ещё и сам предлагает серверу ключи из ~/.ssh и ssh-agent
+        # (раскрывая чужие ключи каждому VPN-серверу и рискуя войти не той учёткой) и читает ~/.ssh/config
+        # (может незаметно подменить хост, порт, пользователя). Всё это выключено явно.
+        if self._password:
+            auth: dict[str, object] = {"password": self._password, "client_keys": None}
+        else:
+            try:
+                key = load_private_key(self._private_key or "")
+                # agent_path=None ssh-agent НЕ выключает (asyncssh превращает None в "", а на Windows "" —
+                # агент по умолчанию). agent_identities — фильтр ключей агента: оставляем только наш, и агент
+                # не предложит серверу ничего чужого (аналог IdentitiesOnly=yes в OpenSSH).
+                auth = {"client_keys": [key], "agent_identities": [key.convert_to_public()]}
+            except ValueError as exc:
+                raise SSHAuthError("Stored SSH private key is invalid") from exc
         # Ключ проверяется ВНУТРИ рукопожатия, до отправки пароля: сервер-подмена пароль не получит.
         # (доверенные ключи, ключи CA, отозванные) — asyncssh сам сузит алгоритмы до типа закреплённого ключа.
         known_hosts: tuple[list[asyncssh.SSHKey], list[asyncssh.SSHKey], list[asyncssh.SSHKey]] | None = (
@@ -109,6 +145,8 @@ class SSHClient:
                 username=self.username,
                 connect_timeout=self.connect_timeout,
                 known_hosts=known_hosts,
+                agent_path=None,
+                config=None,
                 **auth,
             )
             logger.info("ssh connected", extra=self._target())

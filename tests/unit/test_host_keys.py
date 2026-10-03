@@ -5,10 +5,12 @@ from typing import Any
 import asyncssh
 import pytest
 
-from core.exceptions import SSHHostKeyError
+from core.exceptions import SSHAuthError, SSHHostKeyError, SSHHostKeyNotPinnedError
 from infrastructure.ssh import client as client_module
 from infrastructure.ssh.client import SSHClient
 from infrastructure.ssh.host_keys import HostKey, parse_host_key
+
+CLIENT_KEY = asyncssh.generate_private_key("ssh-ed25519").export_private_key().decode()
 
 
 def new_key() -> HostKey:
@@ -61,9 +63,9 @@ async def test_tofu_accepts_and_reports_key(connect_calls: list[dict[str, Any]])
     async def on_learned(key: HostKey) -> None:
         learned.append(key)
 
-    client = SSHClient("203.0.113.10", password="pw", on_host_key_learned=on_learned)
+    client = SSHClient("203.0.113.10", private_key=CLIENT_KEY, on_host_key_learned=on_learned)
     await client.connect()
-    assert connect_calls[1]["known_hosts"] is None  # ключа ещё нет — принимаем
+    assert connect_calls[1]["known_hosts"] is None  # ключа ещё нет — по SSH-ключу TOFU допустим
     assert learned == [server_key] and client.host_key == server_key
 
 
@@ -108,7 +110,29 @@ async def test_conflicting_pin_during_tofu_closes_connection(connect_calls: list
     async def on_learned(key: HostKey) -> None:
         raise SSHHostKeyError("203.0.113.10", "SHA256:other", key.fingerprint)
 
-    client = SSHClient("203.0.113.10", password="pw", on_host_key_learned=on_learned)
+    client = SSHClient("203.0.113.10", private_key=CLIENT_KEY, on_host_key_learned=on_learned)
     with pytest.raises(SSHHostKeyError):
         await client.connect()
     assert client._conn is None  # соединение с этим сервером не оставляем
+
+
+async def test_password_login_refused_without_pinned_key(connect_calls: list[dict[str, Any]]) -> None:
+    client = SSHClient("203.0.113.10", password="pw")
+    with pytest.raises(SSHHostKeyNotPinnedError):
+        await client.connect()
+    assert len(connect_calls) == 1  # даже не подключались: пароль никуда не ушёл
+
+
+async def test_private_key_is_passed_as_key_not_as_path(connect_calls: list[dict[str, Any]]) -> None:
+    """asyncssh понимает строку в client_keys как ПУТЬ к файлу — вход по ключу из БД так никогда не работал."""
+    client = SSHClient("203.0.113.10", private_key=CLIENT_KEY)
+    await client.connect()
+    (key,) = connect_calls[1]["client_keys"]
+    assert isinstance(key, asyncssh.SSHKey)
+
+
+async def test_invalid_stored_private_key_is_auth_error(connect_calls: list[dict[str, Any]]) -> None:
+    client = SSHClient("203.0.113.10", private_key="/etc/passwd")  # путь вместо ключа — не читаем файл
+    with pytest.raises(SSHAuthError, match="invalid"):
+        await client.connect()
+    assert len(connect_calls) == 1

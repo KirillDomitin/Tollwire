@@ -5,12 +5,15 @@ from uuid import uuid4
 
 import pytest
 
+from core.database.postgres import session_factory
 from core.exceptions import AlreadyExistsError, InactiveAccessError, LiveCredentialExistsError, NotFoundError
 from core.security import decrypt_secret
+from infrastructure.vpn.amnezia import AmneziaWGProvider
 from infrastructure.vpn.awg_config import list_peers
+from infrastructure.vpn.provider import VPNClientConfig
 from modules.access.models import AccessGrantStatus as S
 from modules.access.schemas import AccessGrantCreate, SubscriptionCreate, SubscriptionUpdate
-from modules.access.service import AccessGrantService, SubscriptionService
+from modules.access.service import AccessGrantService, SubscriptionService, client_name
 from modules.audit.actor import SYSTEM_ACTOR
 from modules.audit.models.audit_log import AuditAction
 from modules.jobs.models.job import JobType
@@ -153,6 +156,31 @@ async def test_provision_creates_peer_and_encrypted_credential(world: World) -> 
     assert len(await world.audit(AuditAction.CREDENTIAL_ISSUED, credential.id)) == 1
     with pytest.raises(AlreadyExistsError, match="live credential"):
         await world.credentials().schedule_issue(grant.id)
+
+
+async def test_grant_revoked_during_issue_is_not_resurrected(world: World, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Админ отзывает доступ, пока воркер создаёт клиента на сервере. Раньше provision записывал ACTIVE из
+    устаревшего объекта поверх REVOKED — отозванный доступ «оживал». Теперь клиент снимается в той же задаче."""
+    _, protocol, fake = await world.server()
+    _, _, grant = await world.access(protocol)
+    original = AmneziaWGProvider.create_client
+
+    async def create_then_revoke(self: AmneziaWGProvider, name: str) -> VPNClientConfig:
+        client = await original(self, name)
+        async with session_factory() as other:  # отдельная транзакция — как запрос админа в API
+            await AccessGrantService(other, SYSTEM_ACTOR).revoke(grant.id)
+        return client
+
+    monkeypatch.setattr(AmneziaWGProvider, "create_client", create_then_revoke)
+    with pytest.raises(InactiveAccessError):
+        await world.credentials().provision(grant.id)
+    await world.session.rollback()  # как воркер после ошибки: снять блокировку строк
+
+    await world.session.refresh(grant)
+    assert grant.status == S.REVOKED  # не «ожил»
+    assert fake.interface_peers == set()  # созданный клиент снят с сервера сразу
+    assert client_name(grant.id) not in fake.files[CONFIG_FILE]
+    assert await world.credentials().credentials.get_live_by_access_grant_id(grant.id) is None
 
 
 async def test_provision_is_idempotent(world: World) -> None:

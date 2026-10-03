@@ -15,7 +15,6 @@ from modules.access.models.vpn_credential import VPNCredential
 from modules.access.repository import AccessGrantRepository, SubscriptionRepository, VPNCredentialRepository
 from modules.access.schemas import (
     AccessGrantCreate,
-    AccessGrantUpdate,
     SubscriptionCreate,
     SubscriptionUpdate,
     VPNCredentialConfigRead,
@@ -274,16 +273,8 @@ class AccessGrantService:
     async def list_by_subscription(self, subscription_id: UUID) -> Sequence[AccessGrant]:
         return await self.grants.list_by_subscription_id(subscription_id)
 
-    async def update(self, access_grant_id: UUID, data: AccessGrantUpdate) -> AccessGrant:
-        grant = await self.get(access_grant_id)
-        fields = data.model_dump(exclude_unset=True)
-        changes = diff_changes(grant, fields)
-        for field, value in fields.items():
-            setattr(grant, field, value)
-        if changes:
-            self.audit.record(AuditAction.ACCESS_UPDATED, AuditEntity.ACCESS_GRANT, grant.id, {"changes": changes})
-        await self.session.commit()
-        return grant
+    # Статус гранта нельзя выставить напрямую: только по правилам — /revoke (с отзывом клиента на сервере),
+    # планировщик (истечение/активация) и выдача клиента (ACTIVE). Отозванный доступ не «оживает»: нужен новый грант.
 
     async def revoke(self, access_grant_id: UUID) -> AccessGrant:
         grant = await self.get(access_grant_id)
@@ -352,6 +343,14 @@ class VPNCredentialService:
         provider = self.connections.build_provider(ssh_client, protocol.type)
         async with ssh_client:
             client = await provider.create_client(client_name(grant.id))
+            # Пока шёл SSH, грант могли отозвать (или подписка истекла). Перечитываем под блокировкой строк:
+            # иначе ниже мы записали бы ACTIVE поверх REVOKED из устаревшего объекта. Блокировка держится до
+            # commit — отзыв, пришедший сейчас, дождётся и увидит готового клиента (и снимет его своей задачей).
+            try:
+                grant = await self._ensure_grant_is_live(access_grant_id, lock=True)
+            except InactiveAccessError:
+                await provider.revoke_client(client.public_key)  # сервер и так под нашей ServerLock
+                raise
         # Если коммит ниже упадёт, на сервере останется peer без записи в БД — его подберёт sync (блок 13).
         credential = VPNCredential(
             access_grant_id=grant.id,
@@ -464,13 +463,13 @@ class VPNCredentialService:
             raise NotFoundError(f"Access grant '{credential.access_grant_id}' not found")
         return await self.jobs.create(JobType.REVOKE_ACCESS, server_id=grant.server_id, access_grant_id=grant.id)
 
-    async def _ensure_grant_is_live(self, access_grant_id: UUID) -> AccessGrant:
+    async def _ensure_grant_is_live(self, access_grant_id: UUID, *, lock: bool = False) -> AccessGrant:
         # Проверяем и грант, и подписку: отзыв/истечение подписки каскадят на гранты,
-        # но проверка подписки страхует от рассинхрона (данные до каскада, ручные правки через PATCH).
-        grant = await self.grants.get_by_id(access_grant_id)
+        # но проверка подписки страхует от рассинхрона (данные до каскада, правки через PATCH подписки).
+        grant = await self.grants.get_by_id(access_grant_id, lock=lock)
         if not grant:
             raise NotFoundError(f"Access grant '{access_grant_id}' not found")
-        subscription = await self.subscriptions.get_by_id(grant.subscription_id)
+        subscription = await self.subscriptions.get_by_id(grant.subscription_id, lock=lock)
         if not subscription:
             raise InactiveAccessError("Subscription is not active")
         reason = inactive_reason(grant, subscription, datetime.now(timezone.utc))

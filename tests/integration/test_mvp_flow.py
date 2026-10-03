@@ -114,6 +114,8 @@ async def test_api_error_mapping(api: httpx.AsyncClient, worker: JobWorker) -> N
     assert (await api.get(f"/api/v1/servers/{missing}")).status_code == 404
     assert (await api.get(f"/api/v1/servers/{missing}/protocols")).status_code == 404
     assert (await api.get(f"/api/v1/jobs/{missing}")).status_code == 404
+    # статус гранта напрямую не меняется: только /revoke, планировщик и выдача клиента
+    assert (await api.patch(f"/api/v1/access/{missing}", json={"status": "active"})).status_code == 405
     assert (await api.put(f"/api/v1/servers/{missing}/credentials", json={"secret": "x"})).status_code == 404
 
     server = (await api.post("/api/v1/servers", json={"name": "no-creds", "host": "203.0.113.11"})).json()

@@ -205,3 +205,12 @@ async def test_retention_rule_deletes_only_old_finished_history(world: World, se
     left_jobs = {job.id for job in await world.jobs(JobType.HEALTH_CHECK)}
     assert left_jobs == {old_pending.id, fresh_done.id}  # незавершённую не удаляем, даже старую
     assert [log.action for log in (await session.execute(select(AuditLog))).scalars()] == [AuditAction.LOGOUT]
+
+
+async def test_expired_server_lock_does_not_fail_finished_work(world: World) -> None:
+    """Задача шла дольше TTL блокировки: освобождение уже истёкшего ключа не должно превращать успех в FAILED."""
+    server, _, _ = await world.server()
+    async with ServerLock(server.id, timeout=1):
+        await asyncio.sleep(1.3)  # ключ в Redis истёк, пока «шла» работа
+    # дошли сюда без LockNotOwnedError
+    assert ServerLock(server.id).timeout >= 1800  # по умолчанию TTL не короче самой долгой задачи

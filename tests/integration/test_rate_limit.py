@@ -1,5 +1,7 @@
 """Rate limiting: счётчик на Redis, вход по IP и по учётке, refresh по IP, 429 + Retry-After, fail-open."""
 
+import asyncio
+
 import httpx
 import pytest
 from redis.asyncio import Redis
@@ -127,3 +129,21 @@ async def test_refresh_limited_by_ip(client: httpx.AsyncClient) -> None:
     for _ in range(settings.refresh_ip_max_attempts):
         assert (await client.post("/api/v1/auth/refresh")).status_code == 401
     assert (await client.post("/api/v1/auth/refresh")).status_code == 429
+
+
+async def test_argon2_runs_off_the_event_loop(session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Argon2 (~100 мс CPU) в event loop остановил бы все запросы API на время каждой проверки пароля."""
+    threads: list[bool] = []
+
+    def spy(password: str, hashed: str) -> bool:
+        try:
+            asyncio.get_running_loop()
+            threads.append(False)  # вызвали прямо в event loop
+        except RuntimeError:
+            threads.append(True)  # отдельный поток: цикл свободен
+        return False
+
+    monkeypatch.setattr(auth_service, "verify_password", spy)
+    with pytest.raises(auth_service.InvalidCredentialsError):
+        await AuthService(session, SYSTEM_ACTOR).authenticate("ghost@example.com", "whatever")
+    assert threads == [True]

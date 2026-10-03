@@ -16,7 +16,7 @@ from core.exceptions import (
     UnsupportedProtocolError,
 )
 from core.security import decrypt_secret, encrypt_secret
-from infrastructure.ssh.client import SSHClient
+from infrastructure.ssh.client import SSHClient, load_private_key
 from infrastructure.ssh.host_keys import HostKey
 from infrastructure.vpn.amnezia import AmneziaInstaller, AmneziaWGProvider
 from infrastructure.vpn.provider import ProviderStatus, VPNProvider
@@ -36,6 +36,7 @@ class ServerService:
     def __init__(self, session: AsyncSession, actor: AuditActor):
         self.session = session
         self.servers = ServerRepository(session)
+        self.credentials = CredentialRepository(session)
         self.protocols = ProtocolRepository(session)
         self.audit = AuditService(session, actor)
 
@@ -72,10 +73,17 @@ class ServerService:
         fields = data.model_dump(exclude_unset=True)
         changes = diff_changes(server, fields)
         meta: dict[str, object] = {"changes": changes}
-        # Другой адрес — другая машина: старый ключ к ней не относится. Следующее подключение закрепит новый.
-        if "host" in changes and server.ssh_host_key is not None:
-            meta["host_key_reset"] = {"previous": server.ssh_host_key_fingerprint}
-            server.ssh_host_key = server.ssh_host_key_fingerprint = None
+        if "host" in changes:
+            # Другой адрес — другая машина. Её ключ хоста и SSH-учётка к ней не относятся: оставь мы учётку,
+            # сохранённый root-пароль старого сервера ушёл бы на новый адрес (подставленный кем угодно с
+            # правом servers:manage). Для нового адреса учётку и ключ задают заново.
+            if server.ssh_host_key is not None:
+                meta["host_key_reset"] = {"previous": server.ssh_host_key_fingerprint}
+                server.ssh_host_key = server.ssh_host_key_fingerprint = None
+            credential = await self.credentials.get_by_server_id(server.id)
+            if credential is not None:
+                await self.credentials.delete(credential)
+                meta["credentials_deleted"] = True
         for field, value in fields.items():
             setattr(server, field, value)
         if changes:
@@ -103,6 +111,8 @@ class CredentialService:
         server = await self.servers.get_by_id(server_id)
         if not server:
             raise NotFoundError
+        if data.auth_type == AuthType.SSH_KEY:
+            load_private_key(data.secret)  # ValueError → 422 сейчас, а не «неверный ключ» при первом подключении
         encrypted_secret = encrypt_secret(data.secret)
         # Секрет в журнал не попадает — только факт смены и несекретные поля.
         self.audit.record(

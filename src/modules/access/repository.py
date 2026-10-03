@@ -24,8 +24,9 @@ class SubscriptionRepository:
         await self.session.flush()
         return subscription
 
-    async def get_by_id(self, subscription_id: UUID) -> Subscription | None:
-        return await self.session.get(Subscription, subscription_id)
+    async def get_by_id(self, subscription_id: UUID, *, lock: bool = False) -> Subscription | None:
+        """lock=True — свежие данные из БД (не из кэша сессии) под блокировкой строки до конца транзакции."""
+        return await self.session.get(Subscription, subscription_id, with_for_update=lock, populate_existing=lock)
 
     async def list_by_user_id(self, user_id: UUID) -> Sequence[Subscription]:
         sql_request = select(Subscription).where(Subscription.user_id == user_id)
@@ -76,8 +77,9 @@ class AccessGrantRepository:
         await self.session.flush()
         return access_grant
 
-    async def get_by_id(self, access_grant_id: UUID) -> AccessGrant | None:
-        return await self.session.get(AccessGrant, access_grant_id)
+    async def get_by_id(self, access_grant_id: UUID, *, lock: bool = False) -> AccessGrant | None:
+        """lock=True — свежие данные из БД (не из кэша сессии) под блокировкой строки до конца транзакции."""
+        return await self.session.get(AccessGrant, access_grant_id, with_for_update=lock, populate_existing=lock)
 
     async def list_by_subscription_id(self, subscription_id: UUID) -> Sequence[AccessGrant]:
         sql_request = select(AccessGrant).where(AccessGrant.subscription_id == subscription_id)

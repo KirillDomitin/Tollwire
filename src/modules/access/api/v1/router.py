@@ -15,7 +15,6 @@ from modules.access.models.vpn_credential import VPNCredential
 from modules.access.schemas import (
     AccessGrantCreate,
     AccessGrantRead,
-    AccessGrantUpdate,
     SubscriptionCreate,
     SubscriptionRead,
     SubscriptionUpdate,
@@ -159,20 +158,6 @@ async def list_grants(
     subscription_id: UUID, service: AccessGrantService = Depends(get_access_grant_service)
 ) -> Sequence[AccessGrant]:
     return await service.list_by_subscription(subscription_id)
-
-
-@router.patch(
-    "/access/{access_grant_id}",
-    dependencies=[Depends(require(Permission.ACCESS_MANAGE))],
-    response_model=AccessGrantRead,
-)
-async def update_grant(
-    access_grant_id: UUID, body: AccessGrantUpdate, service: AccessGrantService = Depends(get_access_grant_service)
-) -> AccessGrant:
-    try:
-        return await service.update(access_grant_id, body)
-    except NotFoundError:
-        raise HTTPException(404, detail="Access grant not found")
 
 
 @router.delete("/access/{access_grant_id}", dependencies=[Depends(require(Permission.ACCESS_MANAGE))], status_code=204)

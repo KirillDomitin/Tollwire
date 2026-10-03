@@ -34,6 +34,10 @@ class SSHAuthError(SSHError): ...
 class SSHTimeoutError(SSHError): ...
 
 
+class SSHHostKeyNotPinnedError(SSHError):
+    """Вход по паролю на сервер с незакреплённым ключом запрещён: пароль ушёл бы непроверенному хосту."""
+
+
 class SSHHostKeyError(SSHError):
     """Ключ SSH-сервера не совпал с закреплённым: возможна подмена сервера (MITM). Не повторяется автоматически."""
 

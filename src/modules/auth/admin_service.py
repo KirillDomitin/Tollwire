@@ -1,5 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
+import asyncio
 from collections.abc import Sequence
 from uuid import UUID
 
@@ -39,7 +40,8 @@ class AdminService:
         email = str(data.email)
         if await self.admins.get_by_email(email):
             raise AlreadyExistsError
-        admin = Admin(email=email, password_hash=hash_password(data.password), role=data.role)
+        password_hash = await asyncio.to_thread(hash_password, data.password)  # Argon2 — не в event loop
+        admin = Admin(email=email, password_hash=password_hash, role=data.role)
         self.admins.add(admin)
         await self.session.flush()
         self.audit.record(AuditAction.ADMIN_CREATED, AuditEntity.ADMIN, admin.id, {"email": email, "role": data.role})

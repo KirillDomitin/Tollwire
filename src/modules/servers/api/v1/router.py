@@ -112,6 +112,8 @@ async def put(
         cred = await service.set_credential(server_id, body)
     except NotFoundError:
         raise HTTPException(404, detail=f"Server '{server_id}' not found")
+    except ValueError:
+        raise HTTPException(422, detail="Not a valid unencrypted SSH private key")
     return cred
 
 
