@@ -134,3 +134,17 @@
     border-left-color: var(--signal-process);
   }
 }
+
+.headerAction {
+  margin-left: auto;
+}
+
+/* Имя ведёт на карточку; вся строка — нет: таблицу выделяют и копируют адреса. */
+.link {
+  color: inherit;
+  text-decoration-color: var(--rule-strong);
+  text-underline-offset: 3px;
+}
+.link:hover {
+  text-decoration-color: currentColor;
+}

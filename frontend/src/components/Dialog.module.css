@@ -1,0 +1,43 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--pine) 40%, transparent);
+}
+
+.content {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  gap: var(--space-4);
+  width: min(calc(100vw - 2 * var(--space-4)), 520px);
+  max-height: calc(100vh - 2 * var(--space-5));
+  overflow-y: auto;
+  padding: var(--space-5) var(--space-6) var(--space-6);
+  background: var(--paper);
+  border-top: var(--rule-width) solid var(--pine);
+}
+
+.content[data-danger="true"] {
+  border-top-color: var(--signal-down);
+}
+
+.title {
+  font-size: var(--text-lead);
+  font-weight: 600;
+  margin: 0;
+}
+
+.description {
+  margin: 0;
+  color: var(--pine-soft);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}

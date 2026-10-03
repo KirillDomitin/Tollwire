@@ -1,26 +1,11 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { ReactNode } from "react";
-import { MemoryRouter } from "react-router";
 
 import { setAccessToken } from "../api/session";
 import { AuthProvider } from "../auth/AuthContext";
+import { json, renderWithProviders } from "../test/render";
 import { LoginPage } from "./LoginPage";
 import { ServersPage } from "./ServersPage";
-
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
-}
-
-function renderWithProviders(ui: ReactNode) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter>{ui}</MemoryRouter>
-    </QueryClientProvider>,
-  );
-}
 
 const server = (overrides: Record<string, unknown>) => ({
   id: crypto.randomUUID(),
@@ -62,6 +47,24 @@ describe("ServersPage", () => {
     expect(de1).toHaveAttribute("data-signal", "down");
     expect(within(de1!).getByText("203.0.113.10:2222")).toBeInTheDocument(); // нестандартный порт виден
     expect(within(de1!).getByText("не закреплён")).toBeInTheDocument();
+    expect(within(us2!).getByRole("link", { name: "US2" })).toHaveAttribute(
+      "href",
+      expect.stringMatching(/^\/servers\//),
+    );
+  });
+
+  it("offers adding a server only to those who may manage servers", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => json([])),
+    );
+    const { unmount } = renderWithProviders(<ServersPage />);
+    expect(await screen.findByRole("button", { name: "Добавить сервер" })).toBeInTheDocument();
+    unmount();
+
+    renderWithProviders(<ServersPage />, { permissions: ["servers:read"] });
+    expect(await screen.findByText(/Серверов пока нет/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Добавить сервер" })).not.toBeInTheDocument();
   });
 
   it("explains a failed load and lets the admin retry", async () => {

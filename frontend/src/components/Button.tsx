@@ -3,7 +3,7 @@ import type { ButtonHTMLAttributes } from "react";
 import styles from "./Button.module.css";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: "primary" | "quiet";
+  variant?: "primary" | "quiet" | "danger";
   /** Идёт действие: кнопка недоступна, текст сообщает, что происходит. */
   busyLabel?: string;
   busy?: boolean;

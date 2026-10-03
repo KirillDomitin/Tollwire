@@ -1,0 +1,424 @@
+/* Карточка сервера — тот же язык, что у списка: цвет несёт только статус, данные — строками журнала. */
+
+.page {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.back {
+  justify-self: start;
+  font-size: var(--text-meta);
+  color: var(--pine-soft);
+}
+
+.hint {
+  margin: 0;
+  color: var(--pine-soft);
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* Шапка — «строка» сервера крупным планом: та же полоса статуса слева. */
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4) var(--space-6);
+  padding: var(--space-4) var(--space-5);
+  background: var(--paper);
+  border-left: var(--rule-width) solid var(--signal-idle);
+}
+.header[data-signal="ok"] {
+  border-left-color: var(--signal-ok);
+}
+.header[data-signal="warn"] {
+  border-left-color: var(--signal-warn);
+}
+.header[data-signal="down"] {
+  border-left-color: var(--signal-down);
+}
+.header[data-signal="process"] {
+  border-left-color: var(--signal-process);
+}
+
+.identity {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.title {
+  font-size: var(--text-display);
+  margin: 0;
+}
+
+.address {
+  margin: 0;
+  font-family: var(--font-mono);
+  color: var(--pine-soft);
+}
+
+.description {
+  margin: var(--space-2) 0 0;
+  max-width: 60ch;
+}
+
+.state {
+  display: grid;
+  justify-items: end;
+  gap: var(--space-1);
+  font-size: var(--text-meta);
+}
+
+.stateLabel {
+  font-size: var(--text-lead);
+  font-weight: 600;
+}
+.stateLabel[data-signal="down"] {
+  color: var(--signal-down);
+}
+.stateLabel[data-signal="warn"] {
+  color: var(--signal-warn-text);
+}
+.stateLabel[data-signal="process"] {
+  color: var(--signal-process);
+}
+.stateLabel[data-signal="idle"] {
+  font-weight: 400;
+  color: var(--pine-soft);
+}
+
+.section {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.sectionTitle {
+  font-size: var(--text-title);
+  margin: 0;
+}
+
+/* Подготовка: шаги — настоящая последовательность, поэтому с номерами. */
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  counter-reset: step;
+  background: var(--paper);
+}
+
+.step {
+  counter-increment: step;
+  position: relative;
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5) var(--space-4) calc(var(--space-5) + 2.25rem);
+  border-bottom: 1px solid var(--rule);
+}
+.step:last-child {
+  border-bottom: 0;
+}
+
+.step::before {
+  content: counter(step);
+  position: absolute;
+  left: var(--space-5);
+  top: var(--space-4);
+  width: 1.5rem;
+  height: 1.5rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--rule-strong);
+  border-radius: 50%;
+  font-size: var(--text-meta);
+  font-variant-numeric: tabular-nums;
+  color: var(--pine-soft);
+}
+.step[data-state="done"]::before {
+  content: "✓";
+  border-color: var(--signal-ok);
+  background: var(--signal-ok);
+  color: var(--paper);
+}
+.step[data-state="next"]::before {
+  border-color: var(--pine);
+  background: var(--pine);
+  color: var(--on-pine);
+}
+.step[data-state="running"]::before {
+  border-color: var(--signal-process);
+  color: var(--signal-process);
+}
+
+/* Текущий шаг отмечен полосой — тем же знаком «сюда смотреть», что и у статуса. */
+.step[data-state="next"] {
+  box-shadow: inset var(--rule-width) 0 0 var(--pine);
+}
+.step[data-state="running"] {
+  box-shadow: inset var(--rule-width) 0 0 var(--signal-process);
+}
+
+.stepHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  min-height: 1.5rem;
+}
+
+.stepTitle {
+  font-weight: 600;
+}
+.step[data-state="done"] .stepTitle,
+.step[data-state="locked"] .stepTitle {
+  font-weight: 400;
+  color: var(--pine-soft);
+}
+
+.stepMark {
+  font-size: var(--text-meta);
+  color: var(--pine-faint);
+}
+.step[data-state="running"] .stepMark {
+  color: var(--signal-process);
+}
+
+.stepBody {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+}
+
+.result {
+  margin: 0;
+  flex-basis: 100%;
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--signal-ok);
+  overflow-wrap: anywhere;
+}
+.result[data-ok="false"] {
+  border-left-color: var(--signal-down);
+}
+
+/* Обслуживание: сведения — парами «что / значение», как в журнале. */
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  margin: 0;
+  background: var(--paper);
+}
+.facts dt,
+.facts dd {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--rule);
+}
+.facts dt {
+  color: var(--pine-soft);
+}
+.facts dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  min-width: 0;
+}
+.facts > :nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+
+.keyBlock {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  background: var(--fog);
+}
+
+.keyLabel {
+  margin: 0;
+  font-size: var(--text-meta);
+  color: var(--pine-soft);
+}
+
+/* Отпечаток сверяют глазами посимвольно — моноширинный и переносится, а не обрезается. */
+.keyValue {
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  overflow-wrap: anywhere;
+}
+
+/* Формы в диалогах. */
+.form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.choice legend {
+  margin-bottom: var(--space-2);
+  padding: 0;
+}
+.choice label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.textarea {
+  display: grid;
+  gap: var(--space-1);
+}
+.textarea textarea {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  color: var(--pine);
+  background: var(--paper);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-control);
+  resize: vertical;
+}
+
+/* Журнал задач. */
+.jobs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--paper);
+}
+
+.job {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--rule);
+  border-left: 2px solid transparent;
+}
+.job:last-child {
+  border-bottom: 0;
+}
+.job[data-status="failed"] {
+  border-left-color: var(--signal-down);
+}
+.job[data-status="running"],
+.job[data-status="pending"] {
+  border-left-color: var(--signal-process);
+}
+
+.jobHead {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: baseline;
+  gap: var(--space-4);
+}
+
+.jobTitle {
+  font-weight: 550;
+}
+
+.jobStatus {
+  font-size: var(--text-meta);
+  font-variant-numeric: tabular-nums;
+  color: var(--pine-soft);
+}
+.jobStatus[data-status="failed"] {
+  color: var(--signal-down);
+}
+.jobStatus[data-status="running"],
+.jobStatus[data-status="pending"] {
+  color: var(--signal-process);
+}
+
+.jobTime {
+  min-width: 9ch;
+  text-align: right;
+  font-size: var(--text-meta);
+  color: var(--pine-faint);
+}
+
+.jobError {
+  margin: 0;
+  font-size: var(--text-meta);
+  color: var(--signal-down);
+  overflow-wrap: anywhere;
+}
+
+.report {
+  font-size: var(--text-meta);
+}
+.report summary {
+  cursor: pointer;
+  color: var(--pine-soft);
+}
+.report ul {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-4);
+}
+.report li[data-ok="false"] {
+  color: var(--signal-down);
+}
+
+/* Опасная зона: отделена линией и цветом заголовка; кнопки тихие — красной становится только кнопка в диалоге. */
+.danger {
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--rule);
+}
+.danger .sectionTitle {
+  font-size: var(--text-lead);
+  color: var(--signal-down);
+}
+
+.dangerList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+@media (max-width: 760px) {
+  .header {
+    padding: var(--space-3) var(--space-4);
+  }
+  .state {
+    justify-items: start;
+  }
+  .step {
+    padding: var(--space-3) var(--space-4) var(--space-3) calc(var(--space-4) + 2.25rem);
+  }
+  .step::before {
+    left: var(--space-4);
+    top: var(--space-3);
+  }
+  .facts {
+    grid-template-columns: 1fr;
+  }
+  .facts dt {
+    padding-bottom: 0;
+    border-bottom: 0;
+    font-size: var(--text-meta);
+  }
+  .jobHead {
+    grid-template-columns: 1fr auto;
+    row-gap: var(--space-1);
+  }
+  .jobTime {
+    grid-column: 1 / -1;
+    text-align: left;
+  }
+}

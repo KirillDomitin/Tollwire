@@ -11,6 +11,10 @@ export const api = createClient<paths>({ baseUrl: window.location.origin, fetch:
 export type Schemas = components["schemas"];
 export type Server = Schemas["ServerRead"];
 export type Admin = Schemas["AdminRead"];
+export type Job = Schemas["JobRead"];
+export type Credential = Schemas["CredentialRead"];
+export type HostKeyScan = Schemas["HostKeyScan"];
+export type Protocol = Schemas["ProtocolRead"];
 
 /** Ошибка API с понятным человеку текстом; status — для веток (401/403/429). */
 export class ApiError extends Error {
@@ -31,9 +35,11 @@ export function messageForStatus(status: number): string {
   return "Запрос не выполнен.";
 }
 
-/** Достаёт данные из ответа openapi-fetch или бросает ApiError — удобно для TanStack Query. */
+/** Достаёт данные из ответа openapi-fetch или бросает ApiError — удобно для TanStack Query.
+ *  messages — понятный текст для конкретных статусов этого действия (бэкенд отвечает по-английски). */
 export async function unwrap<T>(
   call: Promise<{ data?: T; error?: unknown; response: Response }>,
+  messages: Partial<Record<number, string>> = {},
 ): Promise<T> {
   let result: { data?: T; error?: unknown; response: Response };
   try {
@@ -41,6 +47,7 @@ export async function unwrap<T>(
   } catch {
     throw new ApiError("Нет связи с сервером панели. Проверьте подключение.", 0);
   }
-  if (result.data !== undefined && result.response.ok) return result.data;
-  throw new ApiError(messageForStatus(result.response.status), result.response.status);
+  const { status, ok } = result.response;
+  if (ok) return result.data as T; // 204 — данных нет, и это успех
+  throw new ApiError(messages[status] ?? messageForStatus(status), status);
 }

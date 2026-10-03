@@ -1,0 +1,180 @@
+import { screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+
+import { json, renderWithProviders } from "../../test/render";
+import { ServerPage } from "./ServerPage";
+
+const ID = "11111111-1111-4111-8111-111111111111";
+
+const baseServer = {
+  id: ID,
+  name: "lab-1",
+  host: "203.0.113.20",
+  ssh_port: 22,
+  status: "new",
+  description: null,
+  health_status: null,
+  last_health_at: null,
+  ssh_host_key_fingerprint: null,
+  created_at: "2026-10-01T10:00:00Z",
+};
+
+const credential = {
+  id: "c1",
+  server_id: ID,
+  auth_type: "password",
+  username: "root",
+  created_at: "2026-10-01T10:00:00Z",
+};
+const protocol = {
+  id: "p1",
+  server_id: ID,
+  type: "amnezia_wg",
+  port: 51820,
+  created_at: "2026-10-01T10:00:00Z",
+};
+
+interface Backend {
+  server?: Record<string, unknown>;
+  credential?: unknown;
+  protocols?: unknown[];
+  jobs?: unknown[];
+}
+
+/** Подменный API: отвечает по методу и пути, запоминает все запросы. */
+function mockApi({ server = {}, credential: cred = null, protocols = [], jobs = [] }: Backend = {}) {
+  const calls: string[] = [];
+  const fetchMock = vi.fn(async (request: Request) => {
+    const path = new URL(request.url).pathname;
+    calls.push(`${request.method} ${path}`);
+    const base = `/api/v1/servers/${ID}`;
+    if (request.method === "GET" && path === base) return json({ ...baseServer, ...server });
+    if (path === `${base}/credentials`) return cred ? json(cred) : json({ detail: "not set" }, 404);
+    if (path === `${base}/protocols`) return json(protocols);
+    if (path === "/api/v1/jobs") return json(jobs);
+    if (request.method === "DELETE" && path === base) return new Response(null, { status: 204 });
+    return json({ detail: "unexpected" }, 500);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  return calls;
+}
+
+function renderCard(permissions: string[] | "all" = "all") {
+  return renderWithProviders(<ServerPage />, {
+    route: `/servers/${ID}`,
+    path: "/servers/:serverId",
+    permissions,
+  });
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+/** Шаг чек-листа по названию и его отметка («готово», «следующий шаг»…). */
+function step(title: string) {
+  const item = screen.getByText(title).closest("li")!;
+  return { item, mark: item.getAttribute("data-state") };
+}
+
+describe("ServerPage setup checklist", () => {
+  it("starts with pinning the key and explains why later steps are locked", async () => {
+    mockApi();
+    renderCard();
+
+    expect(await screen.findByRole("heading", { name: "Подготовка сервера" })).toBeInTheDocument();
+    expect(step("Закрепить ключ сервера").mark).toBe("next");
+    expect(step("Задать SSH-доступ").mark).toBe("locked");
+    expect(within(step("Задать SSH-доступ").item).getByText(/Сначала закрепите ключ/)).toBeInTheDocument();
+    expect(step("Установить Docker и Amnezia").mark).toBe("locked");
+    expect(step("Установить AmneziaWG").mark).toBe("locked");
+  });
+
+  it("offers installation once the key is pinned and access is set", async () => {
+    mockApi({ server: { ssh_host_key_fingerprint: "SHA256:abc" }, credential });
+    renderCard();
+
+    expect(await screen.findByRole("button", { name: "Установить" })).toBeInTheDocument();
+    expect(step("Закрепить ключ сервера").mark).toBe("done");
+    expect(step("Задать SSH-доступ").mark).toBe("done");
+    expect(step("Установить Docker и Amnezia").mark).toBe("next");
+  });
+
+  it("shows a running installation instead of the button", async () => {
+    const job = {
+      id: "j1",
+      type: "install_server",
+      status: "running",
+      progress: 0,
+      server_id: ID,
+      created_at: new Date().toISOString(),
+      started_at: null,
+    };
+    mockApi({ server: { ssh_host_key_fingerprint: "SHA256:abc" }, credential, jobs: [job] });
+    renderCard();
+
+    expect(await screen.findByText(/Идёт установка/)).toBeInTheDocument();
+    expect(step("Установить Docker и Amnezia").mark).toBe("running");
+    expect(screen.queryByRole("button", { name: "Установить" })).not.toBeInTheDocument();
+  });
+
+  it("treats an installed protocol as proof of installation even if the status lags", async () => {
+    mockApi({
+      server: { ssh_host_key_fingerprint: "SHA256:abc", status: "new" },
+      credential,
+      protocols: [protocol],
+    });
+    renderCard();
+
+    expect(await screen.findByRole("heading", { name: "Обслуживание" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Подготовка сервера" })).not.toBeInTheDocument();
+    expect(screen.getByText("порт 51820, UDP")).toBeInTheDocument();
+  });
+});
+
+describe("ServerPage permissions and dangerous actions", () => {
+  it("gives a viewer a read-only card", async () => {
+    mockApi({
+      server: { ssh_host_key_fingerprint: "SHA256:abc", status: "ready" },
+      credential,
+      protocols: [protocol],
+    });
+    renderCard(["servers:read"]);
+
+    expect(await screen.findByRole("heading", { name: "Обслуживание" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Проверить состояние" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Заменить" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Опасные действия" })).not.toBeInTheDocument();
+  });
+
+  it("deletes a server only after its name is typed, then returns to the list", async () => {
+    const calls = mockApi();
+    renderCard();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Удалить сервер" }));
+    const dialog = await screen.findByRole("alertdialog");
+    const confirm = within(dialog).getByRole("button", { name: "Удалить сервер" });
+    expect(confirm).toBeDisabled();
+
+    await userEvent.type(within(dialog).getByRole("textbox"), "lab-");
+    expect(confirm).toBeDisabled();
+    expect(calls).not.toContain(`DELETE /api/v1/servers/${ID}`);
+
+    await userEvent.type(within(dialog).getByRole("textbox"), "1");
+    await userEvent.click(confirm);
+    expect(await screen.findByText("другая страница")).toBeInTheDocument();
+    expect(calls).toContain(`DELETE /api/v1/servers/${ID}`);
+  });
+});
+
+describe("ServerPage setup checklist without SSH access", () => {
+  it("keeps one next step: the protocol waits for a pinned key even on an installed server", async () => {
+    mockApi({ server: { status: "ready" }, credential });
+    renderCard();
+
+    expect(await screen.findByRole("button", { name: "Получить и сверить ключ" })).toBeInTheDocument();
+    expect(step("Закрепить ключ сервера").mark).toBe("next");
+    expect(step("Установить AmneziaWG").mark).toBe("locked");
+    expect(screen.queryByRole("button", { name: "Установить протокол" })).not.toBeInTheDocument();
+  });
+});

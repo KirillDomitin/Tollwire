@@ -14,7 +14,8 @@ interface AuthApi {
   can: (permission: string) => boolean;
 }
 
-const AuthContext = createContext<AuthApi | null>(null);
+// Экспорт — для тестов: экран можно отрисовать с заданными правами, не проходя вход.
+export const AuthContext = createContext<AuthApi | null>(null);
 
 async function loadMe(): Promise<Admin> {
   const { data, response } = await api.GET("/api/v1/auth/me");

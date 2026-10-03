@@ -37,3 +37,12 @@
 .quiet:not(:disabled):hover {
   background: color-mix(in srgb, var(--pine) 6%, transparent);
 }
+
+.danger {
+  background: var(--signal-down);
+  color: var(--paper);
+}
+
+.danger:not(:disabled):hover {
+  background: color-mix(in srgb, var(--signal-down) 88%, var(--pine));
+}
