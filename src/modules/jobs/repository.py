@@ -2,9 +2,10 @@
 # -*- coding: utf-8 -*-
 from collections.abc import Sequence
 from datetime import datetime
+from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import CursorResult, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from modules.jobs.models.job import Job, JobStatus, JobType
@@ -37,6 +38,20 @@ class JobRepository:
         query = select(Job).where(Job.status == JobStatus.RUNNING, Job.started_at < before)
         result = await self.session.execute(query)
         return result.scalars().all()
+
+    async def list_pending_updated_before(self, before: datetime) -> Sequence[Job]:
+        # updated_at, а не created_at: задача, которую воркер вернул в очередь из-за занятого сервера,
+        # обновляется при каждом возврате и сюда не попадает.
+        query = select(Job).where(Job.status == JobStatus.PENDING, Job.updated_at < before)
+        result = await self.session.execute(query)
+        return result.scalars().all()
+
+    async def delete_finished_before(self, before: datetime) -> int:
+        """Удаляет завершённые задачи, созданные раньше before. PENDING/RUNNING не трогает."""
+        finished = (JobStatus.SUCCESS, JobStatus.FAILED, JobStatus.CANCELLED)
+        query = delete(Job).where(Job.status.in_(finished), Job.created_at < before)
+        result = cast(CursorResult[Any], await self.session.execute(query))
+        return int(result.rowcount)
 
     async def has_unfinished_for_server(self, job_type: JobType, server_id: UUID) -> bool:
         query = (

@@ -10,6 +10,7 @@ from core.database.postgres import session_factory
 from core.redis import get_redis
 from modules.access.service import SubscriptionService
 from modules.audit.actor import SYSTEM_ACTOR
+from modules.audit.service import AuditService
 from modules.auth.service import AuthService
 from modules.jobs.service import JobService
 from modules.servers.maintenance import ServerMaintenanceService
@@ -114,6 +115,20 @@ async def fail_stale_jobs(max_age_seconds: int) -> str:
     return f"marked {failed} stale running jobs as failed"
 
 
+async def requeue_lost_jobs(max_age_seconds: int) -> str:
+    async with session_factory() as session:
+        requeued = await JobService(session, SYSTEM_ACTOR).requeue_lost_pending(max_age_seconds)
+    return f"requeued {requeued} lost pending jobs"
+
+
+async def apply_retention(job_days: int, audit_days: int) -> str:
+    async with session_factory() as session:
+        jobs = await JobService(session, SYSTEM_ACTOR).purge_finished(job_days)
+    async with session_factory() as session:
+        logs = await AuditService(session, SYSTEM_ACTOR).purge(audit_days)
+    return f"deleted {jobs} finished jobs, {logs} audit records"
+
+
 def build_rules(settings: Settings) -> list[Rule]:
     return [
         Rule("access", settings.access_rules_interval_seconds, apply_access_rules),
@@ -125,4 +140,14 @@ def build_rules(settings: Settings) -> list[Rule]:
         ),
         Rule("health", settings.health_interval_seconds, schedule_health_checks),
         Rule("sync", settings.sync_interval_seconds, schedule_syncs),
+        Rule(
+            "requeue_jobs",
+            settings.requeue_interval_seconds,
+            lambda: requeue_lost_jobs(settings.requeue_pending_after_seconds),
+        ),
+        Rule(
+            "retention",
+            settings.retention_interval_seconds,
+            lambda: apply_retention(settings.job_retention_days, settings.audit_retention_days),
+        ),
     ]

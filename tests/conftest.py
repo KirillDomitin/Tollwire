@@ -36,6 +36,7 @@ os.environ.update(
         "SSH_CONNECT_TIMEOUT": "5",
         "SSH_COMMAND_TIMEOUT": "5",
         "SCHEDULER_ENABLED": "false",
+        "COOKIE_SECURE": "false",  # httpx в тестах ходит по http://testserver — Secure-cookie он бы не вернул
     }
 )
 

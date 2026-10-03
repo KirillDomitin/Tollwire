@@ -10,7 +10,8 @@ from modules.auth.models.admin import Admin
 
 
 def get_request_ip(request: Request) -> str | None:
-    # TODO(блок 17): за nginx здесь будет адрес прокси — брать X-Forwarded-For только от доверенного прокси.
+    # За nginx настоящий адрес клиента подставляет uvicorn (--proxy-headers): он берёт X-Forwarded-For только
+    # от адресов из FORWARDED_ALLOW_IPS (сеть compose), поэтому подделать IP снаружи заголовком нельзя.
     return request.client.host if request.client else None
 
 

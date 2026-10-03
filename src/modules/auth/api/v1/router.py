@@ -31,7 +31,7 @@ def set_cookie(response: Response, token: str) -> None:
         token,
         httponly=True,
         samesite="lax",
-        secure=False,
+        secure=settings.cookie_secure,
         max_age=settings.jwt_refresh_expire,
         path="/api/v1/auth",
     )

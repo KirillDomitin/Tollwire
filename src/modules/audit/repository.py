@@ -3,9 +3,10 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import CursorResult, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from modules.audit.models.audit_log import AuditAction, AuditLog
@@ -46,3 +47,8 @@ class AuditLogRepository:
         query = query.order_by(AuditLog.created_at.desc()).limit(limit).offset(offset)
         result = await self.session.execute(query)
         return result.scalars().all()
+
+    async def delete_before(self, before: datetime) -> int:
+        query = delete(AuditLog).where(AuditLog.created_at < before)
+        result = cast(CursorResult[Any], await self.session.execute(query))
+        return int(result.rowcount)

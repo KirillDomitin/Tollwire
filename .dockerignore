@@ -1,0 +1,25 @@
+# В образ попадает только нужное для запуска: src, alembic, pyproject.toml, uv.lock.
+.git
+.gitignore
+.venv
+.idea
+.agents
+.claude
+**/__pycache__
+.mypy_cache
+.ruff_cache
+.pytest_cache
+.coverage
+htmlcov
+tests
+theory
+deploy
+certs
+.env
+.env.*
+!.env.example
+*.md
+skills-lock.json
+docker-compose*.yml
+Dockerfile
+.dockerignore

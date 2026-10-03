@@ -84,6 +84,28 @@ class JobService:
         await self.session.commit()
         return len(stale)
 
+    async def requeue_lost_pending(self, max_age_seconds: int) -> int:
+        """PENDING дольше max_age и нет в очереди Redis — задача потеряна (Redis перезапустился без данных или
+        enqueue не дошёл после commit). Ставим её в очередь снова (вызывает планировщик).
+
+        Редкий дубль в очереди безопасен: воркер захватывает задачу под блокировкой строки (см. JobWorker).
+        """
+        before = datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds)
+        requeued = 0
+        for job in await self.jobs.list_pending_updated_before(before):
+            if not await self.job_queue.contains(job.id):
+                await self.job_queue.enqueue(job.id)
+                requeued += 1
+        return requeued
+
+    async def purge_finished(self, older_than_days: int) -> int:
+        """Удаляет завершённые задачи старше N дней (вызывает планировщик). 0 — хранить вечно."""
+        if older_than_days <= 0:
+            return 0
+        deleted = await self.jobs.delete_finished_before(datetime.now(timezone.utc) - timedelta(days=older_than_days))
+        await self.session.commit()
+        return deleted
+
     @staticmethod
     def _meta(job: Job) -> dict[str, Any]:
         return {"job_id": job.id}

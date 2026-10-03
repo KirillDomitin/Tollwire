@@ -191,7 +191,7 @@ src/
 - [x] 16.2 Integration: PostgreSQL, Redis, API, auth (fake/mock SSH-слой)
 
 ### Блок 17. Production
-- [ ] 17.1 Docker: единый image для api+worker; compose: api/worker/postgres/redis/nginx
+- [x] 17.1 Docker: единый image для api+worker; compose: api/worker/postgres/redis/nginx
 - [ ] 17.2 Структурированные логи (request_id, job_id, server_id)
 
 ### Definition of Done (MVP)
@@ -210,6 +210,11 @@ uv run mypy src         # проверка типов
 uv run pytest           # тесты (tests/services нужен docker compose up: своя БД vpn_panel_test, Redis db 15)
 uv run pytest --cov --cov-report=term-missing   # с отчётом покрытия
 uv run alembic upgrade head            # применить миграции
+cd src && uv run python -m scripts.create_admin you@example.com   # создать админа (пароль спросит скрыто)
+
+# Production (секреты — в .env.prod, сертификаты — в certs/; оба вне git, шаблон — .env.prod.example)
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm api python -m scripts.create_admin you@example.com
 ```
 
 (Точный запуск уточняется на этапе 0 — здесь ориентир.)

@@ -1,9 +1,11 @@
 """Авторизация через настоящий HTTP: вход, refresh с ротацией, выход, отказ без/с плохим токеном, аудит входа."""
 
 import httpx
+import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.config import settings
 from core.security import create_access_token
 from modules.audit.models.audit_log import AuditAction, AuditLog
 from tests.integration.conftest import AdminLogin
@@ -77,3 +79,11 @@ async def test_logout_kills_refresh(api: httpx.AsyncClient, session: AsyncSessio
     assert (await api.post("/api/v1/auth/refresh")).status_code == 401  # без cookie
     actions = {log.action for log in (await session.execute(select(AuditLog))).scalars()}
     assert {AuditAction.LOGIN, AuditAction.LOGOUT} <= actions
+
+
+async def test_refresh_cookie_is_secure_in_production(
+    client: httpx.AsyncClient, admin: AdminLogin, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "cookie_secure", True)  # как в docker-compose.prod.yml
+    response = await client.post("/api/v1/auth/login", json={"email": admin.email, "password": admin.password})
+    assert "; secure" in response.headers["set-cookie"].lower()  # браузер отправит cookie только по HTTPS

@@ -51,7 +51,9 @@ class JobWorker:
 
     async def _handle(self, job_id: UUID) -> None:
         async with session_factory() as session:
-            job = await session.get(Job, job_id)
+            # FOR UPDATE: если один id попал в очередь дважды и его взяли два воркера, второй ждёт commit
+            # первого, видит RUNNING и отказывается. Без блокировки оба прочли бы PENDING и выполнили задачу.
+            job = await session.get(Job, job_id, with_for_update=True)
             if job is None:
                 raise JobNotFound(f"Job {job_id} not found")
             if job.status != JobStatus.PENDING:

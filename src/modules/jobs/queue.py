@@ -23,5 +23,8 @@ class JobQueue:
         _, job_id = result
         return UUID(str(job_id))
 
+    async def contains(self, job_id: UUID) -> bool:
+        return await self.client.lpos(KEY, str(job_id)) is not None
+
     async def size(self) -> int:
         return await self.client.llen(KEY)

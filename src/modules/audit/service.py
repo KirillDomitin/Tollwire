@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 import enum
 from collections.abc import Mapping, Sequence
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
@@ -40,6 +40,7 @@ class AuditService:
 
     def __init__(self, session: AsyncSession, actor: AuditActor):
         self.actor = actor
+        self.session = session
         self.logs = AuditLogRepository(session)
 
     def record(
@@ -62,3 +63,11 @@ class AuditService:
 
     async def list(self, filters: AuditLogFilter, limit: int, offset: int) -> Sequence[AuditLog]:
         return await self.logs.list(filters, limit, offset)
+
+    async def purge(self, older_than_days: int) -> int:
+        """Политика хранения: удаляет записи старше N дней и коммитит (вызывает планировщик). 0 — хранить вечно."""
+        if older_than_days <= 0:
+            return 0
+        deleted = await self.logs.delete_before(datetime.now(timezone.utc) - timedelta(days=older_than_days))
+        await self.session.commit()
+        return deleted

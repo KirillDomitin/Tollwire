@@ -8,3 +8,5 @@ skills-lock.json
 .coverage
 htmlcov/
 .pytest_cache/
+.env.prod
+certs/
