@@ -25,7 +25,7 @@ from infrastructure.vpn.config import (
 # а хуки PostUp/PostDown настраивают NAT на сервере и на устройстве клиента выполняться не должны.
 # Всё остальное в [Interface] — параметры обфускации AmneziaWG, они обязаны совпадать у сервера и клиента.
 _SERVER_ONLY_INTERFACE_KEYS = frozenset({"PrivateKey", "Address", "ListenPort", "PostUp", "PostDown"})
-_PUBLIC_KEY_RE = re.compile(r"^[A-Za-z0-9+/]{43}=$")
+_PUBLIC_KEY_RE = re.compile(r"[A-Za-z0-9+/]{43}=")
 # Комментарий с именем клиента в [Peer]: WireGuard его игнорирует, а мы по нему узнаём своих peer'ов.
 _PEER_NAME_PREFIX = "# client:"
 
@@ -69,8 +69,11 @@ def render_awg_config(private_key_str: str, udp_port: int) -> str:
 
 
 def is_valid_public_key(value: str) -> bool:
-    """Ключ WireGuard — 32 байта в base64: ровно 43 символа алфавита и '=' в конце."""
-    return bool(_PUBLIC_KEY_RE.match(value))
+    """Ключ WireGuard — 32 байта в base64: ровно 43 символа алфавита и '=' в конце.
+
+    fullmatch, а не match: у re.match «$» совпадает и перед завершающим \\n, и «ключ\\n» прошёл бы проверку.
+    """
+    return bool(_PUBLIC_KEY_RE.fullmatch(value))
 
 
 def _parse_line(line: str) -> tuple[str, str] | None:

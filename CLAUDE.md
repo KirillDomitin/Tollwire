@@ -187,7 +187,7 @@ src/
 - [x] 15.1 Периодический worker: перевод просроченных `AccessGrant` в EXPIRED + revoke на сервере
 
 ### Блок 16. Тесты
-- [ ] 16.1 Unit: сервисы, репозитории, провайдеры, переходы статусов, expiration
+- [x] 16.1 Unit: сервисы, репозитории, провайдеры, переходы статусов, expiration
 - [ ] 16.2 Integration: PostgreSQL, Redis, API, auth (fake/mock SSH-слой)
 
 ### Блок 17. Production
@@ -207,7 +207,8 @@ uv run uvicorn src.main:app --reload   # запуск API (dev)
 uv run ruff check .     # линт
 uv run ruff format .    # форматирование
 uv run mypy src         # проверка типов
-uv run pytest           # тесты
+uv run pytest           # тесты (tests/services нужен docker compose up: своя БД vpn_panel_test, Redis db 15)
+uv run pytest --cov --cov-report=term-missing   # с отчётом покрытия
 uv run alembic upgrade head            # применить миграции
 ```
 

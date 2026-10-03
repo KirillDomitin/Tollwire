@@ -46,7 +46,8 @@ from infrastructure.vpn.provider import (
     VPNProvider,
 )
 
-_ALLOWED = re.compile(r"^[a-zA-Z0-9_-]{1,32}$")
+# fullmatch (см. validate_name): у re.match «$» пропускает завершающий \n, а имя пишется в awg0.conf.
+_ALLOWED = re.compile(r"[a-zA-Z0-9_-]{1,32}")
 
 CONFIG_PATH = HOST_CONFIG_DIR
 HOST_CONFIG_FILE = f"{HOST_CONFIG_DIR}/{CONFIG_FILE_NAME}"
@@ -54,7 +55,7 @@ CONTAINER_CONFIG_FILE = f"{CONTAINER_CONFIG_DIR}/{CONFIG_FILE_NAME}"
 
 
 def validate_name(name: str) -> None:
-    if not _ALLOWED.match(name):
+    if not _ALLOWED.fullmatch(name):
         raise ValueError("Name must be 1-32 characters long and contain only letters, numbers, underscores, or hyphens")
 
 
