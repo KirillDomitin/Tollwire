@@ -46,6 +46,17 @@ class SubscriptionRepository:
         result = await self.session.execute(sql_request)
         return result.scalars().all()
 
+    async def latest_by_user(self) -> dict[UUID, Subscription]:
+        """Последняя подписка каждого пользователя. Живая (PENDING/ACTIVE) у пользователя одна, и новую нельзя
+        создать, пока она жива, — значит, если живая есть, она и есть последняя."""
+        sql_request = (
+            select(Subscription)
+            .distinct(Subscription.user_id)
+            .order_by(Subscription.user_id, Subscription.created_at.desc())
+        )
+        result = await self.session.execute(sql_request)
+        return {subscription.user_id: subscription for subscription in result.scalars()}
+
     async def list_due_for_expiry(self, now: datetime) -> Sequence[UUID]:
         """Ещё не завершённые подписки, у которых valid_until уже наступил."""
         sql_request = select(Subscription.id).where(

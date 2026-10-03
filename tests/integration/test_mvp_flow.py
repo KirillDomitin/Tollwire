@@ -148,3 +148,24 @@ async def test_issue_before_period_is_409(api: httpx.AsyncClient, worker: JobWor
     ).json()
     response = await api.post(f"/api/v1/access/{grant['id']}/credentials")
     assert response.status_code == 409 and "not started" in response.json()["detail"]
+
+
+async def test_user_list_shows_latest_subscription(api: httpx.AsyncClient) -> None:
+    """Список пользователей сразу показывает доступ: последнюю подписку (статус, срок) или null без подписок."""
+    now = datetime.now(timezone.utc)
+    dave = (await api.post("/api/v1/vpn-users", json={"username": "dave", "email": "dave@example.com"})).json()
+    erin = (await api.post("/api/v1/vpn-users", json={"username": "erin", "email": "erin@example.com"})).json()
+    period = {"valid_from": now.isoformat(), "valid_until": (now + timedelta(days=30)).isoformat()}
+    old = (await api.post(f"/api/v1/vpn-users/{dave['id']}/subscriptions", json=period)).json()
+    assert (await api.post(f"/api/v1/subscriptions/{old['id']}/revoke")).status_code == 200
+    longer = {"valid_from": now.isoformat(), "valid_until": (now + timedelta(days=90)).isoformat()}
+    new = (await api.post(f"/api/v1/vpn-users/{dave['id']}/subscriptions", json=longer)).json()
+
+    response = await api.get("/api/v1/vpn-users")
+    assert response.status_code == 200
+    by_id = {item["id"]: item for item in response.json()}
+    assert by_id[erin["id"]]["access"] is None
+    access = by_id[dave["id"]]["access"]
+    assert access["id"] == new["id"]  # отозванная старая подписка не заслоняет новую
+    assert access["status"] == new["status"]
+    assert datetime.fromisoformat(access["valid_until"]) == datetime.fromisoformat(new["valid_until"])

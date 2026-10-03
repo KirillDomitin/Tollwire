@@ -15,6 +15,12 @@ export type Job = Schemas["JobRead"];
 export type Credential = Schemas["CredentialRead"];
 export type HostKeyScan = Schemas["HostKeyScan"];
 export type Protocol = Schemas["ProtocolRead"];
+export type VPNUser = Schemas["VPNUserRead"];
+export type VPNUserListItem = Schemas["VPNUserListItem"];
+export type AccessSummary = Schemas["AccessSummary"];
+export type Subscription = Schemas["SubscriptionRead"];
+export type Grant = Schemas["AccessGrantRead"];
+export type VPNCredential = Schemas["VPNCredentialRead"];
 
 /** Ошибка API с понятным человеку текстом; status — для веток (401/403/429). */
 export class ApiError extends Error {

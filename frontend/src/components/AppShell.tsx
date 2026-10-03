@@ -9,6 +9,7 @@ import { ThemeSwitch } from "./ThemeSwitch";
 /** Разделы показываются только тем, кому они доступны: недоступное не видно, а не «серое». */
 const SECTIONS: { to: string; label: string; permission: string }[] = [
   { to: "/servers", label: "Серверы", permission: "servers:read" },
+  { to: "/users", label: "Пользователи", permission: "vpn_users:read" },
 ];
 
 const ROLE_NAMES: Record<string, string> = {

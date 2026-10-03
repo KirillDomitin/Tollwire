@@ -633,6 +633,28 @@ export interface components {
          * @enum {string}
          */
         AccessGrantStatus: "active" | "pending" | "expired" | "revoked";
+        /**
+         * AccessSummary
+         * @description Последняя подписка пользователя — чтобы в списке было видно, у кого доступ и до какого числа.
+         */
+        AccessSummary: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            status: components["schemas"]["AccessGrantStatus"];
+            /**
+             * Valid From
+             * Format: date-time
+             */
+            valid_from: string;
+            /**
+             * Valid Until
+             * Format: date-time
+             */
+            valid_until: string;
+        };
         /** AdminCreate */
         AdminCreate: {
             /**
@@ -1037,6 +1059,27 @@ export interface components {
             email: string;
             /** Description */
             description?: string | null;
+        };
+        /** VPNUserListItem */
+        VPNUserListItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Username */
+            username: string;
+            /** Email */
+            email: string;
+            status: components["schemas"]["VPNUserStatus"];
+            /** Description */
+            description?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            access?: components["schemas"]["AccessSummary"] | null;
         };
         /** VPNUserRead */
         VPNUserRead: {
@@ -1967,7 +2010,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["VPNUserRead"][];
+                    "application/json": components["schemas"]["VPNUserListItem"][];
                 };
             };
         };

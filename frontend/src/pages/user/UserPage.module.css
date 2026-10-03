@@ -1,0 +1,188 @@
+/* Карточка пользователя говорит тем же языком, что карточка сервера: общие блоки берутся оттуда (composes). */
+
+.page {
+  composes: page from "../server/ServerPage.module.css";
+}
+.back {
+  composes: back from "../server/ServerPage.module.css";
+}
+.hint {
+  composes: hint from "../server/ServerPage.module.css";
+}
+.row {
+  composes: row from "../server/ServerPage.module.css";
+}
+.header {
+  composes: header from "../server/ServerPage.module.css";
+}
+.identity {
+  composes: identity from "../server/ServerPage.module.css";
+}
+.title {
+  composes: title from "../server/ServerPage.module.css";
+}
+.address {
+  composes: address from "../server/ServerPage.module.css";
+}
+.description {
+  composes: description from "../server/ServerPage.module.css";
+}
+.state {
+  composes: state from "../server/ServerPage.module.css";
+}
+.stateLabel {
+  composes: stateLabel from "../server/ServerPage.module.css";
+}
+.section {
+  composes: section from "../server/ServerPage.module.css";
+}
+.sectionTitle {
+  composes: sectionTitle from "../server/ServerPage.module.css";
+}
+.danger {
+  composes: danger from "../server/ServerPage.module.css";
+}
+.form {
+  composes: form from "../server/ServerPage.module.css";
+}
+.choice {
+  composes: choice from "../server/ServerPage.module.css";
+}
+
+.label {
+  margin-bottom: var(--space-2);
+  padding: 0;
+  font-size: var(--text-meta);
+  color: var(--pine-soft);
+}
+
+.date {
+  padding: var(--space-1) var(--space-2);
+  font: inherit;
+  color: var(--pine);
+  background: var(--paper);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-control);
+}
+
+/* Выбор серверов — столбцом: имя и адрес читаются как строки журнала. */
+.servers {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.servers label {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.servers .address {
+  font-size: var(--text-meta);
+}
+
+.empty {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  background: var(--paper);
+}
+
+/* Доступ к серверам: строки с полосой состояния конфига — тот же знак, что у статусов. */
+.grants {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--paper);
+}
+
+.grant {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--rule);
+  border-left: var(--rule-width) solid var(--signal-idle);
+}
+.grant:last-child {
+  border-bottom: 0;
+}
+.grant[data-tone="ok"] {
+  border-left-color: var(--signal-ok);
+}
+.grant[data-tone="process"] {
+  border-left-color: var(--signal-process);
+}
+.grant[data-tone="down"] {
+  border-left-color: var(--signal-down);
+}
+
+.grantHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-4);
+}
+
+.grantServer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-weight: 600;
+}
+.grantServer .address {
+  font-weight: 400;
+  font-size: var(--text-meta);
+}
+
+.grantState {
+  font-size: var(--text-meta);
+  color: var(--pine-soft);
+}
+.grant[data-tone="process"] .grantState {
+  color: var(--signal-process);
+}
+.grant[data-tone="down"] .grantState {
+  color: var(--signal-down);
+}
+.grant[data-tone="idle"] .grantServer {
+  font-weight: 400;
+  color: var(--pine-soft);
+}
+
+.grantError {
+  margin: 0;
+  font-size: var(--text-meta);
+  color: var(--signal-down);
+  overflow-wrap: anywhere;
+}
+
+.history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--paper);
+}
+.history li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--rule);
+  font-variant-numeric: tabular-nums;
+}
+.history li:last-child {
+  border-bottom: 0;
+}
+
+/* QR всегда тёмный на белом, в любой теме: так его читают камеры телефонов. */
+.qr {
+  justify-self: center;
+  max-width: 100%;
+  height: auto;
+  background: #fff;
+}

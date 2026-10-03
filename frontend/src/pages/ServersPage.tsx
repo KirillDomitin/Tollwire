@@ -8,7 +8,7 @@ import { Notice } from "../components/Notice";
 import { fleetSummary, serverSignal } from "../lib/serverSignal";
 import { exactTime, timeAgo } from "../lib/time";
 import { AddServerDialog } from "./server/AddServerDialog";
-import styles from "./ServersPage.module.css";
+import styles from "./Ledger.module.css";
 
 /** Состояние парка меняют фоновые задачи (health, sync) — список подтягивается сам раз в 30 секунд. */
 const REFRESH_MS = 30_000;

@@ -1363,7 +1363,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/VPNUserRead"
+                    "$ref": "#/components/schemas/VPNUserListItem"
                   },
                   "type": "array",
                   "title": "Response Get Api V1 Vpn Users Get"
@@ -2591,6 +2591,37 @@
         ],
         "title": "AccessGrantStatus"
       },
+      "AccessSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AccessGrantStatus"
+          },
+          "valid_from": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Valid From"
+          },
+          "valid_until": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Valid Until"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "valid_from",
+          "valid_until"
+        ],
+        "title": "AccessSummary",
+        "description": "Последняя подписка пользователя — чтобы в списке было видно, у кого доступ и до какого числа."
+      },
       "AdminCreate": {
         "properties": {
           "email": {
@@ -3659,6 +3690,61 @@
           "email"
         ],
         "title": "VPNUserCreate"
+      },
+      "VPNUserListItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "status": {
+            "$ref": "#/components/schemas/VPNUserStatus"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "access": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AccessSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "username",
+          "email",
+          "status",
+          "created_at"
+        ],
+        "title": "VPNUserListItem"
       },
       "VPNUserRead": {
         "properties": {

@@ -13,7 +13,7 @@ from modules.audit.dependencies import get_audit_actor
 from modules.auth.dependencies import get_current_admin, require
 from modules.auth.permissions import Permission
 from modules.vpn_users.models.user import VPNUser
-from modules.vpn_users.schemas import VPNUserCreate, VPNUserRead, VPNUserUpdate
+from modules.vpn_users.schemas import VPNUserCreate, VPNUserListItem, VPNUserRead, VPNUserUpdate
 from modules.vpn_users.service import VPNUserService
 
 router = APIRouter(prefix="/api/v1/vpn-users", tags=["users"], dependencies=[Depends(get_current_admin)])
@@ -25,9 +25,9 @@ def get_user_service(
     return VPNUserService(session, actor)
 
 
-@router.get("", dependencies=[Depends(require(Permission.VPN_USERS_READ))], response_model=Sequence[VPNUserRead])
-async def get(service: VPNUserService = Depends(get_user_service)) -> Sequence[VPNUser]:
-    return await service.list_all()
+@router.get("", dependencies=[Depends(require(Permission.VPN_USERS_READ))], response_model=Sequence[VPNUserListItem])
+async def get(service: VPNUserService = Depends(get_user_service)) -> list[VPNUserListItem]:
+    return await service.list_with_access()
 
 
 @router.post(

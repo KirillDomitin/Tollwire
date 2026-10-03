@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from core.schemas import PatchModel
+from modules.access.models import AccessGrantStatus
 from modules.vpn_users.models.user import VPNUserStatus
 
 # Email — идентификатор пользователя (будущая регистрация), поэтому на входе он проверяется (EmailStr).
@@ -37,3 +38,17 @@ class VPNUserRead(BaseModel):
     status: VPNUserStatus
     description: str | None = None
     created_at: datetime
+
+
+class AccessSummary(BaseModel):
+    """Последняя подписка пользователя — чтобы в списке было видно, у кого доступ и до какого числа."""
+
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    status: AccessGrantStatus
+    valid_from: datetime
+    valid_until: datetime
+
+
+class VPNUserListItem(VPNUserRead):
+    access: AccessSummary | None = None  # None — подписок ещё не было

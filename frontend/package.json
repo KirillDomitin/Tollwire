@@ -19,6 +19,7 @@
     "@radix-ui/react-dialog": "^1.1.23",
     "@tanstack/react-query": "^5.104.1",
     "openapi-fetch": "^0.17.0",
+    "qrcode": "^1.5.4",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-router": "^8.4.0"

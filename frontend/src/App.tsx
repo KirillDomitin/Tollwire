@@ -7,6 +7,8 @@ import { LoginPage } from "./pages/LoginPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { ServersPage } from "./pages/ServersPage";
 import { ServerPage } from "./pages/server/ServerPage";
+import { UserPage } from "./pages/user/UserPage";
+import { UsersPage } from "./pages/UsersPage";
 
 /** Пускает дальше только вошедшего админа; пока сессия восстанавливается — экран ожидания. */
 function RequireAuth() {
@@ -36,6 +38,8 @@ export const router = createBrowserRouter([
           { index: true, element: <Navigate to="/servers" replace /> },
           { path: "/servers", element: <ServersPage /> },
           { path: "/servers/:serverId", element: <ServerPage /> },
+          { path: "/users", element: <UsersPage /> },
+          { path: "/users/:userId", element: <UserPage /> },
           { path: "*", element: <NotFoundPage /> },
         ],
       },
