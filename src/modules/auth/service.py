@@ -19,7 +19,7 @@ from modules.audit.actor import AuditActor
 from modules.audit.models.audit_log import AuditAction, AuditEntity
 from modules.audit.service import AuditService
 from modules.auth.models.admin import Admin
-from modules.auth.rate_limits import LOGIN_FAILURES_BY_EMAIL
+from modules.auth.rate_limits import LOGIN_FAILURES_BY_EMAIL, LOGIN_FAILURES_BY_EMAIL_IP
 from modules.auth.repository import AdminRepository, AdminSessionRepository
 
 
@@ -43,24 +43,29 @@ class AuthService:
 
     async def login(self, email: str, password: str) -> tuple[str, str]:
         email_key = subject_key(email)
-        # Учётка закрыта после серии неудач: отказываем ДО проверки пароля. Иначе перебор продолжался бы,
-        # а верный пароль выдал бы себя другим ответом. Работает одинаково и для несуществующих email.
-        await self.limiter.ensure_not_exceeded(LOGIN_FAILURES_BY_EMAIL, email_key)
+        pair_key = f"{email_key}:{self.actor.ip or 'unknown'}"
+        locks = ((LOGIN_FAILURES_BY_EMAIL_IP, pair_key, "ip"), (LOGIN_FAILURES_BY_EMAIL, email_key, "account"))
+        # Закрыто после серии неудач: отказываем ДО проверки пароля. Иначе перебор продолжался бы, а верный
+        # пароль выдал бы себя другим ответом. Работает одинаково и для несуществующих email.
+        for limit, key, _ in locks:
+            await self.limiter.ensure_not_exceeded(limit, key)
         try:
             admin = await self.authenticate(email, password)
         except InvalidCredentialsError:
-            failures = await self.limiter.record(LOGIN_FAILURES_BY_EMAIL, email_key)
             audit = AuditService(self.session, self.actor)
             # Только email: пароль (даже неверный) в журнал не пишем — это мог быть почти верный пароль.
             audit.record(AuditAction.LOGIN_FAILED, meta={"email": email})
-            if failures == LOGIN_FAILURES_BY_EMAIL.max_hits:  # ровно на пороге — одна запись, а не на каждую попытку
-                audit.record(
-                    AuditAction.LOGIN_LOCKED,
-                    meta={"email": email, "lock_seconds": LOGIN_FAILURES_BY_EMAIL.window_seconds},
-                )
+            for limit, key, scope in locks:
+                if await self.limiter.record(limit, key) == limit.max_hits:  # ровно на пороге — одна запись
+                    audit.record(
+                        AuditAction.LOGIN_LOCKED,
+                        meta={"email": email, "scope": scope, "lock_seconds": limit.window_seconds},
+                    )
             await self.session.commit()
             raise
-        await self.limiter.reset(LOGIN_FAILURES_BY_EMAIL, email_key)  # успешный вход обнуляет счётчик неудач
+        # Успех обнуляет счётчик своего адреса. Общий по учётке — нет: иначе каждый вход админа давал бы
+        # перебору с ботнета новую порцию попыток.
+        await self.limiter.reset(LOGIN_FAILURES_BY_EMAIL_IP, pair_key)
         admin.last_login_at = datetime.now(timezone.utc)
         access = create_access_token(str(admin.id))
         refresh = generate_refresh_token()

@@ -2,6 +2,10 @@
 # -*- coding: utf-8 -*-
 
 CONTAINER_NAME = "amnezia-awg"
+# Образ закреплён по дайджесту, а не :latest: контейнер работает на VPN-сервере с NET_ADMIN, и подменённый в
+# registry «latest» попал бы на все серверы при следующей установке. Обновление — осознанно: сменить дайджест
+# (docker image inspect amneziavpn/amneziawg-go:<tag> --format '{{index .RepoDigests 0}}').
+AMNEZIAWG_IMAGE = "amneziavpn/amneziawg-go@sha256:cbafc02b8373a83f428272db6d8001b37bc02e6211cbd8c0cb4e2e3759b12b72"
 # Фильтр docker ps по имени ищет ПОДСТРОКУ: name=amnezia-awg совпал бы и с чужим amnezia-awg2.
 # Якоря ^…$ делают совпадение точным; /? — docker хранит имена с ведущим слэшем.
 # В одинарных кавычках: иначе shell принял бы ? за glob-шаблон, а $ — за начало переменной.
@@ -35,25 +39,20 @@ INTERNET_PROBE_COMMAND = (
     "curl -o /dev/null -s -w '%{time_connect}' --max-time 5 https://www.cloudflare.com/cdn-cgi/trace"
 )
 
-# Шаблон серверного конфига; {} — приватный ключ и порт (подставляются через str.format).
+# Шаблон серверного конфига. Ключ, порт и параметры обфускации подставляются при установке
+# (render_awg_config): обфускация своя у каждого сервера — одинаковые значения на всех серверах
+# (и H1..H4 = 1..4, как у обычного WireGuard) делали трафик узнаваемым по общей сигнатуре.
+# Фигурные скобки PostUp/PostDown здесь не встречаются — шаблон безопасен для str.format.
 DEFAULT_AWG_CONFIG = (
     "[Interface]\n"
-    "PrivateKey = {}\n"
+    "PrivateKey = {private_key}\n"
     f"Address = {TUNNEL_SUBNET}\n"
-    "ListenPort = {}\n"
+    "ListenPort = {port}\n"
     f"PostUp = {NAT_POST_UP}\n"
     f"PostDown = {NAT_POST_DOWN}\n"
-    """Jc = 5
-Jmin = 10
-Jmax = 50
-S1 = 116
-S2 = 57
-S3 = 33
+    "{obfuscation}\n"
+    """S3 = 33
 S4 = 12
-H1 = 1
-H2 = 2
-H3 = 3
-H4 = 4
 ContentPaddingAddition = 10-100
 RekeyAfterTime = 100-120
 RekeyTimeout = 3-7

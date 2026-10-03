@@ -1,8 +1,10 @@
 # Единый образ приложения: из него запускаются api, worker и migrate (меняется только команда в compose).
+# Базовые образы закреплены по дайджесту (тег@sha256): сборка воспроизводима, а подмена тега в registry не
+# попадёт в наш образ. Обновление — осознанно: docker buildx imagetools inspect <образ:тег> → новый дайджест.
 
 # --- сборка: зависимости ставит uv строго по uv.lock ----------------------------------------------------------------
-FROM python:3.14-slim AS builder
-COPY --from=ghcr.io/astral-sh/uv:0.9.26 /uv /bin/uv
+FROM python:3.14-slim@sha256:0741d101873c12ab927e6f8653feb8862b9bd58771177acb1b885b95141f91b4 AS builder
+COPY --from=ghcr.io/astral-sh/uv:0.9.26@sha256:9a23023be68b2ed09750ae636228e903a54a05ea56ed03a934d00fe9fbeded4b /uv /bin/uv
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
@@ -17,7 +19,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-install-project
 
 # --- запуск: без uv и без компилятора, только Python, .venv и код -------------------------------------------------
-FROM python:3.14-slim
+FROM python:3.14-slim@sha256:0741d101873c12ab927e6f8653feb8862b9bd58771177acb1b885b95141f91b4
 
 RUN groupadd --system --gid 999 app \
  && useradd --system --gid 999 --uid 999 --no-create-home app

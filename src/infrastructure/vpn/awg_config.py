@@ -21,10 +21,18 @@ from infrastructure.vpn.config import (
     NAT_POST_UP,
 )
 
-# Ключи серверного [Interface], которые клиенту не копируются: у клиента свои ключ и адрес, порт он не слушает,
-# а хуки PostUp/PostDown настраивают NAT на сервере и на устройстве клиента выполняться не должны.
-# Всё остальное в [Interface] — параметры обфускации AmneziaWG, они обязаны совпадать у сервера и клиента.
-_SERVER_ONLY_INTERFACE_KEYS = frozenset({"PrivateKey", "Address", "ListenPort", "PostUp", "PostDown"})
+# Ключи серверного [Interface], которые КОПИРУЮТСЯ в конфиг клиента: параметры обфускации AmneziaWG — они обязаны
+# совпадать у сервера и клиента. Список разрешённых (allowlist), а не запрещённых: неизвестный ключ из серверного
+# конфига (ручная правка, скомпрометированный сервер) к клиенту не попадёт. Иначе PreUp/PostUp/Table/SaveConfig
+# из [Interface] сервера выполнились бы на устройстве клиента — wg-quick запускает их от root.
+_CLIENT_INTERFACE_KEYS = frozenset(
+    {
+        *("Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4", "H1", "H2", "H3", "H4"),
+        *("I1", "I2", "I3", "I4", "I5"),
+        *("ContentPaddingAddition", "RekeyAfterTime", "RekeyTimeout", "RejectAfterTime"),
+        *("KeepaliveTimeout", "MaxHandshakeAttempts", "RandomTrailers", "DisableCookies"),
+    }
+)
 _PUBLIC_KEY_RE = re.compile(r"[A-Za-z0-9+/]{43}=")
 # Комментарий с именем клиента в [Peer]: WireGuard его игнорирует, а мы по нему узнаём своих peer'ов.
 _PEER_NAME_PREFIX = "# client:"
@@ -64,8 +72,64 @@ def pick_udp_port() -> int:
     return random.randint(20000, 60000)
 
 
-def render_awg_config(private_key_str: str, udp_port: int) -> str:
-    return DEFAULT_AWG_CONFIG.format(private_key_str, udp_port)
+@dataclass(frozen=True)
+class Obfuscation:
+    """Параметры обфускации AmneziaWG — общие для сервера и всех его клиентов, свои у каждого сервера.
+
+    jc/jmin/jmax — сколько мусорных пакетов и какого размера слать перед рукопожатием;
+    s1/s2 — случайная добавка к размеру пакетов рукопожатия (init и response);
+    h1..h4 — «магические» заголовки четырёх типов пакетов вместо стандартных 1..4 WireGuard.
+    """
+
+    jc: int
+    jmin: int
+    jmax: int
+    s1: int
+    s2: int
+    h1: int
+    h2: int
+    h3: int
+    h4: int
+
+    def lines(self) -> str:
+        values = {"Jc": self.jc, "Jmin": self.jmin, "Jmax": self.jmax, "S1": self.s1, "S2": self.s2}
+        values |= {"H1": self.h1, "H2": self.h2, "H3": self.h3, "H4": self.h4}
+        return "\n".join(f"{key} = {value}" for key, value in values.items())
+
+
+_INIT_SIZE, _RESPONSE_SIZE = 148, 92  # размеры init/response пакетов WireGuard без добавок S1/S2
+
+
+def random_obfuscation() -> Obfuscation:
+    """Случайные допустимые параметры (криптостойкий генератор — значения не предсказать по соседнему серверу).
+
+    Ограничения AmneziaWG:
+    - init (148+S1) и response (92+S2) не должны совпасть по размеру, иначе их не различить: S2 != S1 + 56;
+    - H1..H4 — разные и не 1..4 (это заголовки обычного WireGuard, ради отличия от них всё и затевается);
+    - Jmin < Jmax <= 1280.
+    """
+    rng = secrets.SystemRandom()
+    s1 = rng.randint(15, 150)
+    s2 = rng.choice([s for s in range(15, 151) if _INIT_SIZE + s1 != _RESPONSE_SIZE + s])
+    headers = rng.sample(range(5, 2**31), 4)
+    jmin = rng.randint(10, 50)
+    return Obfuscation(
+        jc=rng.randint(4, 10),
+        jmin=jmin,
+        jmax=rng.randint(jmin + 20, jmin + 200),
+        s1=s1,
+        s2=s2,
+        h1=headers[0],
+        h2=headers[1],
+        h3=headers[2],
+        h4=headers[3],
+    )
+
+
+def render_awg_config(private_key_str: str, udp_port: int, obfuscation: Obfuscation | None = None) -> str:
+    """Серверный конфиг новой установки. Без obfuscation — случайные параметры (для каждого сервера свои)."""
+    chosen = obfuscation or random_obfuscation()
+    return DEFAULT_AWG_CONFIG.format(private_key=private_key_str, port=udp_port, obfuscation=chosen.lines())
 
 
 def is_valid_public_key(value: str) -> bool:
@@ -284,9 +348,7 @@ def render_client_config(
 ) -> str:
     """Конфиг для приложения клиента. Параметры обфускации копируются из серверного [Interface]."""
     server_interface = interface_values(server_config)
-    obfuscation = [
-        f"{key} = {value}" for key, value in server_interface.items() if key not in _SERVER_ONLY_INTERFACE_KEYS
-    ]
+    obfuscation = [f"{key} = {value}" for key, value in server_interface.items() if key in _CLIENT_INTERFACE_KEYS]
     host = f"[{endpoint_host}]" if ":" in endpoint_host else endpoint_host
     lines = [
         "[Interface]",

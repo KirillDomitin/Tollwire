@@ -15,17 +15,31 @@ x-app-env: &app-env
   REDIS_URL: redis://redis:6379/0
   COOKIE_SECURE: "true"
   LOG_FORMAT: json  # одна JSON-строка на событие: docker compose logs | jq, сборщики логов
+  DOCS_ENABLED: "false"  # /api/openapi в проде не публикуем
+
+# Ограничения для всех сервисов: процесс не может повысить себе права (setuid-бинарники и т.п.).
+x-hardened: &hardened
+  security_opt: ["no-new-privileges:true"]
 
 x-app: &app
+  <<: *hardened
   build: .
   image: vpn-panel:latest
   env_file: .env.prod
   environment: *app-env
   restart: unless-stopped
+  # Приложению не нужны ни Linux-capabilities, ни запись в собственную файловую систему: взломанный процесс
+  # не сможет ни поднять права, ни подложить себе файлы. /tmp — в памяти (asyncio/SSL иногда пишут туда).
+  cap_drop: [ALL]
+  read_only: true
+  tmpfs: [/tmp]
+  mem_limit: 512m
 
 services:
   postgres:
-    image: postgres:18-alpine
+    <<: *hardened
+    image: postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+    mem_limit: 1g
     environment:
       # Только свои переменные: секреты приложения (JWT, ENCRYPTION_KEY) контейнеру БД не передаются.
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env.prod}
@@ -42,7 +56,9 @@ services:
     restart: unless-stopped
 
   redis:
-    image: redis:8-alpine
+    <<: *hardened
+    image: redis:8-alpine@sha256:3811787313eba226a2ef38658c6ccb91cd5e110edc89c37767de373120a0e5a0
+    mem_limit: 256m
     # AOF: очередь задач и блокировки переживают перезапуск Redis (потерянное всё равно подберёт requeue_jobs).
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
@@ -98,7 +114,9 @@ services:
         condition: service_healthy
 
   nginx:
-    image: nginx:stable-alpine
+    <<: *hardened
+    image: nginx:stable-alpine@sha256:0985e772fb9f729e6fa0980da05fca5d9c468e870eed43071545afa9d2e27d94
+    mem_limit: 128m
     ports:
       - "${HTTP_PORT:-80}:80"
       - "${HTTPS_PORT:-443}:443"

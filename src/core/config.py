@@ -3,6 +3,7 @@
 
 from typing import Literal
 
+from pydantic import field_validator
 from pydantic.types import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -23,11 +24,17 @@ class Settings(BaseSettings):
     # Флаг Secure у refresh-cookie: браузер шлёт её только по HTTPS. В проде — всегда true;
     # false — только для локальной разработки по http://localhost.
     cookie_secure: bool = True
+    # /api/openapi (Swagger) и схема. В проде выключено (docker-compose.prod.yml): карту всех эндпоинтов не публикуем.
+    docs_enabled: bool = True
 
     # Ограничение частоты (rate limiting), Redis. Окна в секундах.
     login_ip_max_attempts: int = 10  # любых попыток входа с одного IP за окно
     login_ip_window_seconds: int = 60
-    login_max_failures: int = 5  # неудачных входов в одну учётку (с любых IP) → вход в неё закрыт до конца окна
+    # Блокировка по неудачам — два порога в одном окне. Низкий — по паре (учётка, IP): атакующий запирает
+    # только себя. Высокий — по учётке со всех IP: держит перебор с ботнета, а запереть админа снаружи
+    # становится на порядок дороже.
+    login_max_failures: int = 5  # неудач с одного IP в одну учётку
+    login_email_max_failures: int = 50  # неудач в одну учётку со всех IP
     login_lock_seconds: int = 900
     refresh_ip_max_attempts: int = 30
     refresh_ip_window_seconds: int = 60
@@ -51,6 +58,15 @@ class Settings(BaseSettings):
     audit_retention_days: int = 365
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    @field_validator("jwt_secret_key")
+    @classmethod
+    def _strong_jwt_secret(cls, value: SecretStr) -> SecretStr:
+        # Им подписаны токены: со слабым или шаблонным секретом любой подделает токен любого админа.
+        secret = value.get_secret_value()
+        if len(secret) < 32 or secret.lower().startswith("change_me"):
+            raise ValueError("JWT_SECRET_KEY must be at least 32 random characters (openssl rand -hex 32)")
+        return value
 
 
 settings = Settings()

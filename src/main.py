@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
-from core.database.postgres import get_session
+from core.database.postgres import engine, get_session
 from core.exceptions import (
     AdminRuleError,
     AlreadyExistsError,
@@ -28,6 +28,7 @@ from core.exceptions import (
 from core.log import setup_logging
 from core.middleware import RequestContextMiddleware
 from core.rate_limit import RateLimitExceeded
+from core.redis import get_redis
 from modules.access.api.v1.router import router as access_router
 from modules.audit.api.v1.router import router as audit_router
 from modules.auth.api.v1.admins import router as admins_router
@@ -44,10 +45,18 @@ logger = logging.getLogger("api")
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     logger.info("api started")
     yield
+    # Аккуратно закрыть пулы: незакрытые соединения PostgreSQL/Redis при остановке оставляют висящие сессии.
+    await engine.dispose()
+    await get_redis().aclose()
     logger.info("api stopped")
 
 
-app = FastAPI(title=settings.project_name, docs_url="/api/openapi", openapi_url="/api/openapi.json", lifespan=lifespan)
+app = FastAPI(
+    title=settings.project_name,
+    docs_url="/api/openapi" if settings.docs_enabled else None,
+    openapi_url="/api/openapi.json" if settings.docs_enabled else None,
+    lifespan=lifespan,
+)
 
 app.add_middleware(RequestContextMiddleware)
 

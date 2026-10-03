@@ -1,8 +1,10 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 import asyncio
+import contextlib
 import logging
 import posixpath
+import secrets
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -237,12 +239,21 @@ class SSHClient:
         if self._conn is None:
             raise RuntimeError("SSH connection is not established")
         logger.debug("ssh write file", extra={"host": self.host, "remote_path": remote_path})
+        # Атомарно: пишем во временный файл рядом (права 0600 — сразу при создании, а не chmod после: в конфиге
+        # приватный ключ сервера), затем подменяем целиком. Обрыв посреди записи оставляет старый файл целым,
+        # а не обрезанный awg0.conf без половины peer'ов.
+        tmp_path = f"{remote_path}.tmp-{secrets.token_hex(4)}"
         try:
             async with self._conn.start_sftp_client() as sftp:
                 await sftp.makedirs(posixpath.dirname(remote_path), exist_ok=True)
-                async with sftp.open(remote_path, "w") as f:
-                    await f.write(content)
-                await self.execute(f"chmod 600 {remote_path}")
+                try:
+                    async with sftp.open(tmp_path, "w", asyncssh.SFTPAttrs(permissions=0o600)) as f:
+                        await f.write(content)
+                    await sftp.posix_rename(tmp_path, remote_path)  # rename(2): замена целиком, атомарно
+                except BaseException:
+                    with contextlib.suppress(asyncssh.Error, OSError):
+                        await sftp.remove(tmp_path)
+                    raise
         except TimeoutError as exc:
             raise SSHTimeoutError("File write timeout exceeded") from exc
         except (asyncssh.Error, OSError) as exc:

@@ -5,8 +5,10 @@
 """
 
 import asyncio
+import os
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import asyncssh
 import pytest
@@ -24,12 +26,13 @@ class FakeSSHD:
     host_key: HostKey
     client_key: str  # приватный ключ клиента, которому разрешён вход
     client_fingerprint: str
+    root: Path
     attempts: list[str] = field(default_factory=list)  # какие попытки входа ДОШЛИ до сервера
     clients: list[SSHClient] = field(default_factory=list)
 
 
 @pytest.fixture
-async def sshd() -> AsyncIterator[FakeSSHD]:
+async def sshd(tmp_path: Path) -> AsyncIterator[FakeSSHD]:
     host_private = asyncssh.generate_private_key("ssh-ed25519")
     client_private = asyncssh.generate_private_key("ssh-ed25519")
     attempts: list[str] = []
@@ -56,9 +59,16 @@ async def sshd() -> AsyncIterator[FakeSSHD]:
         process.stdout.write("Linux fake-sshd\n")
         process.exit(0)
 
-    server = await asyncssh.create_server(Server, "127.0.0.1", 0, server_host_keys=[host_private], process_factory=run)
+    class SFTP(asyncssh.SFTPServer):
+        def __init__(self, chan: asyncssh.SSHServerChannel[bytes]):
+            super().__init__(chan, chroot=str(tmp_path).encode())  # «корень» сервера — временная папка теста
+
+    server = await asyncssh.create_server(
+        Server, "127.0.0.1", 0, server_host_keys=[host_private], process_factory=run, sftp_factory=SFTP
+    )
     port = server.sockets[0].getsockname()[1]
     sshd = FakeSSHD(
+        root=tmp_path,
         port=port,
         host_key=HostKey.from_ssh_key(host_private.convert_to_public()),
         client_key=client_private.export_private_key().decode(),
@@ -115,3 +125,15 @@ async def test_password_never_reaches_impostor(sshd: FakeSSHD) -> None:
         await client(sshd, password=PASSWORD, host_key=pinned).connect()
     assert sshd.attempts == []  # пароль самозванцу не ушёл
     assert (exc.value.expected, exc.value.presented) == (pinned.fingerprint, sshd.host_key.fingerprint)
+
+
+async def test_write_file_replaces_atomically_with_private_permissions(sshd: FakeSSHD) -> None:
+    """Конфиг пишется во временный файл и подменяется целиком: обрыв не оставит обрезанный awg0.conf."""
+    async with client(sshd, private_key=sshd.client_key) as ssh:
+        await ssh.write_file("/opt/vpn-admin/awg/awg0.conf", "[Interface]\nold\n")
+        await ssh.write_file("/opt/vpn-admin/awg/awg0.conf", "[Interface]\nnew\n")
+        assert await ssh.read_file("/opt/vpn-admin/awg/awg0.conf") == "[Interface]\nnew\n"
+    folder = sshd.root / "opt" / "vpn-admin" / "awg"
+    assert [p.name for p in folder.iterdir()] == ["awg0.conf"]  # временных файлов не осталось
+    if os.name != "nt":  # права POSIX; на Windows их нет
+        assert (folder / "awg0.conf").stat().st_mode & 0o777 == 0o600

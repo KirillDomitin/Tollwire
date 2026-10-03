@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.config import settings
 from core.rate_limit import Limit, RateLimiter, RateLimitExceeded, subject_key
 from core.security import DUMMY_PASSWORD_HASH
+from main import app
 from modules.audit.actor import SYSTEM_ACTOR
 from modules.audit.models.audit_log import AuditAction, AuditLog
 from modules.auth import service as auth_service
@@ -90,7 +91,7 @@ async def test_account_locked_after_failures_even_with_right_password(
     assert int(locked.headers["retry-after"]) <= settings.login_lock_seconds
     assert len(await audit_actions(session, AuditAction.LOGIN_FAILED)) == settings.login_max_failures
     (lock,) = await audit_actions(session, AuditAction.LOGIN_LOCKED)  # одна запись на блокировку
-    assert lock.meta == {"email": admin.email, "lock_seconds": settings.login_lock_seconds}
+    assert lock.meta == {"email": admin.email, "scope": "ip", "lock_seconds": settings.login_lock_seconds}
 
 
 async def test_unknown_email_locks_the_same_way(client: httpx.AsyncClient) -> None:
@@ -147,3 +148,31 @@ async def test_argon2_runs_off_the_event_loop(session: AsyncSession, monkeypatch
     with pytest.raises(auth_service.InvalidCredentialsError):
         await AuthService(session, SYSTEM_ACTOR).authenticate("ghost@example.com", "whatever")
     assert threads == [True]
+
+
+def client_from(ip: str) -> httpx.AsyncClient:
+    """Клиент с заданным IP — как разные адреса за nginx (в аудите и лимитах это request.client)."""
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app, client=(ip, 40000)), base_url="http://testserver")
+
+
+async def test_attacker_cannot_lock_admin_out_from_another_ip(admin: AdminLogin) -> None:
+    """Раньше 5 неудач с любого адреса закрывали учётку для всех: зная email, можно было держать админа снаружи."""
+    async with client_from("198.51.100.66") as attacker, client_from("203.0.113.7") as office:
+        for _ in range(settings.login_max_failures):
+            assert (await login(attacker, admin.email, "wrong-password")).status_code == 401
+        assert (await login(attacker, admin.email, admin.password)).status_code == 429  # себя атакующий запер
+        assert (await login(office, admin.email, admin.password)).status_code == 200  # админа — нет
+
+
+async def test_account_threshold_still_stops_botnet(
+    admin: AdminLogin, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Перебор с многих адресов (каждый ниже порога «учётка+IP») упирается в общий порог учётки."""
+    monkeypatch.setattr(auth_service, "LOGIN_FAILURES_BY_EMAIL", Limit("login_email_failures", 3, 900))
+    for n in range(3):
+        async with client_from(f"198.51.100.{n + 1}") as bot:
+            assert (await login(bot, admin.email, "wrong-password")).status_code == 401
+    async with client_from("203.0.113.7") as office:
+        assert (await login(office, admin.email, admin.password)).status_code == 429  # закрыто целиком
+    scopes = [log.meta["scope"] for log in await audit_actions(session, AuditAction.LOGIN_LOCKED)]
+    assert scopes == ["account"]

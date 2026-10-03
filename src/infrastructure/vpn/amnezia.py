@@ -26,6 +26,7 @@ from infrastructure.vpn.awg_config import (
 )
 from infrastructure.vpn.config import (
     ACTIVE_HANDSHAKE_WINDOW_SECONDS,
+    AMNEZIAWG_IMAGE,
     CONFIG_FILE_NAME,
     CONTAINER_CONFIG_DIR,
     CONTAINER_NAME,
@@ -397,7 +398,7 @@ class AmneziaWGProvider(VPNProvider):
                   --cap-add=NET_ADMIN --device=/dev/net/tun \
                   -p {port}:{port}/udp \
                   -v {CONFIG_PATH}:/etc/amnezia/awg \
-                  amneziavpn/amneziawg-go:latest \
+                  {AMNEZIAWG_IMAGE} \
                   sh -c 'awg-quick up /etc/amnezia/awg/awg0.conf && tail -f /dev/null'",
                 timeout=300,
             )

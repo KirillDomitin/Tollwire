@@ -8,7 +8,9 @@ import sys
 from collections.abc import Callable
 
 from core.config import settings
+from core.database.postgres import engine
 from core.log import setup_logging
+from core.redis import get_redis
 from infrastructure.workers.scheduler import Scheduler, build_rules
 from infrastructure.workers.worker import JobWorker
 from modules.jobs.queue import JobQueue
@@ -45,6 +47,8 @@ async def main() -> None:
 
     handle_signals(stop)
     await asyncio.gather(worker.run(), *([scheduler.run()] if scheduler else []))
+    await engine.dispose()
+    await get_redis().aclose()
     logger.info("worker stopped")
 
 
