@@ -38,4 +38,5 @@ EXPOSE 8000
 
 # По умолчанию — API. Воркер и миграции переопределяют команду в compose.
 # --proxy-headers: IP клиента и схему берём из X-Forwarded-*, но только от FORWARDED_ALLOW_IPS (читает сам uvicorn).
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--no-server-header"]
+# --no-access-log: строку на каждый запрос (с request_id) пишет RequestContextMiddleware.
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--no-server-header", "--no-access-log"]

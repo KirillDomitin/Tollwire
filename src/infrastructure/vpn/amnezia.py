@@ -1,6 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 import asyncio
+import logging
 import re
 from datetime import datetime, timezone
 
@@ -45,6 +46,8 @@ from infrastructure.vpn.provider import (
     VPNClientInfo,
     VPNProvider,
 )
+
+logger = logging.getLogger("vpn.amnezia")
 
 # fullmatch (см. validate_name): у re.match «$» пропускает завершающий \n, а имя пишется в awg0.conf.
 _ALLOWED = re.compile(r"[a-zA-Z0-9_-]{1,32}")
@@ -93,7 +96,9 @@ class AmneziaInstaller:
 
             result = await self.ssh_client.execute("systemctl enable docker")
             if result.exit_status != 0:
-                print(f"Warning: Docker started, but failed to enable autostart: {result.stderr.strip()}")
+                logger.warning(
+                    "docker started, but autostart was not enabled", extra={"exit_status": result.exit_status}
+                )
 
     async def docker_version(self) -> str | None:
         """Версия Docker на сервере или None, если Docker не установлен. Ничего не меняет."""

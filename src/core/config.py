@@ -1,6 +1,8 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
+from typing import Literal
+
 from pydantic.types import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -16,6 +18,8 @@ class Settings(BaseSettings):
     ssh_connect_timeout: int
     ssh_command_timeout: int
     log_level: str = "info"
+    # json — одна JSON-строка на событие (прод, docker-compose.prod.yml); text — читаемо глазами (локально).
+    log_format: Literal["json", "text"] = "text"
     # Флаг Secure у refresh-cookie: браузер шлёт её только по HTTPS. В проде — всегда true;
     # false — только для локальной разработки по http://localhost.
     cookie_secure: bool = True

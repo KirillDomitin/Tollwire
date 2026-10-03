@@ -14,6 +14,7 @@ x-app-env: &app-env
   DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:?}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:?}
   REDIS_URL: redis://redis:6379/0
   COOKIE_SECURE: "true"
+  LOG_FORMAT: json  # одна JSON-строка на событие: docker compose logs | jq, сборщики логов
 
 x-app: &app
   build: .

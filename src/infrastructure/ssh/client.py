@@ -1,13 +1,19 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 import asyncio
+import logging
 import posixpath
+import time
 from dataclasses import dataclass
 
 import asyncssh
 
 from core.config import settings
 from core.exceptions import SSHAuthError, SSHConnectionError, SSHTimeoutError
+
+# Что логируем: подключение, сбои, текст команды/путь файла (DEBUG), код возврата, длительность.
+# Что НЕ логируем никогда: stdout/stderr команд и содержимое файлов (там конфиги и ключи), пароль/ключ SSH.
+logger = logging.getLogger("ssh")
 
 
 @dataclass
@@ -65,9 +71,13 @@ class SSHClient:
             try:
                 await self._connect_once()
                 return
-            except (SSHTimeoutError, SSHConnectionError):
+            except (SSHTimeoutError, SSHConnectionError) as exc:
                 if attempt == self.retries:
+                    logger.warning(
+                        "ssh connect failed", extra={**self._target(), "attempts": attempt, "error": str(exc)}
+                    )
                     raise
+                logger.info("ssh connect retry", extra={**self._target(), "attempt": attempt, "error": str(exc)})
                 await asyncio.sleep(delay)
                 delay *= 2
 
@@ -86,7 +96,9 @@ class SSHClient:
                 known_hosts=None,  # осознанный компромисс MVP: см. долг про TOFU/fingerprint
                 **auth,
             )
+            logger.info("ssh connected", extra=self._target())
         except asyncssh.PermissionDenied as exc:
+            logger.warning("ssh auth failed", extra=self._target())
             raise SSHAuthError("Incorrect username or password/secret_key") from exc
         except TimeoutError as exc:
             raise SSHTimeoutError("Connection timeout exceeded") from exc
@@ -97,18 +109,33 @@ class SSHClient:
         effective = timeout if timeout is not None else self.command_timeout
         if self._conn is None:
             raise RuntimeError("SSH connection is not established")
+        started = time.perf_counter()
         try:
             result = await self._conn.run(command, timeout=effective)
         except TimeoutError as exc:
+            logger.warning("ssh command timeout", extra={"host": self.host, "command": command, "timeout": effective})
             raise SSHTimeoutError("Command execution timeout exceeded") from exc
         except (asyncssh.Error, OSError) as exc:
+            logger.warning("ssh command error", extra={"host": self.host, "command": command, "error": str(exc)})
             raise SSHConnectionError(f"Command execution: host={self.host}, port={self.port}") from exc
 
+        logger.debug(
+            "ssh command",
+            extra={
+                "host": self.host,
+                "command": command,
+                "exit_status": result.exit_status,
+                "duration_ms": round((time.perf_counter() - started) * 1000, 1),
+            },
+        )
         return CommandResult(
             stdout=_to_str(result.stdout),
             stderr=_to_str(result.stderr),
             exit_status=result.exit_status if result.exit_status is not None else -1,
         )
+
+    def _target(self) -> dict[str, object]:
+        return {"host": self.host, "port": self.port, "username": self.username}
 
     async def close(self) -> None:
         if self._conn is not None:
@@ -119,6 +146,7 @@ class SSHClient:
     async def write_file(self, remote_path: str, content: str) -> None:
         if self._conn is None:
             raise RuntimeError("SSH connection is not established")
+        logger.debug("ssh write file", extra={"host": self.host, "remote_path": remote_path})
         try:
             async with self._conn.start_sftp_client() as sftp:
                 await sftp.makedirs(posixpath.dirname(remote_path), exist_ok=True)
@@ -133,6 +161,7 @@ class SSHClient:
     async def read_file(self, remote_path: str) -> str:
         if self._conn is None:
             raise RuntimeError("SSH connection is not established")
+        logger.debug("ssh read file", extra={"host": self.host, "remote_path": remote_path})
         try:
             async with self._conn.start_sftp_client() as sftp:
                 async with sftp.open(remote_path, "r") as f:

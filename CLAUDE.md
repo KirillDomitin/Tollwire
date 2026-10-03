@@ -192,7 +192,7 @@ src/
 
 ### Блок 17. Production
 - [x] 17.1 Docker: единый image для api+worker; compose: api/worker/postgres/redis/nginx
-- [ ] 17.2 Структурированные логи (request_id, job_id, server_id)
+- [x] 17.2 Структурированные логи (request_id, job_id, server_id)
 
 ### Definition of Done (MVP)
 Админ может: войти → добавить сервер → проверить SSH → установить Amnezia → установить AmneziaWG → смотреть job/статус сервера → создать VPN-пользователя → выдать доступ → получить конфиг → изменить срок → отозвать доступ → удалить пользователя → sync → health → смотреть audit log.

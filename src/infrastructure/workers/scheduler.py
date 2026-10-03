@@ -1,12 +1,14 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from uuid import UUID
 
 from core.config import Settings
 from core.database.postgres import session_factory
+from core.log import bind
 from core.redis import get_redis
 from modules.access.service import SubscriptionService
 from modules.audit.actor import SYSTEM_ACTOR
@@ -14,6 +16,8 @@ from modules.audit.service import AuditService
 from modules.auth.service import AuthService
 from modules.jobs.service import JobService
 from modules.servers.maintenance import ServerMaintenanceService
+
+logger = logging.getLogger("scheduler")
 
 
 @dataclass(frozen=True)
@@ -55,11 +59,12 @@ class Scheduler:
                 return
             if not await self._claim(rule):
                 continue
-            try:
-                print(f"[scheduler] {rule.name}: {await rule.action()}")
-            except Exception as exc:
-                # Сбой одного правила не должен останавливать остальные и сам цикл.
-                print(f"[scheduler] {rule.name} failed: {exc}")
+            with bind(rule=rule.name):
+                try:
+                    logger.info("rule done", extra={"summary": await rule.action()})
+                except Exception:
+                    # Сбой одного правила не должен останавливать остальные и сам цикл.
+                    logger.exception("rule failed")
 
     @staticmethod
     async def _claim(rule: Rule) -> bool:
@@ -79,8 +84,8 @@ async def _for_each_subscription(
             async with session_factory() as session:
                 await apply(SubscriptionService(session, SYSTEM_ACTOR), subscription_id)
             done += 1
-        except Exception as exc:
-            print(f"[scheduler] subscription {subscription_id} failed: {exc}")
+        except Exception:
+            logger.exception("subscription rule failed", extra={"subscription_id": str(subscription_id)})
     return done, len(ids)
 
 

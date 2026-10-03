@@ -1,6 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Annotated
@@ -11,6 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.database.postgres import get_session
+from core.log import setup_logging
+from core.middleware import RequestContextMiddleware
 from modules.access.api.v1.router import router as access_router
 from modules.audit.api.v1.router import router as audit_router
 from modules.auth.api.v1.router import router as auth_router
@@ -18,15 +21,20 @@ from modules.jobs.api.v1.router import router as job_router
 from modules.servers.api.v1.router import router as server_router
 from modules.vpn_users.api.v1.router import router as vpn_user_router
 
+setup_logging(settings.log_level, settings.log_format)
+logger = logging.getLogger("api")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
-    print("Start!")
+    logger.info("api started")
     yield
-    print("Finish!")
+    logger.info("api stopped")
 
 
 app = FastAPI(title=settings.project_name, docs_url="/api/openapi", openapi_url="/api/openapi.json", lifespan=lifespan)
+
+app.add_middleware(RequestContextMiddleware)
 
 app.include_router(auth_router)
 app.include_router(server_router)

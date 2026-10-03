@@ -1,6 +1,8 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 import asyncio
+import logging
+import time
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
@@ -8,7 +10,9 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database.postgres import session_factory
-from core.exceptions import JobNotFound, JobStatusError, JobTypeError, ServerBusyError
+from core.exceptions import AppError, JobError, JobNotFound, JobStatusError, JobTypeError, ServerBusyError
+from core.log import bind
+from core.ssh_exception import SSHServerError
 from infrastructure.vpn.provider import ProviderStatus
 from infrastructure.workers.locks import ServerLock
 from modules.access.models.vpn_credential import VPNCredential
@@ -21,6 +25,12 @@ from modules.protocols.models.protocol import ProtocolType, VPNProtocol
 from modules.servers.health import ServerHealthService
 from modules.servers.service import ServerConnectionService
 from modules.servers.sync import ServerSyncService
+
+logger = logging.getLogger("worker")
+
+
+def _elapsed_ms(started: float) -> float:
+    return round((time.perf_counter() - started) * 1000, 1)
 
 
 class JobWorker:
@@ -43,10 +53,14 @@ class JobWorker:
         job_id = await self.job_queue.dequeue(timeout)
         if job_id is None:
             return False
-        try:
-            await self._handle(job_id)
-        except Exception as exc:
-            print(f"Job execution error: {exc}")
+        with bind(job_id=job_id):
+            try:
+                await self._handle(job_id)
+            except JobError as exc:
+                # Ошибка данных задачи (не найдена, уже не PENDING, нет server_id) — задача не выполнялась.
+                logger.warning("job skipped", extra={"reason": str(exc)})
+            except Exception:
+                logger.exception("job handling crashed")
         return True
 
     async def _handle(self, job_id: UUID) -> None:
@@ -86,61 +100,73 @@ class JobWorker:
             await session.commit()
             # Аудит результата пишется от имени админа, запустившего задачу (NULL — система).
             actor = AuditActor(admin_id=job.admin_id)
+            started = time.perf_counter()
+            with bind(job_type=job.type.value, server_id=job.server_id):
+                logger.info("job started")
 
-            try:
-                match job.type:
-                    case JobType.CREATE_USER:
-                        async with ServerLock(server_id):
-                            await self.create_user(session, access_grant_id, actor)
+                try:
+                    match job.type:
+                        case JobType.CREATE_USER:
+                            async with ServerLock(server_id):
+                                await self.create_user(session, access_grant_id, actor)
 
-                    case JobType.DELETE_USER:
-                        await self.delete_user()
+                        case JobType.DELETE_USER:
+                            await self.delete_user()
 
-                    case JobType.SYNC_SERVER:
-                        async with ServerLock(server_id):
-                            job.result = await self.sync_server(session, server_id)
+                        case JobType.SYNC_SERVER:
+                            async with ServerLock(server_id):
+                                job.result = await self.sync_server(session, server_id)
 
-                    case JobType.HEALTH_CHECK:
-                        # Без ServerLock: health только читает и не должен ждать выдачу/отзыв клиентов.
-                        job.result = await self.health_check(session, server_id)
+                        case JobType.HEALTH_CHECK:
+                            # Без ServerLock: health только читает и не должен ждать выдачу/отзыв клиентов.
+                            job.result = await self.health_check(session, server_id)
 
-                    case JobType.REVOKE_ACCESS:
-                        async with ServerLock(server_id):
-                            await self.revoke_access(session, access_grant_id, actor)
+                        case JobType.REVOKE_ACCESS:
+                            async with ServerLock(server_id):
+                                await self.revoke_access(session, access_grant_id, actor)
 
-                    case JobType.INSTALL_SERVER:
-                        async with ServerLock(server_id):
-                            await self.install_server(session, server_id)
+                        case JobType.INSTALL_SERVER:
+                            async with ServerLock(server_id):
+                                await self.install_server(session, server_id)
 
-                    case JobType.REMOVE_PROTOCOL:
-                        async with ServerLock(server_id):
-                            await self.remove_protocol(session, server_id)
+                        case JobType.REMOVE_PROTOCOL:
+                            async with ServerLock(server_id):
+                                await self.remove_protocol(session, server_id)
 
-                    case JobType.INSTALL_PROTOCOL:
-                        async with ServerLock(server_id):
-                            await self.install_protocol(session, server_id, ProtocolType.AMNEZIA_WG)
+                        case JobType.INSTALL_PROTOCOL:
+                            async with ServerLock(server_id):
+                                await self.install_protocol(session, server_id, ProtocolType.AMNEZIA_WG)
 
-                    case _:
-                        raise JobTypeError(f"Unknown type name '{job.type}'")
-            except ServerBusyError:
-                job.status = JobStatus.PENDING
-                await asyncio.sleep(1)
-                await self.job_queue.enqueue(job_id)
-                await session.commit()
+                        case _:
+                            raise JobTypeError(f"Unknown type name '{job.type}'")
+                except ServerBusyError:
+                    logger.info("server busy, job requeued")
+                    job.status = JobStatus.PENDING
+                    await asyncio.sleep(1)
+                    await self.job_queue.enqueue(job_id)
+                    await session.commit()
 
-            except Exception as exc:
-                job.progress = 0
-                job.error = str(exc)
-                job.status = JobStatus.FAILED
-                job.finished_at = datetime.now(timezone.utc)
-                JobService(session, actor).record_finished(job)
-                await session.commit()
-            else:
-                job.status = JobStatus.SUCCESS
-                job.finished_at = datetime.now(timezone.utc)
-                job.progress = 100
-                JobService(session, actor).record_finished(job)
-                await session.commit()
+                except Exception as exc:
+                    # Ожидаемые сбои (SSH недоступен, ошибка на сервере) — без трейсбека; неожиданные — с ним.
+                    expected = isinstance(exc, (AppError, SSHServerError))
+                    logger.warning(
+                        "job failed",
+                        extra={"error": str(exc)[:500], "duration_ms": _elapsed_ms(started)},
+                        exc_info=not expected,
+                    )
+                    job.progress = 0
+                    job.error = str(exc)
+                    job.status = JobStatus.FAILED
+                    job.finished_at = datetime.now(timezone.utc)
+                    JobService(session, actor).record_finished(job)
+                    await session.commit()
+                else:
+                    job.status = JobStatus.SUCCESS
+                    job.finished_at = datetime.now(timezone.utc)
+                    job.progress = 100
+                    JobService(session, actor).record_finished(job)
+                    await session.commit()
+                    logger.info("job succeeded", extra={"duration_ms": _elapsed_ms(started)})
 
     async def create_user(self, session: AsyncSession, access_grant_id: UUID, actor: AuditActor) -> VPNCredential:
         return await VPNCredentialService(session, actor).provision(access_grant_id)

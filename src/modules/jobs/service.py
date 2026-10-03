@@ -1,5 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
+import logging
 from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -39,6 +40,8 @@ _FAILED: dict[JobType, AuditAction] = {
 }
 _ERROR_MAX_LENGTH = 500
 
+logger = logging.getLogger("jobs")
+
 
 class JobService:
     def __init__(self, session: AsyncSession, actor: AuditActor):
@@ -56,6 +59,10 @@ class JobService:
             self.audit.record(_STARTED[job_type], AuditEntity.SERVER, server_id, {"job_id": job.id})
         await self.session.commit()
         await self.job_queue.enqueue(job.id)
+        # В API здесь же в контексте request_id: по этой строке запрос связывается с job_id в логах воркера.
+        logger.info(
+            "job queued", extra={"job_id": str(job.id), "job_type": job_type.value, "server_id": str(server_id)}
+        )
         return job
 
     def record_finished(self, job: Job) -> None:
