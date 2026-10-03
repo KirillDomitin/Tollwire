@@ -5,3 +5,6 @@ __pycache__/
 theory/
 .agents/
 skills-lock.json
+.coverage
+htmlcov/
+.pytest_cache/
