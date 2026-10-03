@@ -15,6 +15,8 @@ from modules.audit.models.audit_log import AuditAction, AuditLog
 from modules.audit.repository import AuditLogFilter
 from modules.audit.schemas import AuditLogRead
 from modules.audit.service import AuditService
+from modules.auth.dependencies import require
+from modules.auth.permissions import Permission
 
 # Только чтение: журнал нельзя изменить или удалить через API.
 router = APIRouter(prefix="/api/v1/audit-logs", tags=["audit"])
@@ -26,7 +28,7 @@ def get_audit_service(
     return AuditService(session, actor)
 
 
-@router.get("", response_model=list[AuditLogRead])
+@router.get("", dependencies=[Depends(require(Permission.AUDIT_READ))], response_model=list[AuditLogRead])
 async def list_audit_logs(
     service: AuditService = Depends(get_audit_service),
     admin_id: UUID | None = None,

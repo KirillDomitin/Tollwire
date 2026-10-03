@@ -5,6 +5,7 @@
 
 import secrets
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -15,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.security import hash_password
 from infrastructure.workers.worker import JobWorker
 from main import app
-from modules.auth.models.admin import Admin
+from modules.auth.models.admin import Admin, AdminRole
 from modules.jobs.queue import JobQueue
 from tests.fakes.fake_ssh import FakeServer
 
@@ -38,13 +39,28 @@ class AdminLogin:
     password: str
 
 
-@pytest.fixture
-async def admin(session: AsyncSession) -> AdminLogin:
-    email, password = f"admin-{secrets.token_hex(4)}@example.com", secrets.token_urlsafe(16)
-    admin = Admin(email=email, password_hash=hash_password(password))
+async def make_admin(session: AsyncSession, role: AdminRole = AdminRole.SUPERADMIN) -> AdminLogin:
+    email, password = f"{role.value}-{secrets.token_hex(4)}@example.com", secrets.token_urlsafe(16)
+    admin = Admin(email=email, password_hash=hash_password(password), role=role)
     session.add(admin)
     await session.commit()
     return AdminLogin(admin, email, password)
+
+
+@asynccontextmanager
+async def login_client(admin: AdminLogin) -> AsyncIterator[httpx.AsyncClient]:
+    """Отдельный клиент (свои cookie), вошедший под admin: async with login_client(admin) as http."""
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as http:
+        response = await http.post("/api/v1/auth/login", json={"email": admin.email, "password": admin.password})
+        assert response.status_code == 200, response.text
+        http.headers["Authorization"] = f"Bearer {response.json()['access_token']}"
+        yield http
+
+
+@pytest.fixture
+async def admin(session: AsyncSession) -> AdminLogin:
+    """Superadmin: сквозные тесты проверяют функциональность, а не права (права — в test_rbac.py)."""
+    return await make_admin(session)
 
 
 @pytest.fixture

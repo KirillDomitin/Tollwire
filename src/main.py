@@ -18,6 +18,7 @@ from core.middleware import RequestContextMiddleware
 from core.rate_limit import RateLimitExceeded
 from modules.access.api.v1.router import router as access_router
 from modules.audit.api.v1.router import router as audit_router
+from modules.auth.api.v1.admins import router as admins_router
 from modules.auth.api.v1.router import router as auth_router
 from modules.jobs.api.v1.router import router as job_router
 from modules.servers.api.v1.router import router as server_router
@@ -48,6 +49,7 @@ async def rate_limited(request: Request, exc: RateLimitExceeded) -> JSONResponse
 
 
 app.include_router(auth_router)
+app.include_router(admins_router)
 app.include_router(server_router)
 app.include_router(job_router)
 app.include_router(vpn_user_router)

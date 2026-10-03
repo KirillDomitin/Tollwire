@@ -59,6 +59,7 @@ class AuthService:
             await self.session.commit()
             raise
         await self.limiter.reset(LOGIN_FAILURES_BY_EMAIL, email_key)  # успешный вход обнуляет счётчик неудач
+        admin.last_login_at = datetime.now(timezone.utc)
         access = create_access_token(str(admin.id))
         refresh = generate_refresh_token()
         refresh_hash = hash_refresh_token(refresh)
@@ -72,6 +73,12 @@ class AuthService:
         refresh_hash = hash_refresh_token(refresh_token)
         admin_session = await self.sessions.get_by_token_hash(refresh_hash)
         if not admin_session or admin_session.revoked or admin_session.expires_at < datetime.now(timezone.utc):
+            raise InvalidCredentialsError
+        admin = await self.admins.get_by_id(admin_session.admin_id)
+        if admin is None or not admin.is_active:
+            # Отключённый админ не продлевает сессию, даже если refresh-токен ещё не истёк.
+            await self.sessions.delete(admin_session)
+            await self.session.commit()
             raise InvalidCredentialsError
         new_access = create_access_token(str(admin_session.admin_id))
         new_refresh = generate_refresh_token()

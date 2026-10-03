@@ -9,6 +9,10 @@ class AppError(Exception):
 class InvalidCredentialsError(AppError): ...
 
 
+class AdminRuleError(AppError):
+    """Запрещённое изменение админа: себя, последнего активного superadmin."""
+
+
 class CredentialNotFound(AppError): ...
 
 

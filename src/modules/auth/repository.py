@@ -1,5 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any, cast
 from uuid import UUID
@@ -7,7 +8,7 @@ from uuid import UUID
 from sqlalchemy import CursorResult, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from modules.auth.models.admin import Admin
+from modules.auth.models.admin import Admin, AdminRole
 from modules.auth.models.admin_session import AdminSession
 
 
@@ -22,6 +23,19 @@ class AdminRepository:
 
     async def get_by_id(self, admin_id: UUID) -> Admin | None:
         return await self.session.get(Admin, admin_id)
+
+    async def list_all(self) -> Sequence[Admin]:
+        result = await self.session.execute(select(Admin).order_by(Admin.created_at))
+        return result.scalars().all()
+
+    def add(self, admin: Admin) -> None:
+        self.session.add(admin)
+
+    async def lock_active_superadmin_ids(self) -> Sequence[UUID]:
+        """id активных superadmin под блокировкой строк (FOR UPDATE) до конца транзакции: два одновременных
+        понижения не пройдут оба, не оставив панель без superadmin."""
+        query = select(Admin.id).where(Admin.role == AdminRole.SUPERADMIN, Admin.is_active).with_for_update()
+        return (await self.session.execute(query)).scalars().all()
 
 
 class AdminSessionRepository:
@@ -41,6 +55,12 @@ class AdminSessionRepository:
 
     async def delete(self, session_obj: AdminSession) -> None:
         await self.session.delete(session_obj)
+
+    async def delete_for_admin(self, admin_id: UUID) -> int:
+        """Завершить все сессии админа (refresh-токены перестают работать)."""
+        query = delete(AdminSession).where(AdminSession.admin_id == admin_id)
+        result = cast(CursorResult[Any], await self.session.execute(query))
+        return int(result.rowcount)
 
     async def delete_expired(self, now: datetime) -> int:
         """Удаляет сессии с истёкшим refresh-токеном одним запросом. Возвращает число удалённых."""

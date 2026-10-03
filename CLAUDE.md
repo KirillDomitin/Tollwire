@@ -196,7 +196,7 @@ src/
 
 ### Блок 18. Доводка требований ТЗ (после MVP)
 - [x] 18.1 Rate limiting (Redis + грубый лимит nginx) + защита login от тайминг-атаки
-- [ ] 18.2 RBAC
+- [x] 18.2 RBAC (роли superadmin/operator/viewer, права на каждый эндпоинт, /api/v1/admins)
 - [x] 18.3 Проверка ключа SSH-сервера (known_hosts / TOFU)
 
 ### Definition of Done (MVP)

@@ -11,7 +11,8 @@ from core.database.postgres import get_session
 from core.exceptions import NotFoundError
 from modules.audit.actor import AuditActor
 from modules.audit.dependencies import get_audit_actor
-from modules.auth.dependencies import get_current_admin
+from modules.auth.dependencies import get_current_admin, require
+from modules.auth.permissions import Permission
 from modules.jobs.models.job import Job, JobStatus
 from modules.jobs.schemas import JobRead
 from modules.jobs.service import JobService
@@ -25,7 +26,7 @@ def get_job_service(
     return JobService(session, actor)
 
 
-@router.get("/{job_id}", response_model=JobRead)
+@router.get("/{job_id}", dependencies=[Depends(require(Permission.JOBS_READ))], response_model=JobRead)
 async def get_by_id(job_id: UUID, service: JobService = Depends(get_job_service)) -> Job:
     try:
         job = await service.get(job_id)
@@ -34,7 +35,7 @@ async def get_by_id(job_id: UUID, service: JobService = Depends(get_job_service)
     return job
 
 
-@router.get("", response_model=list[JobRead])
+@router.get("", dependencies=[Depends(require(Permission.JOBS_READ))], response_model=list[JobRead])
 async def list_all(
     service: JobService = Depends(get_job_service),
     server_id: UUID | None = None,
