@@ -4,9 +4,10 @@ import asyncio
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, NoReturn
 from uuid import UUID
 
+from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database.postgres import session_factory
@@ -20,7 +21,7 @@ from modules.access.service import VPNCredentialService
 from modules.audit.actor import AuditActor
 from modules.jobs.models.job import Job, JobStatus, JobType
 from modules.jobs.queue import JobQueue
-from modules.jobs.service import JobService
+from modules.jobs.service import JobService, job_error_text
 from modules.protocols.models.protocol import ProtocolType, VPNProtocol
 from modules.servers.health import ServerHealthService
 from modules.servers.service import ServerConnectionService
@@ -42,8 +43,17 @@ class JobWorker:
         self._stopping = True
 
     async def run(self) -> None:
+        backoff = 1.0
         while not self._stopping:
-            await self.process_next()
+            try:
+                await self.process_next()
+                backoff = 1.0
+            except (RedisError, OSError) as exc:
+                # Redis недоступен (перезапуск, сеть). Раньше исключение роняло весь процесс воркера вместе с
+                # планировщиком. Ждём и пробуем снова; потерянное в очереди подберёт правило requeue_jobs.
+                logger.warning("queue unavailable, retrying", extra={"error": str(exc), "retry_in": backoff})
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 30.0)
 
     async def process_next(self, timeout: int = 2) -> bool:
         """Берёт из очереди одну задачу и выполняет её. False — очередь пуста (ждали timeout секунд).
@@ -72,9 +82,9 @@ class JobWorker:
                 raise JobNotFound(f"Job {job_id} not found")
             if job.status != JobStatus.PENDING:
                 raise JobStatusError("Job status not 'PENDING'")
-            # TODO(блок 8): серверная задача (INSTALL_SERVER и т.п.) обязана иметь server_id.
-            # Если его нет — это ошибка данных: бросать явное исключение, а не полагаться на то,
-            # что в серверных ветках match переменная server_id окажется определена (иначе NameError).
+            # Серверная задача обязана иметь server_id (а задача по доступу — access_grant_id). Нет — ошибка
+            # данных (например, сервер удалили, пока задача ждала: FK обнулил server_id). Такую задачу сразу
+            # закрываем FAILED: оставленная в PENDING, она бы вечно возвращалась в очередь правилом requeue_jobs.
             if job.type in [
                 JobType.INSTALL_SERVER,
                 JobType.UNINSTALL_SERVER,
@@ -86,12 +96,12 @@ class JobWorker:
                 JobType.HEALTH_CHECK,
             ]:
                 if not job.server_id:
-                    raise JobTypeError(f"Job with type '{job.type}' must have server_id")
+                    await self._reject(session, job, f"Job with type '{job.type.value}' must have server_id")
                 else:
                     server_id = UUID(str(job.server_id))
             if job.type in [JobType.CREATE_USER, JobType.REVOKE_ACCESS]:
                 if not job.access_grant_id:
-                    raise JobTypeError(f"Job with type '{job.type}' must have access_grant_id")
+                    await self._reject(session, job, f"Job with type '{job.type.value}' must have access_grant_id")
                 else:
                     access_grant_id = UUID(str(job.access_grant_id))
 
@@ -154,8 +164,16 @@ class JobWorker:
                         extra={"error": str(exc)[:500], "duration_ms": _elapsed_ms(started)},
                         exc_info=not expected,
                     )
+                    # Сначала rollback: после ошибки БД сессия непригодна (commit бросил бы PendingRollbackError
+                    # и задача висела бы в RUNNING), а после любой ошибки незавершённые изменения сервиса не
+                    # должны уйти в базу вместе с FAILED. Сервисы, которым нужно сохранить итог сбоя (статус
+                    # сервера ERROR/OFFLINE), коммитят его сами до исключения.
+                    await session.rollback()
+                    reloaded = await session.get(Job, job_id)
+                    assert reloaded is not None
+                    job = reloaded
                     job.progress = 0
-                    job.error = str(exc)
+                    job.error = job_error_text(exc)
                     job.status = JobStatus.FAILED
                     job.finished_at = datetime.now(timezone.utc)
                     JobService(session, actor).record_finished(job)
@@ -167,6 +185,14 @@ class JobWorker:
                     JobService(session, actor).record_finished(job)
                     await session.commit()
                     logger.info("job succeeded", extra={"duration_ms": _elapsed_ms(started)})
+
+    @staticmethod
+    async def _reject(session: AsyncSession, job: Job, reason: str) -> NoReturn:
+        job.status = JobStatus.FAILED
+        job.error = reason
+        job.finished_at = datetime.now(timezone.utc)
+        await session.commit()
+        raise JobTypeError(reason)
 
     async def create_user(self, session: AsyncSession, access_grant_id: UUID, actor: AuditActor) -> VPNCredential:
         return await VPNCredentialService(session, actor).provision(access_grant_id)

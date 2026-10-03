@@ -6,7 +6,13 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions import AlreadyExistsError, InactiveAccessError, LiveCredentialExistsError, NotFoundError
+from core.exceptions import (
+    AlreadyExistsError,
+    InactiveAccessError,
+    InvalidDataError,
+    LiveCredentialExistsError,
+    NotFoundError,
+)
 from core.security import decrypt_secret, encrypt_secret
 from modules.access.models import AccessGrantStatus
 from modules.access.models.access_grant import AccessGrant
@@ -100,6 +106,9 @@ class SubscriptionService:
     async def update(self, subscription_id: UUID, data: SubscriptionUpdate) -> Subscription:
         subscription = await self.get(subscription_id)
         fields = data.model_dump(exclude_unset=True)
+        # PATCH может прислать одну дату — порядок проверяем по итоговым значениям обеих.
+        if fields.get("valid_until", subscription.valid_until) <= fields.get("valid_from", subscription.valid_from):
+            raise InvalidDataError("valid_until must be after valid_from")
         changes = diff_changes(subscription, fields)
         for field, value in fields.items():
             setattr(subscription, field, value)

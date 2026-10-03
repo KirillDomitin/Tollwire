@@ -53,6 +53,8 @@ class VPNUserService:
     async def update(self, user_id: UUID, data: VPNUserUpdate) -> VPNUser:
         user = await self.get(user_id)
         fields = data.model_dump(exclude_unset=True)
+        if "email" in fields and fields["email"] != user.email and await self.users.get_by_email(fields["email"]):
+            raise AlreadyExistsError
         changes = diff_changes(user, fields)
         for field, value in fields.items():
             setattr(user, field, value)

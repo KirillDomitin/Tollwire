@@ -9,12 +9,14 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions import NotFoundError
+from core.log import redact
 from modules.audit.actor import AuditActor
 from modules.audit.models.audit_log import AuditAction, AuditEntity
 from modules.audit.service import AuditService
 from modules.jobs.models.job import Job, JobStatus, JobType
 from modules.jobs.queue import JobQueue
 from modules.jobs.repository import JobRepository
+from modules.servers.models.server import ServerStatus, VPNServer
 
 # Какие задачи пишут в аудит старт и завершение. Выдача/отзыв клиента пишут успех сами (там известен
 # credential), здесь — только их провал: недошедший отзыв означает, что доступ на сервере ещё жив.
@@ -39,6 +41,13 @@ _FAILED: dict[JobType, AuditAction] = {
     JobType.REVOKE_ACCESS: AuditAction.CREDENTIAL_REVOKE_FAILED,
 }
 _ERROR_MAX_LENGTH = 500
+
+
+def job_error_text(exc: BaseException) -> str:
+    """Текст ошибки для Job.error: его видит в API даже viewer. В сообщении бывает stderr команды с сервера —
+    маскируем секреты (как в логах) и обрезаем."""
+    return redact(str(exc) or type(exc).__name__)[:1000]
+
 
 logger = logging.getLogger("jobs")
 
@@ -88,6 +97,12 @@ class JobService:
             job.error = "Job was interrupted: worker stopped while it was running"
             job.finished_at = now
             self.record_finished(job)
+            if job.type == JobType.INSTALL_SERVER and job.server_id:
+                # Воркер убили посреди установки: сервер остался бы INSTALLING навсегда (и выпал бы из health
+                # и sync). ERROR — понятно, что установку надо повторить.
+                server = await self.session.get(VPNServer, job.server_id)
+                if server is not None and server.status == ServerStatus.INSTALLING:
+                    server.status = ServerStatus.ERROR
         await self.session.commit()
         return len(stale)
 

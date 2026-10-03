@@ -8,15 +8,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database.postgres import get_session
-from core.exceptions import AlreadyExistsError, CredentialNotFound, NotFoundError, SSHError
+from core.exceptions import AlreadyExistsError, CredentialNotFound, LiveCredentialExistsError, NotFoundError, SSHError
 from modules.audit.actor import AuditActor
 from modules.audit.dependencies import get_audit_actor
 from modules.auth.dependencies import get_current_admin, require
 from modules.auth.permissions import Permission
-from modules.jobs.api.v1.router import get_job_service
 from modules.jobs.models.job import Job, JobType
 from modules.jobs.schemas import JobRead
-from modules.jobs.service import JobService
 from modules.protocols.models.protocol import VPNProtocol
 from modules.protocols.schemas import ProtocolRead
 from modules.servers.host_key import ServerHostKeyService
@@ -47,6 +45,17 @@ def get_credential_service(
     session: Annotated[AsyncSession, Depends(get_session)], actor: Annotated[AuditActor, Depends(get_audit_actor)]
 ) -> CredentialService:
     return CredentialService(session, actor)
+
+
+async def schedule(service: ServerService, server_id: UUID, job_type: JobType) -> Job:
+    try:
+        return await service.schedule(server_id, job_type)
+    except NotFoundError:
+        raise HTTPException(404, detail="Server not found")
+    except CredentialNotFound:
+        raise HTTPException(409, detail="Credentials do not exist to perform this operation")
+    except LiveCredentialExistsError as exc:
+        raise HTTPException(409, detail=str(exc))
 
 
 def get_host_key_service(
@@ -163,22 +172,8 @@ async def test_connection(
     response_model=JobRead,
     status_code=202,
 )
-async def server_install(
-    server_id: UUID,
-    server_service: ServerService = Depends(get_server_service),
-    job_service: JobService = Depends(get_job_service),
-    cred_service: CredentialService = Depends(get_credential_service),
-) -> Job:
-    try:
-        await server_service.get(server_id)
-        await cred_service.get(server_id)
-    except NotFoundError:
-        raise HTTPException(404, detail="Server not found")
-    except CredentialNotFound:
-        raise HTTPException(409, detail="Credentials do not exist to perform this operation")
-
-    job = await job_service.create(job_type=JobType.INSTALL_SERVER, server_id=server_id)
-    return job
+async def server_install(server_id: UUID, service: ServerService = Depends(get_server_service)) -> Job:
+    return await schedule(service, server_id, JobType.INSTALL_SERVER)
 
 
 @router.post(
@@ -187,22 +182,8 @@ async def server_install(
     response_model=JobRead,
     status_code=202,
 )
-async def protocol_install(
-    server_id: UUID,
-    server_service: ServerService = Depends(get_server_service),
-    job_service: JobService = Depends(get_job_service),
-    cred_service: CredentialService = Depends(get_credential_service),
-) -> Job:
-    try:
-        await server_service.get(server_id)
-        await cred_service.get(server_id)
-    except NotFoundError:
-        raise HTTPException(404, detail="Server not found")
-    except CredentialNotFound:
-        raise HTTPException(409, detail="Credentials do not exist to perform this operation")
-
-    job = await job_service.create(job_type=JobType.INSTALL_PROTOCOL, server_id=server_id)
-    return job
+async def protocol_install(server_id: UUID, service: ServerService = Depends(get_server_service)) -> Job:
+    return await schedule(service, server_id, JobType.INSTALL_PROTOCOL)
 
 
 @router.get(
@@ -225,22 +206,9 @@ async def list_protocols(
     response_model=JobRead,
     status_code=202,
 )
-async def server_sync(
-    server_id: UUID,
-    server_service: ServerService = Depends(get_server_service),
-    job_service: JobService = Depends(get_job_service),
-    cred_service: CredentialService = Depends(get_credential_service),
-) -> Job:
+async def server_sync(server_id: UUID, service: ServerService = Depends(get_server_service)) -> Job:
     # Отчёт сверки появится в поле result задачи (GET /api/v1/jobs/{id}) после её завершения.
-    try:
-        await server_service.get(server_id)
-        await cred_service.get(server_id)
-    except NotFoundError:
-        raise HTTPException(404, detail="Server not found")
-    except CredentialNotFound:
-        raise HTTPException(409, detail="Credentials do not exist to perform this operation")
-
-    return await job_service.create(job_type=JobType.SYNC_SERVER, server_id=server_id)
+    return await schedule(service, server_id, JobType.SYNC_SERVER)
 
 
 @router.post(
@@ -249,22 +217,9 @@ async def server_sync(
     response_model=JobRead,
     status_code=202,
 )
-async def server_health(
-    server_id: UUID,
-    server_service: ServerService = Depends(get_server_service),
-    job_service: JobService = Depends(get_job_service),
-    cred_service: CredentialService = Depends(get_credential_service),
-) -> Job:
+async def server_health(server_id: UUID, service: ServerService = Depends(get_server_service)) -> Job:
     # Полный отчёт — в result задачи; сводка (health_status, last_health_at) — в GET /servers/{id}.
-    try:
-        await server_service.get(server_id)
-        await cred_service.get(server_id)
-    except NotFoundError:
-        raise HTTPException(404, detail="Server not found")
-    except CredentialNotFound:
-        raise HTTPException(409, detail="Credentials do not exist to perform this operation")
-
-    return await job_service.create(job_type=JobType.HEALTH_CHECK, server_id=server_id)
+    return await schedule(service, server_id, JobType.HEALTH_CHECK)
 
 
 @router.delete(
@@ -273,22 +228,8 @@ async def server_health(
     response_model=JobRead,
     status_code=202,
 )
-async def protocol_uninstall(
-    server_id: UUID,
-    server_service: ServerService = Depends(get_server_service),
-    job_service: JobService = Depends(get_job_service),
-    cred_service: CredentialService = Depends(get_credential_service),
-) -> Job:
-    try:
-        await server_service.get(server_id)
-        await cred_service.get(server_id)
-    except NotFoundError:
-        raise HTTPException(404, detail="Server not found")
-    except CredentialNotFound:
-        raise HTTPException(409, detail="Credentials do not exist to perform this operation")
-
-    job = await job_service.create(job_type=JobType.REMOVE_PROTOCOL, server_id=server_id)
-    return job
+async def protocol_uninstall(server_id: UUID, service: ServerService = Depends(get_server_service)) -> Job:
+    return await schedule(service, server_id, JobType.REMOVE_PROTOCOL)
 
 
 @router.post(

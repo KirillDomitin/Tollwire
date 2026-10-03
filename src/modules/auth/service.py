@@ -72,24 +72,20 @@ class AuthService:
         return access, refresh
 
     async def refresh(self, refresh_token: str) -> tuple[str, str]:
-        refresh_hash = hash_refresh_token(refresh_token)
-        admin_session = await self.sessions.get_by_token_hash(refresh_hash)
-        if not admin_session or admin_session.revoked or admin_session.expires_at < datetime.now(timezone.utc):
+        # Старый токен изымается атомарно (одноразовый) — дальше решаем, выдавать ли новый.
+        taken = await self.sessions.take(hash_refresh_token(refresh_token))
+        if taken is None:
             raise InvalidCredentialsError
-        admin = await self.admins.get_by_id(admin_session.admin_id)
-        if admin is None or not admin.is_active:
-            # Отключённый админ не продлевает сессию, даже если refresh-токен ещё не истёк.
-            await self.sessions.delete(admin_session)
-            await self.session.commit()
+        admin_id, expires_at, revoked = taken
+        admin = await self.admins.get_by_id(admin_id)
+        # Отключённый админ не продлевает сессию, даже если refresh-токен ещё не истёк.
+        if revoked or expires_at < datetime.now(timezone.utc) or admin is None or not admin.is_active:
+            await self.session.commit()  # изъятие негодного токена тоже фиксируем
             raise InvalidCredentialsError
-        new_access = create_access_token(str(admin_session.admin_id))
         new_refresh = generate_refresh_token()
-        new_refresh_hash = hash_refresh_token(new_refresh)
-        new_expires_at = get_refresh_expires_at()
-        await self.sessions.create(admin_session.admin_id, new_refresh_hash, new_expires_at)
-        await self.sessions.delete(admin_session)
+        await self.sessions.create(admin_id, hash_refresh_token(new_refresh), get_refresh_expires_at())
         await self.session.commit()
-        return new_access, new_refresh
+        return create_access_token(str(admin_id)), new_refresh
 
     async def cleanup_expired_sessions(self) -> int:
         """Удаляет сессии с истёкшим refresh-токеном (вызывает планировщик). Войти по ним и так нельзя."""

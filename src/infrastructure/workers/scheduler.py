@@ -47,7 +47,11 @@ class Scheduler:
 
     async def run(self) -> None:
         while not self._stop.is_set():
-            await self.run_due()
+            try:
+                await self.run_due()
+            except Exception as exc:
+                # _claim идёт в Redis вне защиты правил: сбой Redis не должен ронять процесс воркера.
+                logger.warning("scheduler tick failed", extra={"error": str(exc)})
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=self.tick_seconds)
             except TimeoutError:

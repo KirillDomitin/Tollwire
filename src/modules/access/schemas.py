@@ -1,21 +1,31 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 from datetime import datetime
+from typing import Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import AwareDatetime, BaseModel, ConfigDict, model_validator
 
+from core.schemas import PatchModel
 from modules.access.models import AccessGrantStatus
 
 
+# AwareDatetime — только с часовым поясом: «2026-10-01T00:00» без пояса непонятно чьё время, а сравнение
+# с datetime.now(timezone.utc) упало бы. Порядок дат при PATCH проверяет сервис (там видны обе).
 class SubscriptionCreate(BaseModel):
-    valid_from: datetime
-    valid_until: datetime
+    valid_from: AwareDatetime
+    valid_until: AwareDatetime
+
+    @model_validator(mode="after")
+    def _period(self) -> Self:
+        if self.valid_until <= self.valid_from:
+            raise ValueError("valid_until must be after valid_from")
+        return self
 
 
-class SubscriptionUpdate(BaseModel):
-    valid_from: datetime | None = None
-    valid_until: datetime | None = None
+class SubscriptionUpdate(PatchModel):
+    valid_from: AwareDatetime | None = None
+    valid_until: AwareDatetime | None = None
 
 
 class SubscriptionRead(BaseModel):

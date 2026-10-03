@@ -10,6 +10,7 @@ from core.database.postgres import session_factory
 from core.exceptions import (
     AlreadyExistsError,
     CredentialNotFound,
+    LiveCredentialExistsError,
     NotFoundError,
     SSHError,
     SSHHostKeyError,
@@ -20,9 +21,12 @@ from infrastructure.ssh.client import SSHClient, load_private_key
 from infrastructure.ssh.host_keys import HostKey
 from infrastructure.vpn.amnezia import AmneziaInstaller, AmneziaWGProvider
 from infrastructure.vpn.provider import ProviderStatus, VPNProvider
+from modules.access.repository import VPNCredentialRepository
 from modules.audit.actor import SYSTEM_ACTOR, AuditActor
 from modules.audit.models.audit_log import AuditAction, AuditEntity
 from modules.audit.service import AuditService, diff_changes
+from modules.jobs.models.job import Job, JobType
+from modules.jobs.service import JobService
 from modules.protocols.models.protocol import ProtocolType, VPNProtocol
 from modules.protocols.repository import ProtocolRepository
 from modules.servers.host_key import ServerHostKeyService, pinned_host_key
@@ -39,6 +43,7 @@ class ServerService:
         self.credentials = CredentialRepository(session)
         self.protocols = ProtocolRepository(session)
         self.audit = AuditService(session, actor)
+        self.actor = actor
 
     async def create(self, data: ServerCreate) -> VPNServer:
         if await self.servers.get_by_name(data.name):
@@ -71,6 +76,8 @@ class ServerService:
     async def update(self, server_id: UUID, data: ServerUpdate) -> VPNServer:
         server = await self.get(server_id)
         fields = data.model_dump(exclude_unset=True)
+        if "name" in fields and fields["name"] != server.name and await self.servers.get_by_name(fields["name"]):
+            raise AlreadyExistsError
         changes = diff_changes(server, fields)
         meta: dict[str, object] = {"changes": changes}
         if "host" in changes:
@@ -91,8 +98,24 @@ class ServerService:
         await self.session.commit()
         return server
 
+    async def schedule(self, server_id: UUID, job_type: JobType) -> Job:
+        """Поставить серверную задачу (установка, протокол, sync, health). Без SSH-учётки — CredentialNotFound:
+        задача всё равно упала бы в воркере. Снять протокол с живыми клиентами нельзя (как и удалить сервер)."""
+        await self.get(server_id)
+        if not await self.credentials.get_by_server_id(server_id):
+            raise CredentialNotFound("SSH credentials are not set for this server")
+        if job_type == JobType.REMOVE_PROTOCOL:
+            await self._ensure_no_live_clients(server_id)
+        return await JobService(self.session, self.actor).create(job_type, server_id=server_id)
+
+    async def _ensure_no_live_clients(self, server_id: UUID) -> None:
+        # Каскад в БД молча удалил бы гранты и credential'ы, а peer'ы остались бы на сервере — сначала отзыв.
+        if await VPNCredentialRepository(self.session).has_live_for_server(server_id):
+            raise LiveCredentialExistsError("Server has live VPN clients, revoke access first")
+
     async def delete(self, server_id: UUID) -> None:
         server = await self.get(server_id)
+        await self._ensure_no_live_clients(server_id)
         await self.servers.delete(server)
         self.audit.record(
             AuditAction.SERVER_DELETED, AuditEntity.SERVER, server.id, {"name": server.name, "host": server.host}
@@ -167,6 +190,9 @@ class ServerConnectionService:
 
     async def test_connection(self, server_id: UUID) -> TestConnectionResult:
         ssh_client = await self.create_ssh_client(server_id)
+        # Всё нужное прочитано — отдаём соединение БД в пул до сетевого вызова: SSH с повторами может идти
+        # десятки секунд, и несколько таких запросов к недоступному хосту исчерпали бы пул для всего API.
+        await self.session.rollback()
         try:
             async with ssh_client:
                 result = await ssh_client.execute("uname -a")

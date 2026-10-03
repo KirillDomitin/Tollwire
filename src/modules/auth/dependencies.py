@@ -26,9 +26,13 @@ async def get_current_admin(
 ) -> Admin:
     access_token = credentials.credentials
     payload = decode_access_token(access_token)
-    if not payload:
+    # Подпись верна, но токен не access (или без sub / sub не UUID) — 401, а не 500.
+    if not payload or payload.get("type") != "access":
         raise HTTPException(401)
-    admin_id = UUID(str(payload["sub"]))
+    try:
+        admin_id = UUID(str(payload["sub"]))
+    except (KeyError, ValueError):
+        raise HTTPException(401) from None
     admin_repo = AdminRepository(session)
     admin = await admin_repo.get_by_id(admin_id)
     if not admin or not admin.is_active:

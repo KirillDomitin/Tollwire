@@ -73,7 +73,9 @@ async def test_server_job_without_server_id_is_rejected(world: World, worker: Jo
     await JobQueue().enqueue(job.id)
     assert await worker.process_next(timeout=1)  # ошибка данных не роняет воркер
     await world.session.refresh(job)
-    assert job.status == JobStatus.PENDING and job.started_at is None
+    # Закрыта FAILED, а не оставлена в PENDING: иначе requeue_jobs возвращал бы её в очередь вечно.
+    assert job.status == JobStatus.FAILED and job.started_at is None
+    assert job.error == "Job with type 'install_server' must have server_id"
 
 
 async def test_already_finished_job_is_not_run_twice(world: World, worker: JobWorker) -> None:

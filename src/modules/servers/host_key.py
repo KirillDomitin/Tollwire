@@ -40,10 +40,11 @@ class ServerHostKeyService:
     async def scan(self, server_id: UUID) -> HostKeyScan:
         """Какой ключ сервер предъявляет сейчас. Без входа: пароль и ключ клиента не отправляются."""
         server = await self._get(server_id)
-        presented = await scan_host_key(server.host, server.ssh_port, settings.ssh_connect_timeout)
+        host, port, pinned = server.host, server.ssh_port, pinned_host_key(server)
+        await self.session.rollback()  # соединение БД — обратно в пул до сетевого вызова (см. test_connection)
+        presented = await scan_host_key(host, port, settings.ssh_connect_timeout)
         if presented is None:
-            raise SSHConnectionError(f"Server {server.host} did not present a host key")
-        pinned = pinned_host_key(server)
+            raise SSHConnectionError(f"Server {host} did not present a host key")
         return HostKeyScan(
             public_key=presented.public_key,
             fingerprint=presented.fingerprint,

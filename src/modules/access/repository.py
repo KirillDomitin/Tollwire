@@ -156,6 +156,15 @@ class VPNCredentialRepository:
         )
         return (await self.session.execute(sql_request)).first() is not None
 
+    async def has_live_for_server(self, server_id: UUID) -> bool:
+        sql_request = (
+            select(VPNCredential.id)
+            .join(AccessGrant, VPNCredential.access_grant_id == AccessGrant.id)
+            .where(AccessGrant.server_id == server_id, VPNCredential.revoked_at.is_(None))
+            .limit(1)
+        )
+        return (await self.session.execute(sql_request)).first() is not None
+
     async def has_live_for_user(self, user_id: UUID) -> bool:
         sql_request = (
             select(VPNCredential.id)

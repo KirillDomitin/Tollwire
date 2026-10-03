@@ -22,6 +22,10 @@ class NotFoundError(AppError): ...
 class AlreadyExistsError(AppError): ...
 
 
+class InvalidDataError(AppError):
+    """Данные корректны по отдельности, но не вместе (например, конец периода раньше начала) — 422."""
+
+
 class SSHError(AppError): ...
 
 

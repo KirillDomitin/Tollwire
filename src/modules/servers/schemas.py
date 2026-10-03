@@ -1,26 +1,37 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 from datetime import datetime
+from typing import Annotated
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from core.schemas import PatchModel
 from modules.servers.models.credential import AuthType
 from modules.servers.models.server import HealthStatus, ServerStatus
 
+# Имя хоста или IP (v4/v6): буквы, цифры, точка, дефис, двоеточие. Без пробелов и спецсимволов — адрес
+# уходит в SSH-подключение, логи и аудит.
+HOST_PATTERN = r"^[A-Za-z0-9.:-]+$"
+Name = Annotated[str, Field(min_length=1, max_length=100)]
+Host = Annotated[str, Field(min_length=1, max_length=100, pattern=HOST_PATTERN)]
+Port = Annotated[int, Field(ge=1, le=65535)]
+Description = Annotated[str, Field(max_length=300)]
+
 
 class ServerCreate(BaseModel):
-    name: str
-    host: str
-    ssh_port: int = 22
-    description: str | None = None
+    name: Name
+    host: Host
+    ssh_port: Port = 22
+    description: Description | None = None
 
 
-class ServerUpdate(BaseModel):
-    name: str | None = None
-    host: str | None = None
-    ssh_port: int | None = None
-    description: str | None = None
+class ServerUpdate(PatchModel):
+    NULLABLE = frozenset({"description"})
+    name: Name | None = None
+    host: Host | None = None
+    ssh_port: Port | None = None
+    description: Description | None = None
 
 
 class ServerRead(BaseModel):
@@ -39,8 +50,8 @@ class ServerRead(BaseModel):
 
 class CredentialCreate(BaseModel):
     auth_type: AuthType = AuthType.PASSWORD
-    username: str = "root"
-    secret: str
+    username: str = Field(default="root", min_length=1, max_length=50, pattern=r"^[A-Za-z0-9._-]+$")
+    secret: str = Field(min_length=1, max_length=16384)  # пустой секрет SSHClient всё равно не примет
 
 
 class CredentialRead(BaseModel):

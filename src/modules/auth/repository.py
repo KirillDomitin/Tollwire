@@ -53,6 +53,20 @@ class AdminSessionRepository:
         result = await self.session.execute(request)
         return result.scalar_one_or_none()
 
+    async def take(self, token_hash: str) -> tuple[UUID, datetime, bool] | None:
+        """Изъять сессию по хэшу refresh-токена: удалить и вернуть (admin_id, expires_at, revoked) одним запросом.
+
+        Из двух одновременных запросов с одним токеном строку получит только один — второй увидит None.
+        Раздельные «прочитать, потом удалить» пропускали обоих: refresh-токен становился многоразовым.
+        """
+        query = (
+            delete(AdminSession)
+            .where(AdminSession.token_hash == token_hash)
+            .returning(AdminSession.admin_id, AdminSession.expires_at, AdminSession.revoked)
+        )
+        row = (await self.session.execute(query)).first()
+        return (row.admin_id, row.expires_at, row.revoked) if row else None
+
     async def delete(self, session_obj: AdminSession) -> None:
         await self.session.delete(session_obj)
 
