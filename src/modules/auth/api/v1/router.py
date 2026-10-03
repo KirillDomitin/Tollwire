@@ -12,6 +12,7 @@ from modules.audit.actor import AuditActor
 from modules.audit.dependencies import get_anonymous_actor
 from modules.auth.dependencies import get_current_admin
 from modules.auth.models.admin import Admin
+from modules.auth.rate_limits import LOGIN_BY_IP, REFRESH_BY_IP, limit_by_ip
 from modules.auth.schemas import AdminRead, LoginRequest, TokenResponse
 from modules.auth.service import AuthService
 
@@ -37,7 +38,7 @@ def set_cookie(response: Response, token: str) -> None:
     )
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login", response_model=TokenResponse, dependencies=[Depends(limit_by_ip(LOGIN_BY_IP))])
 async def login(
     body: LoginRequest, response: Response, service: AuthService = Depends(get_auth_service)
 ) -> TokenResponse:
@@ -49,7 +50,7 @@ async def login(
     return TokenResponse(access_token=access)
 
 
-@router.post("/refresh", response_model=TokenResponse)
+@router.post("/refresh", response_model=TokenResponse, dependencies=[Depends(limit_by_ip(REFRESH_BY_IP))])
 async def refresh(
     response: Response,
     service: Annotated[AuthService, Depends(get_auth_service)],

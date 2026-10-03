@@ -16,6 +16,7 @@ class AuditAction(enum.Enum):
     # Вход/выход админа
     LOGIN = "login"
     LOGIN_FAILED = "login_failed"
+    LOGIN_LOCKED = "login_locked"  # учётка закрыта для входа после серии неудач (rate limiting)
     LOGOUT = "logout"
     # Серверы
     SERVER_CREATED = "server_created"

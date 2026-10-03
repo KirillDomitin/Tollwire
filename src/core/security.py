@@ -22,6 +22,12 @@ def hash_password(password: str) -> str:
     return ph.hash(password)
 
 
+# Хэш случайного пароля: проверяется вместо настоящего, если админа с таким email нет. Тогда ответ
+# «нет такого email» идёт столько же, сколько «неверный пароль» (Argon2 ~десятки мс), и по времени
+# ответа нельзя узнать, существует ли учётка (тайминг-атака на перечисление пользователей).
+DUMMY_PASSWORD_HASH = ph.hash(secrets.token_urlsafe(32))
+
+
 def verify_password(password: str, hashed: str) -> bool:
     try:
         ph.verify(hashed, password)

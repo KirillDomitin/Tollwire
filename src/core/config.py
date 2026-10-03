@@ -24,6 +24,14 @@ class Settings(BaseSettings):
     # false — только для локальной разработки по http://localhost.
     cookie_secure: bool = True
 
+    # Ограничение частоты (rate limiting), Redis. Окна в секундах.
+    login_ip_max_attempts: int = 10  # любых попыток входа с одного IP за окно
+    login_ip_window_seconds: int = 60
+    login_max_failures: int = 5  # неудачных входов в одну учётку (с любых IP) → вход в неё закрыт до конца окна
+    login_lock_seconds: int = 900
+    refresh_ip_max_attempts: int = 30
+    refresh_ip_window_seconds: int = 60
+
     # Периодический планировщик внутри воркера. Интервалы в секундах; 0 — правило выключено.
     scheduler_enabled: bool = True
     scheduler_tick_seconds: int = 15

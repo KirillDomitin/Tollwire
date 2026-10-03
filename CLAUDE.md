@@ -194,6 +194,11 @@ src/
 - [x] 17.1 Docker: единый image для api+worker; compose: api/worker/postgres/redis/nginx
 - [x] 17.2 Структурированные логи (request_id, job_id, server_id)
 
+### Блок 18. Доводка требований ТЗ (после MVP)
+- [x] 18.1 Rate limiting (Redis + грубый лимит nginx) + защита login от тайминг-атаки
+- [ ] 18.2 RBAC
+- [ ] 18.3 Проверка ключа SSH-сервера (known_hosts / TOFU)
+
 ### Definition of Done (MVP)
 Админ может: войти → добавить сервер → проверить SSH → установить Amnezia → установить AmneziaWG → смотреть job/статус сервера → создать VPN-пользователя → выдать доступ → получить конфиг → изменить срок → отозвать доступ → удалить пользователя → sync → health → смотреть audit log.
 

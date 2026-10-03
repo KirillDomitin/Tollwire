@@ -5,36 +5,60 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions import InvalidCredentialsError
-from core.security import create_access_token, generate_refresh_token, hash_refresh_token, verify_password
+from core.rate_limit import RateLimiter, subject_key
+from core.security import (
+    DUMMY_PASSWORD_HASH,
+    create_access_token,
+    generate_refresh_token,
+    hash_refresh_token,
+    verify_password,
+)
 from core.utils import get_refresh_expires_at
 from modules.audit.actor import AuditActor
 from modules.audit.models.audit_log import AuditAction, AuditEntity
 from modules.audit.service import AuditService
 from modules.auth.models.admin import Admin
+from modules.auth.rate_limits import LOGIN_FAILURES_BY_EMAIL
 from modules.auth.repository import AdminRepository, AdminSessionRepository
 
 
 class AuthService:
-    def __init__(self, session: AsyncSession, actor: AuditActor):
+    def __init__(self, session: AsyncSession, actor: AuditActor, limiter: RateLimiter | None = None):
         self.session = session
         self.admins = AdminRepository(session)
         self.sessions = AdminSessionRepository(session)
         self.actor = actor
+        self.limiter = limiter or RateLimiter()
 
     async def authenticate(self, email: str, password: str) -> Admin:
         admin = await self.admins.get_by_email(email)
-        if not admin or not verify_password(password, admin.password_hash) or not admin.is_active:
+        if admin is None:
+            verify_password(password, DUMMY_PASSWORD_HASH)  # то же время ответа, что и при неверном пароле
+            raise InvalidCredentialsError
+        if not verify_password(password, admin.password_hash) or not admin.is_active:
             raise InvalidCredentialsError
         return admin
 
     async def login(self, email: str, password: str) -> tuple[str, str]:
+        email_key = subject_key(email)
+        # Учётка закрыта после серии неудач: отказываем ДО проверки пароля. Иначе перебор продолжался бы,
+        # а верный пароль выдал бы себя другим ответом. Работает одинаково и для несуществующих email.
+        await self.limiter.ensure_not_exceeded(LOGIN_FAILURES_BY_EMAIL, email_key)
         try:
             admin = await self.authenticate(email, password)
         except InvalidCredentialsError:
+            failures = await self.limiter.record(LOGIN_FAILURES_BY_EMAIL, email_key)
+            audit = AuditService(self.session, self.actor)
             # Только email: пароль (даже неверный) в журнал не пишем — это мог быть почти верный пароль.
-            AuditService(self.session, self.actor).record(AuditAction.LOGIN_FAILED, meta={"email": email})
+            audit.record(AuditAction.LOGIN_FAILED, meta={"email": email})
+            if failures == LOGIN_FAILURES_BY_EMAIL.max_hits:  # ровно на пороге — одна запись, а не на каждую попытку
+                audit.record(
+                    AuditAction.LOGIN_LOCKED,
+                    meta={"email": email, "lock_seconds": LOGIN_FAILURES_BY_EMAIL.window_seconds},
+                )
             await self.session.commit()
             raise
+        await self.limiter.reset(LOGIN_FAILURES_BY_EMAIL, email_key)  # успешный вход обнуляет счётчик неудач
         access = create_access_token(str(admin.id))
         refresh = generate_refresh_token()
         refresh_hash = hash_refresh_token(refresh)
