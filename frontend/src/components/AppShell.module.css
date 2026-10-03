@@ -1,0 +1,91 @@
+.shell {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  min-height: 100%;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: var(--space-5) var(--space-4);
+  border-right: 1px solid var(--rule);
+}
+
+.nav {
+  display: grid;
+  gap: 2px;
+}
+
+.link {
+  display: block;
+  padding: var(--space-2) var(--space-3);
+  border-left: var(--rule-width) solid transparent;
+  text-decoration: none;
+  color: var(--pine-soft);
+  font-weight: 500;
+}
+
+.link:hover {
+  color: var(--pine);
+}
+
+/* Текущий раздел помечен той же полосой, что и статусы: язык интерфейса один. */
+.active {
+  border-left-color: var(--pine);
+  color: var(--pine);
+  background: var(--paper);
+}
+
+.account {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: auto;
+}
+
+.email {
+  overflow-wrap: anywhere;
+  font-weight: 550;
+}
+
+.role {
+  margin-top: calc(-1 * var(--space-3));
+  font-size: var(--text-meta);
+  color: var(--pine-faint);
+}
+
+.main {
+  padding: var(--space-6) var(--space-6) var(--space-7);
+  min-width: 0;
+  /* На широком экране строку таблицы должно быть видно одним взглядом — без пустот между колонками. */
+  max-width: 1160px;
+}
+
+@media (max-width: 760px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    border-right: 0;
+    border-bottom: 1px solid var(--rule);
+    gap: var(--space-3);
+  }
+
+  /* На телефоне аккаунт — одна строка «почта · Выйти», чтобы серверы были на первом экране.
+     Тема здесь берётся из системы, переключатель не показываем. */
+  .account {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    margin-top: 0;
+  }
+
+  .role,
+  .account fieldset {
+    display: none;
+  }
+
+  .main {
+    padding: var(--space-5) var(--space-4);
+  }
+}

@@ -1,0 +1,89 @@
+/* Дизайн-токены «Журнал связи». Цвет несут только статусы — и всегда что-то сообщают.
+   Тёмная тема — те же токены с другими значениями: по настройке системы или явным выбором (data-theme). */
+
+:root {
+  --fog: #e6ecea; /* фон приложения */
+  --paper: #f8faf9; /* поверхности: таблицы, формы */
+  --pine: #1e3b34; /* текст и главные кнопки */
+  --pine-soft: #4f6660; /* второстепенный текст */
+  --pine-faint: #586a65; /* подписи — контраст ≥ 4.5:1 и на фоне, и на поверхности (WCAG AA) */
+  --rule: #c9d3d0; /* линии и рамки */
+  --rule-strong: #a9b7b3;
+  --on-pine: #f8faf9; /* текст на хвойной кнопке */
+
+  --signal-ok: #2e7d5b;
+  --signal-warn: #b7791f;
+  --signal-warn-text: #8f5c0c; /* янтарный для ТЕКСТА: полосе хватает 3:1, мелкому тексту нужно 4.5:1 */
+  --signal-down: #b42330;
+  --signal-process: #3554a5;
+  --signal-idle: #8a9893;
+
+  --focus: #3554a5;
+  --danger-bg: #fbecec;
+
+  --font-sans: "Golos Text Variable", "Golos Text", system-ui, sans-serif;
+  /* Моноширинный — только для того, что копируют: отпечатки ключей, адреса. */
+  --font-mono: ui-monospace, "Cascadia Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+
+  /* Модульная шкала ~1.2 от 15px: плотный интерфейс, но не мелкий. */
+  --text-meta: 0.8125rem; /* 13 */
+  --text-body: 0.9375rem; /* 15 */
+  --text-lead: 1.125rem; /* 18 */
+  --text-title: 1.5rem; /* 24 */
+  --text-display: 2rem; /* 32 */
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  --radius-control: 6px; /* кнопки и поля — мягкие; таблицы и панели — прямые */
+  --rule-width: 4px; /* статусная полоса строки — главный акцент интерфейса */
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --fog: #13231f;
+    --paper: #1a2e29;
+    --pine: #dce6e2;
+    --pine-soft: #a3b6b0;
+    --pine-faint: #8fa39d;
+    --rule: #2c4540;
+    --rule-strong: #3d5a54;
+    --on-pine: #13231f;
+    --signal-ok: #4fb386;
+    --signal-warn: #e0a447;
+    --signal-warn-text: #e0a447;
+    --signal-down: #f06a73;
+    --signal-process: #8aa2ee;
+    --signal-idle: #6e827c;
+    --focus: #8aa2ee;
+    --danger-bg: #3a2124;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --fog: #13231f;
+  --paper: #1a2e29;
+  --pine: #dce6e2;
+  --pine-soft: #a3b6b0;
+  --pine-faint: #8fa39d;
+  --rule: #2c4540;
+  --rule-strong: #3d5a54;
+  --on-pine: #13231f;
+  --signal-ok: #4fb386;
+  --signal-warn: #e0a447;
+  --signal-warn-text: #e0a447;
+  --signal-down: #f06a73;
+  --signal-process: #8aa2ee;
+  --signal-idle: #6e827c;
+  --focus: #8aa2ee;
+  --danger-bg: #3a2124;
+  color-scheme: dark;
+}

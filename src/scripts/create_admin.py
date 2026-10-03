@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """Создание администратора панели (первый вход в свежую установку).
 
-    cd src && uv run python -m scripts.create_admin admin@example.com   # локально
+    PYTHONPATH=src uv run python -m scripts.create_admin admin@example.com   # локально, из корня
     docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm api python -m scripts.create_admin \
         admin@example.com
 

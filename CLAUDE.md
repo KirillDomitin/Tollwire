@@ -204,6 +204,12 @@ src/
 - [x] 19.2 Надёжность: ошибки 500, зависшие задачи, rollback в воркере, сбои Redis, атомарный refresh, дубли подписок, Job.error, валидация, логика из роутеров в сервисы
 - [x] 19.3 Hardening: проверка JWT_SECRET_KEY, блокировка входа по (email,IP) + общий порог, случайная обфускация AmneziaWG, allowlist клиентского конфига, атомарная запись awg0.conf, образы по дайджесту, cap_drop/read_only/no-new-privileges, openapi off в проде, dev-порты на localhost
 
+### Блок 20. Фронтенд (React + Vite + TypeScript, `frontend/`, статика за nginx; дизайн «Журнал связи»)
+- [x] 20.1 Фундамент: каркас, дизайн-токены (светлая/тёмная), вход с тихим refresh, навигация по правам, список серверов, сборка в Docker + nginx
+- [ ] 20.2 Сервер: карточка, SSH-учётка, ключ хоста (scan → pin), установка/протокол, задачи
+- [ ] 20.3 VPN-пользователи, подписки, доступы, выдача конфига
+- [ ] 20.4 Журнал аудита, задачи, админы (superadmin)
+
 ### Definition of Done (MVP)
 Админ может: войти → добавить сервер → проверить SSH → установить Amnezia → установить AmneziaWG → смотреть job/статус сервера → создать VPN-пользователя → выдать доступ → получить конфиг → изменить срок → отозвать доступ → удалить пользователя → sync → health → смотреть audit log.
 
@@ -220,7 +226,12 @@ uv run mypy src         # проверка типов
 uv run pytest           # тесты (tests/services нужен docker compose up: своя БД vpn_panel_test, Redis db 15)
 uv run pytest --cov --cov-report=term-missing   # с отчётом покрытия
 uv run alembic upgrade head            # применить миграции
-cd src && uv run python -m scripts.create_admin you@example.com   # создать админа (пароль спросит скрыто)
+PYTHONPATH=src uv run python -m scripts.create_admin you@example.com   # создать админа (пароль спросит скрыто), из корня
+
+# Фронтенд (frontend/, Node 24): локально API на :8000 + Vite на :5173 (проксирует /api)
+PYTHONPATH=src uv run python -m scripts.export_openapi frontend/openapi.json   # схема API → затем npm run gen:api
+cd frontend && npm ci && npm run gen:api && npm run dev   # dev-сервер
+cd frontend && npm run typecheck && npm run lint && npm test && npm run build
 
 # Production (секреты — в .env.prod, сертификаты — в certs/; оба вне git, шаблон — .env.prod.example)
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
