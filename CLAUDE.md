@@ -1,6 +1,8 @@
 # CLAUDE.md — VPN Control Panel
 
 Этот файл — инструкция для Claude и карта проекта. Claude читает его в начале каждой сессии.
+Подробности по каждой части лежат рядом с кодом в своих `CLAUDE.md` (см. раздел 4) — Claude Code подгружает их
+сам, когда работает с файлами этой папки. Здесь — только общее.
 
 ---
 
@@ -16,13 +18,14 @@
    2. Написать код по архитектурным правилам (раздел 3) и требованиям безопасности (раздел 5).
    3. Проверить: `ruff`, `mypy`, миграции (`upgrade`/`downgrade`), и **живой прогон** (HTTP-запросы, при необходимости — реальный сервер). Линтеры логику не ловят — живая проверка обязательна.
    4. Написать теорию этапа в `theory/` (см. ниже).
-   5. Закоммитить и коротко отчитаться: что сделано, какие решения приняты и почему, что проверено, какие пробелы замечены.
-   6. Остановиться и обсудить следующий этап. Без явного «погнали» дальше не идти.
+   5. Обновить `CLAUDE.md` затронутого модуля, если поменялись его устройство, правила или грабли.
+   6. Закоммитить и коротко отчитаться: что сделано, какие решения приняты и почему, что проверено, какие пробелы замечены.
+   7. Остановиться и обсудить следующий этап. Без явного «погнали» дальше не идти.
 3. **Объяснять просто.** Минимум жаргона; англоязычный термин — с переводом в скобках. Пользователь может попросить подробную теорию по этапу — тогда объяснять развёрнуто, с примерами.
 4. Действия на реальных серверах, которые что-то меняют (установка/удаление, правка конфигов), — только с явного согласия пользователя.
 5. Использовать Context7 MCP для актуальной документации библиотек (FastAPI, SQLAlchemy 2.x, Pydantic v2, Alembic, AsyncSSH и т.д.) — данные обучения могут устареть.
 
-**Прогресс отмечать** в разделе «Дорожная карта» ниже: менять статус этапа `[ ]` → `[~]` (в работе) → `[x]` (принято).
+**Прогресс отмечать** в разделе 6 ниже и в [`docs/roadmap.md`](docs/roadmap.md): `[ ]` → `[~]` (в работе) → `[x]` (принято).
 
 **Теория — к каждому этапу, обязательно**: файл `theory/stage-<номер>-<slug>.md` + ссылка в `theory/README.md` (что сделано, зачем, как устроено, грабли, как проверяли; термины с переводом, нейтральные примеры). Пишется до коммита этапа. Папка `theory/` в `.gitignore` — личные заметки пользователя.
 
@@ -30,24 +33,21 @@
 
 ## 1. О проекте
 
-**VPN Control Panel** — backend-платформа с REST API для централизованного управления VPN-серверами на базе AmneziaVPN: серверы, VPN-пользователи, выдача доступов, установка VPN по SSH, фоновые задачи, аудит.
+**VPN Control Panel** — платформа с REST API и веб-интерфейсом для централизованного управления VPN-серверами на базе AmneziaVPN (протокол AmneziaWG): серверы, VPN-пользователи, подписки и доступы, выдача конфигов, установка VPN по SSH, фоновые задачи, мониторинг, аудит.
 
-Полное ТЗ: [`Техническое_задание_—_Backend_платформа_управления_VPN_серверами.md`](Техническое_задание_—_Backend_платформа_управления_VPN_серверами.md) — это source of truth по требованиям.
+Полное ТЗ: [`Техническое_задание_—_Backend_платформа_управления_VPN_серверами.md`](Техническое_задание_—_Backend_платформа_управления_VPN_серверами.md) — source of truth по требованиям. Осознанные отступления от ТЗ записаны в `CLAUDE.md` модулей.
+
+Установка и запуск (dev и prod) — [`INSTALL.md`](INSTALL.md).
 
 ---
 
 ## 2. Технологический стек
 
-- Python 3.10+ (в проекте пока стоит 3.14 в `pyproject.toml`)
-- FastAPI, Pydantic v2, pydantic-settings
-- PostgreSQL + SQLAlchemy 2.x (async, asyncpg) + Alembic
-- Redis (очередь задач, distributed locks, cache, rate limiting)
-- AsyncSSH (подключение к Linux-серверам)
-- asyncio везде: и БД, и SSH строго асинхронно
-- Docker, Docker Compose
-- pytest, httpx — тесты
-- Ruff (линт+формат), mypy (типы)
-- Менеджер зависимостей: **uv** (в репо есть `uv.lock`)
+- **Бэкенд:** Python 3.14 (`pyproject.toml`), FastAPI, Pydantic v2 + pydantic-settings, PostgreSQL + SQLAlchemy 2.x (async, asyncpg) + Alembic, Redis (очередь, блокировки, лимиты, дедуп планировщика), AsyncSSH. Всё асинхронно.
+- **Фронтенд:** React + Vite + TypeScript (strict), TanStack Query, openapi-fetch, uPlot — см. [`frontend/CLAUDE.md`](frontend/CLAUDE.md).
+- **Инфраструктура:** Docker, Docker Compose (dev: postgres + redis; prod: api/worker/migrate/postgres/redis/nginx).
+- **Качество:** pytest + httpx, Ruff (линт+формат), mypy; фронт — vitest, eslint, tsc.
+- **Зависимости:** uv (`uv.lock`), npm (`frontend/package-lock.json`).
 
 ---
 
@@ -59,184 +59,93 @@
 API (routers)  →  Service (application)  →  Domain  →  Infrastructure  →  Persistence
 ```
 
-- **Бизнес-логики в роутерах быть НЕ должно.** Роутер отвечает только за: HTTP, валидацию входа (Pydantic-схемы), авторизацию, вызов сервиса, формирование ответа.
-- **Работа с VPN — только через абстракцию `VPNProvider`.** Бизнес-логика НЕ знает SSH-команд, Docker-команд, путей к конфигам, структуры контейнеров, способа генерации ключей. Всё это спрятано за провайдером.
+- **Бизнес-логики в роутерах быть НЕ должно.** Роутер отвечает только за: HTTP, валидацию входа (Pydantic-схемы), авторизацию (`require(Permission.X)`), вызов сервиса, формирование ответа.
+- **Работа с VPN — только через абстракцию `VPNProvider`.** Бизнес-логика НЕ знает SSH-команд, Docker-команд, путей к конфигам, структуры контейнеров, способа генерации ключей.
 
   ```
-  Business Logic → VPNProvider (интерфейс) → AmneziaProvider → Infrastructure → SSH/Docker/Linux
+  Business Logic → VPNProvider (интерфейс) → AmneziaWGProvider → SSHClient → SSH/Docker/Linux
   ```
+- **`infrastructure/` не импортирует `modules/`** (кроме воркера и планировщика — они composition root, точка сборки). Поэтому фабрика провайдеров по `ProtocolType` живёт в `modules/servers/service.py`.
 - **Работа с БД — через репозитории.** Сервис не пишет сырые запросы вперемешку с логикой.
-- Модели платежей/подписок/тарифов пока не делаем, но архитектура должна позволять их добавить без переписывания доступов (`AccessGrant` — точка расширения).
+- **Доменные ошибки** — классы из `core/exceptions.py`; в HTTP-коды их переводят глобальные обработчики в `main.py`, не роутеры.
+- Платежей/тарифов пока нет, но `Subscription` + `AccessGrant` — точка расширения под них.
 
 ---
 
-## 4. Структура проекта (целевая)
+## 4. Карта проекта и где читать подробности
 
 ```
 src/
-  main.py                     # сборка FastAPI-приложения
-  core/                       # общие вещи, не привязанные к домену
-    config.py                 # настройки из ENV (pydantic-settings)
-    database/postgres.py      # AsyncEngine, async_sessionmaker, get_session
-    redis.py                  # подключение к Redis
-    security.py               # хеш паролей, JWT, шифрование секретов
-    exceptions.py             # базовые доменные исключения
+  main.py                  сборка FastAPI: роутеры, обработчики ошибок, middleware, lifespan
+  worker.py                точка входа процесса воркера (задачи + планировщик)
+  scripts/                 create_admin, export_openapi
+  core/                    → src/core/CLAUDE.md            конфиг, БД, Redis, безопасность, логи, лимиты, ошибки
   infrastructure/
-    ssh/                      # SSHClient (AsyncSSH-обёртка)
-    vpn/                      # VPNProvider, AmneziaProvider, installer
-    workers/                  # фоновый воркер
+    ssh/                   → .../ssh/CLAUDE.md             SSHClient, ключи хостов
+    vpn/                   → .../vpn/CLAUDE.md             VPNProvider, AmneziaWG, awg0.conf, vpn://
+    workers/               → .../workers/CLAUDE.md         JobWorker, планировщик, ServerLock
+    monitoring/            (описан в modules/monitoring/CLAUDE.md)
   modules/
-    auth/                     # админы, вход, JWT, сессии
-    servers/                  # VPNServer, credentials, sync, health
-    protocols/                # VPNProtocol
-    vpn_users/                # VPNUser
-    access/                   # AccessGrant, VPNCredential
-    jobs/                     # Job, очередь
-    audit/                    # AuditLog
+    auth/                  → CLAUDE.md   админы, вход, JWT, сессии, RBAC
+    servers/               → CLAUDE.md   VPNServer, SSH-учётка, ключ хоста, install, sync, health
+    protocols/             → CLAUDE.md   VPNProtocol
+    vpn_users/             → CLAUDE.md   VPNUser
+    access/                → CLAUDE.md   Subscription, AccessGrant, VPNCredential (выдача конфига)
+    jobs/                  → CLAUDE.md   Job, очередь на Redis
+    audit/                 → CLAUDE.md   AuditLog
+    monitoring/            → CLAUDE.md   метрики серверов
+alembic/                   → alembic/CLAUDE.md   миграции и грабли Postgres enum
+tests/                     → tests/CLAUDE.md     как устроены тесты, фейковый SSH
+frontend/                  → frontend/CLAUDE.md  React-интерфейс
+docs/roadmap.md            полная дорожная карта
 ```
 
-Каждый модуль внутри обычно: `models/` (ORM), `schemas.py` (Pydantic), `repository.py`, `service.py`, `api/v1/` (роутеры).
+Внутри модуля обычно: `models/` (ORM), `schemas.py` (Pydantic), `repository.py`, `service.py`, `api/v1/router.py`.
 
 ---
 
 ## 5. Требования безопасности (держать в голове всегда)
 
 - Пароли админов — только Argon2id hash.
-- Refresh-токены в БД — только в виде hash, не в открытом виде; в браузер — HttpOnly cookie.
-- SSH- и VPN-секреты — в БД в зашифрованном виде; ключ шифрования (`ENCRYPTION_KEY`) — только из ENV/Docker Secret, НИКОГДА не в PostgreSQL и не в Git.
-- Защита от command injection (не конкатенировать пользовательский ввод в SSH-команды) и SQL injection (через SQLAlchemy).
-- В логи НЕ попадают: пароли, приватные ключи (SSH/VPN), refresh-токены, JWT, полные VPN-конфиги.
-- SSH: connect timeout и command timeout обязательны.
+- Refresh-токены в БД — только в виде hash; в браузер — HttpOnly cookie. Access-токен во фронте — только в памяти.
+- SSH- и VPN-секреты — в БД в зашифрованном виде (Fernet); ключ шифрования (`ENCRYPTION_KEY`) — только из ENV, НИКОГДА не в PostgreSQL и не в Git.
+- Защита от command injection (никакого пользовательского ввода в SSH-команды — только константы и проверенные по белому списку значения; файлы — через SFTP) и SQL injection (через SQLAlchemy).
+- В логи НЕ попадают: пароли, приватные ключи (SSH/VPN), refresh-токены, JWT, полные VPN-конфиги, stdout SSH-команд.
+- SSH: connect timeout и command timeout обязательны; пароль SSH отправляется только серверу с закреплённым ключом хоста.
 - Все критические операции идемпотентны (повторный запуск не ломает состояние).
+- Каждый эндпоинт требует ровно одно право (`require(Permission.X)`), матрица — в `modules/auth/CLAUDE.md`.
 
 ---
 
-## 6. Дорожная карта (этапы)
+## 6. Дорожная карта — сводка
 
-Легенда: `[ ]` не начато · `[~]` в работе · `[x]` принято.
+Полный список этапов с описаниями — [`docs/roadmap.md`](docs/roadmap.md).
 
-### Блок 0. Фундамент
-- [x] 0.1 Окружение: зависимости (uv), `pyproject`, структура, Ruff+mypy, `.env`/`.env.example`
-- [x] 0.2 Docker Compose для dev: postgres + redis
-- [x] 0.3 Конфиг через pydantic-settings (`core/config.py`)
-- [x] 0.4 Async-подключение к PostgreSQL (`AsyncEngine`, `async_sessionmaker`, `get_session`) + healthcheck endpoint
-
-### Блок 1. База данных и миграции
-- [x] 1.1 Declarative Base (SQLAlchemy 2.x), общий базовый класс модели
-- [x] 1.2 Настройка Alembic под async
-- [x] 1.3 Модель `Admin` + первая миграция
-
-### Блок 2. Аутентификация
-- [x] 2.1 Хеширование паролей Argon2id (`core/security.py`)
-- [x] 2.2 JWT access token (выпуск/проверка)
-- [x] 2.3 Refresh token + `admin_sessions` (хранение hash) + HttpOnly cookie
-- [x] 2.4 Endpoints: `login`, `refresh`, `logout`, `me`
-- [x] 2.5 Dependency «текущий админ» (авторизация роутеров)
-
-### Блок 3. Эталон слоёв
-- [ ] 3.1 Паттерн repository → service → schema → router на одном простом примере
-
-### Блок 4. Серверы
-- [x] 4.1 Модель `VPNServer` + статусы (NEW/INSTALLING/READY/OFFLINE/ERROR)
-- [x] 4.2 CRUD `/api/v1/servers`
-- [x] 4.3 `server_credentials` + шифрование секретов (`ENCRYPTION_KEY`)
-
-### Блок 5. SSH-подсистема
-- [x] 5.1 `SSHClient` (AsyncSSH): connect/execute/upload/download/close
-- [x] 5.2 Таймауты, retry, обработка ошибок аутентификации/соединения, безопасное закрытие
-- [x] 5.3 `test-connection` endpoint
-
-### Блок 6. VPN Provider
-- [x] 6.1 Интерфейс `VPNProvider` (install/uninstall/get_status/create_client/revoke_client/list_clients/sync)
-- [x] 6.2 Скелет `AmneziaProvider` (`AmneziaInstaller`, `AmneziaWGProvider`)
-
-### Блок 7. Jobs и Worker
-- [x] 7.1 Модель `Job` + статусы/типы
-- [x] 7.2 Очередь задач на Redis
-- [x] 7.3 Отдельный процесс `vpn-admin-worker` (asyncio)
-- [x] 7.4 Distributed locks на Redis (TTL + безопасное освобождение)
-- [x] 7.5 Endpoints `/api/v1/jobs`, `/api/v1/jobs/{id}`
-
-### Блок 8. Установка Amnezia (сквозной сценарий)
-- [x] 8.1 `install`/`uninstall` через Job → worker → SSH → verification → sync
-
-### Блок 9. Протоколы
-- [x] 9.1 Модель `VPNProtocol` (AMNEZIA_WG), установка/удаление протокола
-
-### Блок 10. VPN-пользователи
-- [x] 10.1 Модель `VPNUser` (не связан с `Admin`) + CRUD `/api/v1/vpn-users`
-
-### Блок 11. Доступы (AccessGrant)
-- [x] 11.1 Модель `AccessGrant` + статусы (PENDING/ACTIVE/EXPIRED/REVOKED)
-- [x] 11.2 Выдача/изменение/отзыв доступа + проверки конфликтов
-- [x] 11.3 Ограничение по времени (`valid_from`/`valid_until`) + идемпотентный revoke
-
-### Блок 12. VPN-конфигурации
-- [x] 12.1 Модель `VPNCredential` (шифрованный config) + защищённая выдача конфигурации
-- [x] 12.2 Реальный `create_client`/`revoke_client` в `AmneziaWGProvider` (аллокатор адресов, `[Peer]` на сервере, сборка конфига клиента)
-- [x] 12.3 Выдача/отзыв клиента через Job (`CREATE_USER`/`REVOKE_ACCESS`), эндпоинты, отзыв на сервере при отзыве гранта/подписки
-
-### Блок 13. Синхронизация и Health
-- [x] 13.1 `sync` сервера (сверка реального состояния с БД)
-- [x] 13.2 `health` (SSH/Docker/Amnezia/protocol/service) + сохранение результата
-
-### Блок 14. Аудит
-- [x] 14.1 Модель `AuditLog` + запись критических действий (без секретов)
-
-### Блок 15. Фоновые правила
-- [x] 15.1 Периодический worker: перевод просроченных `AccessGrant` в EXPIRED + revoke на сервере
-
-### Блок 16. Тесты
-- [x] 16.1 Unit: сервисы, репозитории, провайдеры, переходы статусов, expiration
-- [x] 16.2 Integration: PostgreSQL, Redis, API, auth (fake/mock SSH-слой)
-
-### Блок 17. Production
-- [x] 17.1 Docker: единый image для api+worker; compose: api/worker/postgres/redis/nginx
-- [x] 17.2 Структурированные логи (request_id, job_id, server_id)
-
-### Блок 18. Доводка требований ТЗ (после MVP)
-- [x] 18.1 Rate limiting (Redis + грубый лимит nginx) + защита login от тайминг-атаки
-- [x] 18.2 RBAC (роли superadmin/operator/viewer, права на каждый эндпоинт, /api/v1/admins)
-- [x] 18.3 Проверка ключа SSH-сервера (known_hosts / TOFU)
-
-### Блок 19. Исправления по ревью (fastapi-reviewer + security-reviewer)
-- [x] 19.1 Корректность и безопасность: пароль SSH только на закреплённый ключ, смена host удаляет учётку, вход по SSH-ключу, только свои ключи (без ~/.ssh и агента), удалён PATCH /access, гонка выдачи/отзыва, TTL блокировки сервера, Argon2 вне event loop
-- [x] 19.2 Надёжность: ошибки 500, зависшие задачи, rollback в воркере, сбои Redis, атомарный refresh, дубли подписок, Job.error, валидация, логика из роутеров в сервисы
-- [x] 19.3 Hardening: проверка JWT_SECRET_KEY, блокировка входа по (email,IP) + общий порог, случайная обфускация AmneziaWG, allowlist клиентского конфига, атомарная запись awg0.conf, образы по дайджесту, cap_drop/read_only/no-new-privileges, openapi off в проде, dev-порты на localhost
-
-### Блок 20. Фронтенд (React + Vite + TypeScript, `frontend/`, статика за nginx; дизайн «Журнал связи»)
-- [x] 20.1 Фундамент: каркас, дизайн-токены (светлая/тёмная), вход с тихим refresh, навигация по правам, список серверов, сборка в Docker + nginx
-- [x] 20.2 Сервер: карточка с чек-листом подготовки, SSH-учётка, ключ хоста (scan → pin), установка/протокол, журнал задач с опросом, опасные действия с последствиями, добавление сервера
-- [x] 20.3 VPN-пользователи: список со сводкой доступа (API), карточка, «Выдать доступ» одним диалогом, срок, отзыв, показ конфига (QR + копирование + .conf)
-- [ ] 20.4 Журнал аудита, задачи, админы (superadmin)
-
-### Блок 21. Конфиг для приложения и мониторинг серверов
-- [x] 21.1 Конфиг в формате AmneziaVPN (`vpn://` + серия QR как у экспорта AmneziaVPN) с именем сервера из панели; `.conf` — запасной
-- [x] 21.2 Сбор метрик без агента (SSH раз в минуту): клиенты всего/онлайн, CPU, RAM, диск, сеть; хранение 7 дней + почасовые 90 дней
-- [x] 21.3 Мониторинг в интерфейсе: графики на карточке сервера, сводка в списке
-- [ ] 21.4 (опц.) Онлайн и трафик по клиентам
-
-### Definition of Done (MVP)
-Админ может: войти → добавить сервер → проверить SSH → установить Amnezia → установить AmneziaWG → смотреть job/статус сервера → создать VPN-пользователя → выдать доступ → получить конфиг → изменить срок → отозвать доступ → удалить пользователя → sync → health → смотреть audit log.
+- **Сделано:** блоки 0–2, 4–19 (бэкенд, MVP + доводка ТЗ + исправления по ревью), 20.1–20.3 (фронтенд: вход, серверы, пользователи/доступ/конфиг), 21.1 (конфиг `vpn://`), 21.2 (сбор метрик), 21.3 (мониторинг в интерфейсе).
+- **Открыто:**
+  - [ ] 3.1 Эталон слоёв (фактически покрыт модулем auth — отдельно не делали)
+  - [ ] 20.4 Журнал аудита, задачи, админы во фронтенде (заготовка `frontend/src/lib/audit.ts` не закоммичена)
+  - [ ] 21.4 (опц.) Онлайн и трафик по клиентам
+- **Кандидаты (не утверждены):** сверка удаляет только клиентов своей панели (метка панели в имени peer'а — сейчас две панели на одном сервере удаляют клиентов друг друга); health различает «недоступен» и «ключ хоста не закреплён»; плавающий тест `test_login_limited_by_ip`; `--restart` у контейнера amnezia-awg; ротация ключа шифрования (MultiFernet).
 
 ---
 
 ## 7. Полезные команды
 
 ```bash
-uv sync                 # установить зависимости
-uv run uvicorn src.main:app --reload   # запуск API (dev)
-uv run ruff check .     # линт
-uv run ruff format .    # форматирование
-uv run mypy src         # проверка типов
-uv run pytest           # тесты (tests/services нужен docker compose up: своя БД vpn_panel_test, Redis db 15)
-uv run pytest --cov --cov-report=term-missing   # с отчётом покрытия
-uv run alembic upgrade head            # применить миграции
-PYTHONPATH=src uv run python -m scripts.create_admin you@example.com   # создать админа (пароль спросит скрыто), из корня
+uv sync                                                 # установить зависимости
+uv run uvicorn main:app --app-dir src --reload          # API (dev); без --app-dir: ModuleNotFoundError: core
+uv run python src/worker.py                             # воркер (задачи + планировщик)
+uv run ruff check . && uv run ruff format .             # линт и формат
+uv run mypy src                                         # типы
+uv run pytest                                           # тесты (нужен docker compose up: БД vpn_panel_test, Redis db 15)
+uv run pytest --cov --cov-report=term-missing           # с покрытием
+uv run alembic upgrade head                             # миграции
+PYTHONPATH=src uv run python -m scripts.create_admin you@example.com   # создать админа (пароль спросит скрыто)
 
-# Фронтенд (frontend/, Node 24): локально API на :8000 + Vite на :5173 (проксирует /api)
+# Фронтенд (frontend/, Node 24): API на :8000 + Vite на :5173 (проксирует /api)
 PYTHONPATH=src uv run python -m scripts.export_openapi frontend/openapi.json   # схема API → затем npm run gen:api
-cd frontend && npm ci && npm run gen:api && npm run dev   # dev-сервер
+cd frontend && npm ci && npm run gen:api && npm run dev
 cd frontend && npm run typecheck && npm run lint && npm test && npm run build
 
 # Production (секреты — в .env.prod, сертификаты — в certs/; оба вне git, шаблон — .env.prod.example)
@@ -244,4 +153,4 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm api python -m scripts.create_admin you@example.com
 ```
 
-(Точный запуск уточняется на этапе 0 — здесь ориентир.)
+Для превью в Claude Desktop есть `.claude/launch.json`: `api` (uvicorn :8000) и `web` (vite :5173).

@@ -1,0 +1,14 @@
+# modules/vpn_users — VPN-пользователи
+
+`VPNUser` — человек, которому выдают VPN. С `Admin` не связан.
+
+- Модель `vpn_users`: username, `email` (unique, `EmailStr` во входных схемах), description, `status`
+  (`VPNUserStatus`: active/disabled), таймстемпы.
+- ⚠️ Отступление от ТЗ §17 (там нет email): email — будущий идентификатор для регистрации через сайт/бота;
+  username не уникален. Решение пользователя.
+- API `/api/v1/vpn-users`: список, создание, просмотр, PATCH, удаление.
+- Список (`list_with_access`) отдаёт `VPNUserListItem` со сводкой `access` — последняя подписка пользователя
+  (через `SubscriptionRepository.latest_by_user`, DISTINCT ON). Число серверов в сводку не входит.
+- Удалить пользователя с живыми VPN-клиентами нельзя (409) — сначала отзыв доступа. Подписки, гранты и
+  credential'ы удаляются каскадом.
+- Аудит: `vpn_user_created/updated/deleted`.
