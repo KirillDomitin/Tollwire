@@ -2487,6 +2487,93 @@
         }
       }
     },
+    "/api/v1/servers/{server_id}/metrics": {
+      "get": {
+        "tags": [
+          "monitoring"
+        ],
+        "summary": "Server Metrics",
+        "operationId": "server_metrics_api_v1_servers__server_id__metrics_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Server Id"
+            }
+          },
+          {
+            "name": "range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/MetricsRange",
+              "default": "24h"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricsSeries"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/metrics/latest": {
+      "get": {
+        "tags": [
+          "monitoring"
+        ],
+        "summary": "Latest Metrics",
+        "operationId": "latest_metrics_api_v1_metrics_latest_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LatestMetrics"
+                  },
+                  "type": "array",
+                  "title": "Response Latest Metrics Api V1 Metrics Latest Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health",
@@ -3189,6 +3276,107 @@
         ],
         "title": "JobType"
       },
+      "LatestMetrics": {
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Server Id"
+          },
+          "ts": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Ts"
+          },
+          "cpu_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Percent"
+          },
+          "mem_used_bytes": {
+            "type": "integer",
+            "title": "Mem Used Bytes"
+          },
+          "mem_total_bytes": {
+            "type": "integer",
+            "title": "Mem Total Bytes"
+          },
+          "disk_used_bytes": {
+            "type": "integer",
+            "title": "Disk Used Bytes"
+          },
+          "disk_total_bytes": {
+            "type": "integer",
+            "title": "Disk Total Bytes"
+          },
+          "net_rx_bytes_per_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Rx Bytes Per S"
+          },
+          "net_tx_bytes_per_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Tx Bytes Per S"
+          },
+          "clients_total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clients Total"
+          },
+          "clients_online": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clients Online"
+          }
+        },
+        "type": "object",
+        "required": [
+          "server_id",
+          "ts",
+          "cpu_percent",
+          "mem_used_bytes",
+          "mem_total_bytes",
+          "disk_used_bytes",
+          "disk_total_bytes",
+          "net_rx_bytes_per_s",
+          "net_tx_bytes_per_s",
+          "clients_total",
+          "clients_online"
+        ],
+        "title": "LatestMetrics",
+        "description": "Последний замер сервера — для списка серверов."
+      },
       "LoginRequest": {
         "properties": {
           "email": {
@@ -3207,6 +3395,245 @@
           "password"
         ],
         "title": "LoginRequest"
+      },
+      "MetricPoint": {
+        "properties": {
+          "ts": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Ts"
+          },
+          "cpu_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Percent"
+          },
+          "load1": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load1"
+          },
+          "mem_used_bytes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mem Used Bytes"
+          },
+          "mem_total_bytes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mem Total Bytes"
+          },
+          "disk_used_bytes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disk Used Bytes"
+          },
+          "disk_total_bytes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disk Total Bytes"
+          },
+          "net_rx_bytes_per_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Rx Bytes Per S"
+          },
+          "net_tx_bytes_per_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Tx Bytes Per S"
+          },
+          "disk_read_bytes_per_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disk Read Bytes Per S"
+          },
+          "disk_write_bytes_per_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disk Write Bytes Per S"
+          },
+          "clients_total": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clients Total"
+          },
+          "clients_online": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clients Online"
+          },
+          "cpu_percent_max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Percent Max"
+          },
+          "net_rx_bytes_per_s_max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Rx Bytes Per S Max"
+          },
+          "net_tx_bytes_per_s_max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Tx Bytes Per S Max"
+          },
+          "clients_online_max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clients Online Max"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ts",
+          "cpu_percent",
+          "load1",
+          "mem_used_bytes",
+          "mem_total_bytes",
+          "disk_used_bytes",
+          "disk_total_bytes",
+          "net_rx_bytes_per_s",
+          "net_tx_bytes_per_s",
+          "disk_read_bytes_per_s",
+          "disk_write_bytes_per_s",
+          "clients_total",
+          "clients_online"
+        ],
+        "title": "MetricPoint",
+        "description": "Точка графика. Для почасовых данных значения — средние за час, а *_max — пик внутри часа."
+      },
+      "MetricsRange": {
+        "type": "string",
+        "enum": [
+          "1h",
+          "24h",
+          "7d",
+          "30d"
+        ],
+        "title": "MetricsRange",
+        "description": "Период графика. До суток — поминутные замеры, дальше — почасовая свёртка (не больше ~1500 точек)."
+      },
+      "MetricsSeries": {
+        "properties": {
+          "range": {
+            "$ref": "#/components/schemas/MetricsRange"
+          },
+          "resolution": {
+            "type": "string",
+            "title": "Resolution"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/MetricPoint"
+            },
+            "type": "array",
+            "title": "Points"
+          }
+        },
+        "type": "object",
+        "required": [
+          "range",
+          "resolution",
+          "points"
+        ],
+        "title": "MetricsSeries"
       },
       "ProtocolRead": {
         "properties": {

@@ -15,6 +15,7 @@ from modules.audit.actor import SYSTEM_ACTOR
 from modules.audit.service import AuditService
 from modules.auth.service import AuthService
 from modules.jobs.service import JobService
+from modules.monitoring.service import MetricsCollector, rollup_and_prune
 from modules.servers.maintenance import ServerMaintenanceService
 
 logger = logging.getLogger("scheduler")
@@ -159,4 +160,7 @@ def build_rules(settings: Settings) -> list[Rule]:
             settings.retention_interval_seconds,
             lambda: apply_retention(settings.job_retention_days, settings.audit_retention_days),
         ),
+        # Мониторинг: замер серверов (только чтение по SSH) и свёртка истории по часам.
+        Rule("metrics", settings.metrics_interval_seconds, MetricsCollector().collect_all),
+        Rule("metrics_rollup", settings.metrics_rollup_interval_seconds, rollup_and_prune),
     ]

@@ -57,6 +57,13 @@ class Settings(BaseSettings):
     job_retention_days: int = 90
     audit_retention_days: int = 365
 
+    # Мониторинг серверов: замер по SSH (только чтение) и свёртка истории по часам.
+    metrics_interval_seconds: int = 60
+    metrics_rollup_interval_seconds: int = 300
+    metrics_raw_retention_days: int = 7
+    metrics_hourly_retention_days: int = 90
+    metrics_concurrency: int = 5  # сколько серверов опрашивать одновременно
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     @field_validator("jwt_secret_key")

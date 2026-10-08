@@ -34,6 +34,7 @@ from modules.audit.api.v1.router import router as audit_router
 from modules.auth.api.v1.admins import router as admins_router
 from modules.auth.api.v1.router import router as auth_router
 from modules.jobs.api.v1.router import router as job_router
+from modules.monitoring.api.v1.router import router as monitoring_router
 from modules.servers.api.v1.router import router as server_router
 from modules.vpn_users.api.v1.router import router as vpn_user_router
 
@@ -107,6 +108,7 @@ app.include_router(job_router)
 app.include_router(vpn_user_router)
 app.include_router(access_router)
 app.include_router(audit_router)
+app.include_router(monitoring_router)
 
 
 @app.get("/health")

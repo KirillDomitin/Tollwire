@@ -15,6 +15,7 @@ from modules.audit.models.audit_log import AuditLog  # noqa
 from modules.auth.models.admin import Admin  # noqa
 from modules.auth.models.admin_session import AdminSession  # noqa
 from modules.jobs.models.job import Job  # noqa
+from modules.monitoring.models.metrics import ServerMetric, ServerMetricHourly  # noqa
 from modules.protocols.models.protocol import VPNProtocol  # noqa
 from modules.servers.models.credential import ServerCredential  # noqa
 from modules.servers.models.server import VPNServer  # noqa

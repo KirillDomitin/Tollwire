@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from infrastructure.ssh.client import SSHClient
+from infrastructure.vpn.config import ACTIVE_HANDSHAKE_WINDOW_SECONDS
 
 
 class ProviderState(enum.Enum):
@@ -86,6 +87,18 @@ class VPNProvider(ABC):
     async def sync(self) -> SyncResult: ...
     @abstractmethod
     async def health_check(self) -> ProviderHealth: ...
+
+    async def client_counts(self, now: datetime) -> tuple[int, int]:
+        """Клиентов на сервере всего и онлайн. «Онлайн» — было рукопожатие за последние
+        ACTIVE_HANDSHAKE_WINDOW_SECONDS: при живом трафике WireGuard повторяет его примерно раз в 2 минуты."""
+        clients = await self.list_clients()
+        online = sum(
+            1
+            for client in clients
+            if client.latest_handshake
+            and (now - client.latest_handshake).total_seconds() <= ACTIVE_HANDSHAKE_WINDOW_SECONDS
+        )
+        return len(clients), online
 
     @staticmethod
     def share_link(client_config: str, display_name: str) -> str | None:

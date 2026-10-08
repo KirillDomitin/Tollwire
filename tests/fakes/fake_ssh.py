@@ -10,6 +10,7 @@ import shlex
 from dataclasses import dataclass, field
 
 from core.exceptions import SSHConnectionError
+from infrastructure.monitoring.host_metrics import HOST_METRICS_COMMAND
 from infrastructure.ssh.client import CommandResult
 from infrastructure.vpn.awg_config import interface_values, list_peers, public_key_from_private
 from infrastructure.vpn.config import (
@@ -49,6 +50,33 @@ class FakeServer:
     interface_peers: set[str] = field(default_factory=set)  # ключи, применённые к живому интерфейсу
     handshakes: dict[str, int] = field(default_factory=dict)  # ключ → unix-время последнего рукопожатия
     commands: list[str] = field(default_factory=list)
+    # Счётчики /proc для мониторинга: тест сдвигает их между замерами и проверяет расчёт скоростей.
+    host_stats: dict[str, float] = field(
+        default_factory=lambda: {
+            "uptime": 1000.0,
+            "cpu_busy": 2000,
+            "cpu_idle": 8000,
+            "rx": 1_000_000,
+            "tx": 500_000,
+            "read_sectors": 0,
+            "written_sectors": 0,
+        }
+    )
+
+    def host_metrics_output(self) -> str:
+        h = self.host_stats
+        return (
+            f"@uptime\n{h['uptime']} 0.00\n"
+            f"@stat\ncpu  {int(h['cpu_busy'])} 0 0 {int(h['cpu_idle'])} 0 0 0 0 0 0\n"
+            "@loadavg\n0.10 0.10 0.10 1/100 1\n"
+            "@meminfo\nMemTotal:        1000000 kB\nMemAvailable:     600000 kB\n"
+            "@df\nFilesystem 1-blocks Used Available Capacity Mounted on\n"
+            "/dev/vda1 10000000000 4000000000 6000000000 40% /\n"
+            "@route\ndefault via 203.0.113.1 dev eth0\n"
+            "@netdev\nInter-| header\n face | header\n"
+            f"  eth0: {int(h['rx'])} 0 0 0 0 0 0 0 {int(h['tx'])} 0 0 0 0 0 0 0\n"
+            f"@diskstats\n 253 0 vda 0 0 {int(h['read_sectors'])} 0 0 0 {int(h['written_sectors'])} 0 0 0 0\n"
+        )
 
     @property
     def running(self) -> bool:
@@ -89,6 +117,8 @@ class FakeServer:
             return _ok("Docker version 27.0.3, build fake\n") if self.docker_installed else _fail("not found", 127)
         if cmd == INTERNET_PROBE_COMMAND:
             return _ok("0.042000") if self.internet else _fail(code=28)
+        if cmd == " ".join(HOST_METRICS_COMMAND.split()):
+            return _ok(self.host_metrics_output())
         if match := re.fullmatch(r"test -f (\S+)", cmd):
             return _ok() if match.group(1) in self.files else _fail(code=1)
         if match := _PS_RE.fullmatch(cmd):

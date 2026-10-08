@@ -568,6 +568,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/servers/{server_id}/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Server Metrics */
+        get: operations["server_metrics_api_v1_servers__server_id__metrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/metrics/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Latest Metrics */
+        get: operations["latest_metrics_api_v1_metrics_latest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -849,6 +883,40 @@ export interface components {
          * @enum {string}
          */
         JobType: "create_user" | "delete_user" | "sync_server" | "health_check" | "revoke_access" | "install_server" | "remove_protocol" | "uninstall_server" | "install_protocol";
+        /**
+         * LatestMetrics
+         * @description Последний замер сервера — для списка серверов.
+         */
+        LatestMetrics: {
+            /**
+             * Server Id
+             * Format: uuid
+             */
+            server_id: string;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /** Cpu Percent */
+            cpu_percent: number | null;
+            /** Mem Used Bytes */
+            mem_used_bytes: number;
+            /** Mem Total Bytes */
+            mem_total_bytes: number;
+            /** Disk Used Bytes */
+            disk_used_bytes: number;
+            /** Disk Total Bytes */
+            disk_total_bytes: number;
+            /** Net Rx Bytes Per S */
+            net_rx_bytes_per_s: number | null;
+            /** Net Tx Bytes Per S */
+            net_tx_bytes_per_s: number | null;
+            /** Clients Total */
+            clients_total: number | null;
+            /** Clients Online */
+            clients_online: number | null;
+        };
         /** LoginRequest */
         LoginRequest: {
             /**
@@ -858,6 +926,63 @@ export interface components {
             email: string;
             /** Password */
             password: string;
+        };
+        /**
+         * MetricPoint
+         * @description Точка графика. Для почасовых данных значения — средние за час, а *_max — пик внутри часа.
+         */
+        MetricPoint: {
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /** Cpu Percent */
+            cpu_percent: number | null;
+            /** Load1 */
+            load1: number | null;
+            /** Mem Used Bytes */
+            mem_used_bytes: number | null;
+            /** Mem Total Bytes */
+            mem_total_bytes: number | null;
+            /** Disk Used Bytes */
+            disk_used_bytes: number | null;
+            /** Disk Total Bytes */
+            disk_total_bytes: number | null;
+            /** Net Rx Bytes Per S */
+            net_rx_bytes_per_s: number | null;
+            /** Net Tx Bytes Per S */
+            net_tx_bytes_per_s: number | null;
+            /** Disk Read Bytes Per S */
+            disk_read_bytes_per_s: number | null;
+            /** Disk Write Bytes Per S */
+            disk_write_bytes_per_s: number | null;
+            /** Clients Total */
+            clients_total: number | null;
+            /** Clients Online */
+            clients_online: number | null;
+            /** Cpu Percent Max */
+            cpu_percent_max?: number | null;
+            /** Net Rx Bytes Per S Max */
+            net_rx_bytes_per_s_max?: number | null;
+            /** Net Tx Bytes Per S Max */
+            net_tx_bytes_per_s_max?: number | null;
+            /** Clients Online Max */
+            clients_online_max?: number | null;
+        };
+        /**
+         * MetricsRange
+         * @description Период графика. До суток — поминутные замеры, дальше — почасовая свёртка (не больше ~1500 точек).
+         * @enum {string}
+         */
+        MetricsRange: "1h" | "24h" | "7d" | "30d";
+        /** MetricsSeries */
+        MetricsSeries: {
+            range: components["schemas"]["MetricsRange"];
+            /** Resolution */
+            resolution: string;
+            /** Points */
+            points: components["schemas"]["MetricPoint"][];
         };
         /** ProtocolRead */
         ProtocolRead: {
@@ -2663,6 +2788,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    server_metrics_api_v1_servers__server_id__metrics_get: {
+        parameters: {
+            query?: {
+                range?: components["schemas"]["MetricsRange"];
+            };
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetricsSeries"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    latest_metrics_api_v1_metrics_latest_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LatestMetrics"][];
                 };
             };
         };
