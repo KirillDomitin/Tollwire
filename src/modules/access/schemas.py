@@ -57,6 +57,10 @@ class VPNCredentialConfigRead(BaseModel):
     id: UUID
     access_grant_id: UUID
     config: str
+    # Тот же конфиг в формате приложения протокола (AmneziaVPN: vpn://) с именем сервера; None — формата нет.
+    share_link: str | None = None
+    # Он же серией QR-кодов для сканера приложения (показывать по очереди); None — хватает одного QR.
+    share_qr: list[str] | None = None
 
 
 class AccessGrantRead(BaseModel):

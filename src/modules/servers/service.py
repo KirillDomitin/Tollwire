@@ -36,6 +36,16 @@ from modules.servers.repository import CredentialRepository, ServerRepository
 from modules.servers.schemas import CredentialCreate, ServerCreate, ServerUpdate, TestConnectionResult
 
 
+def provider_class(protocol_type: ProtocolType) -> type[VPNProvider]:
+    """Какой провайдер обслуживает протокол. Сам класс (без SSH) — для того, что не требует сервера:
+    например, ссылки на конфиг для приложения."""
+    match protocol_type:
+        case ProtocolType.AMNEZIA_WG:
+            return AmneziaWGProvider
+        case _:
+            raise UnsupportedProtocolError(f"Unsupported protocol '{protocol_type}'")
+
+
 class ServerService:
     def __init__(self, session: AsyncSession, actor: AuditActor):
         self.session = session
@@ -205,11 +215,7 @@ class ServerConnectionService:
         return TestConnectionResult(success=success, message=message)
 
     def build_provider(self, ssh_client: SSHClient, protocol_type: ProtocolType) -> VPNProvider:
-        match protocol_type:
-            case ProtocolType.AMNEZIA_WG:
-                return AmneziaWGProvider(ssh_client)
-            case _:
-                raise UnsupportedProtocolError(f"Unsupported protocol '{protocol_type}'")
+        return provider_class(protocol_type)(ssh_client)
 
     async def server_install(self, server_id: UUID) -> None:
         ssh_client = await self.create_ssh_client(server_id)

@@ -304,8 +304,8 @@ def list_peers(server_config: str) -> list[PeerEntry]:
     return peers
 
 
-def parse_client_config(client_config: str) -> ClientPeerParams:
-    """Достаёт из конфига клиента то, что нужно для его [Peer] на сервере. Приватный ключ наружу не отдаём."""
+def client_config_sections(client_config: str) -> tuple[dict[str, str], dict[str, str]]:
+    """[Interface] и [Peer] конфига клиента как словари «ключ → значение»."""
     interface: dict[str, str] = {}
     peer: dict[str, str] = {}
     for section in _split_sections(client_config):
@@ -313,6 +313,17 @@ def parse_client_config(client_config: str) -> ClientPeerParams:
             interface = _section_values(section)
         elif _section_name(section) == "[Peer]":
             peer = _section_values(section)
+    return interface, peer
+
+
+def obfuscation_params(interface: dict[str, str]) -> dict[str, str]:
+    """Параметры обфускации AmneziaWG из [Interface] — по тому же белому списку, что копируется сервер → клиент."""
+    return {key: value for key, value in interface.items() if key in _CLIENT_INTERFACE_KEYS}
+
+
+def parse_client_config(client_config: str) -> ClientPeerParams:
+    """Достаёт из конфига клиента то, что нужно для его [Peer] на сервере. Приватный ключ наружу не отдаём."""
+    interface, peer = client_config_sections(client_config)
     try:
         address = ipaddress.ip_interface(interface["Address"].split(",")[0].strip()).ip
         public_key = public_key_from_private(interface["PrivateKey"])

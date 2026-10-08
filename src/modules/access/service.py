@@ -12,6 +12,7 @@ from core.exceptions import (
     InvalidDataError,
     LiveCredentialExistsError,
     NotFoundError,
+    UnsupportedProtocolError,
 )
 from core.security import decrypt_secret, encrypt_secret
 from modules.access.models import AccessGrantStatus
@@ -33,7 +34,7 @@ from modules.jobs.repository import JobRepository
 from modules.jobs.service import JobService
 from modules.protocols.repository import ProtocolRepository
 from modules.servers.repository import ServerRepository
-from modules.servers.service import ServerConnectionService
+from modules.servers.service import ServerConnectionService, provider_class
 from modules.vpn_users.repository import VPNUserRepository
 
 _TERMINAL_STATUSES = (AccessGrantStatus.EXPIRED, AccessGrantStatus.REVOKED)
@@ -444,7 +445,7 @@ class VPNCredentialService:
         credential = await self.get(credential_id)
         if credential.revoked_at is not None:
             raise InactiveAccessError("Credential is revoked")
-        await self._ensure_grant_is_live(credential.access_grant_id)
+        grant = await self._ensure_grant_is_live(credential.access_grant_id)
         self.audit.record(
             AuditAction.CONFIG_VIEWED,
             AuditEntity.VPN_CREDENTIAL,
@@ -453,11 +454,28 @@ class VPNCredentialService:
         )
         # Сначала фиксируем факт выдачи: если запись не сохранится, конфиг не уйдёт.
         await self.session.commit()
+        config = decrypt_secret(credential.encrypted_config)
+        share_link, share_qr = await self._app_formats(grant, config)
         return VPNCredentialConfigRead(
             id=credential.id,
             access_grant_id=credential.access_grant_id,
-            config=decrypt_secret(credential.encrypted_config),
+            config=config,
+            share_link=share_link,
+            share_qr=share_qr,
         )
+
+    async def _app_formats(self, grant: AccessGrant, config: str) -> tuple[str | None, list[str] | None]:
+        """Конфиг в формате приложения протокола (строка и серия QR) с именем сервера из панели.
+        Не вышло — клиенту остаётся сам конфиг."""
+        protocol = await self.protocols.get_by_id(grant.protocol_id)
+        server = await ServerRepository(self.session).get_by_id(grant.server_id)
+        if protocol is None or server is None:
+            return None, None
+        try:
+            provider = provider_class(protocol.type)
+            return provider.share_link(config, server.name), provider.share_qr_codes(config, server.name)
+        except (ValueError, UnsupportedProtocolError):
+            return None, None
 
     async def schedule_revoke(self, credential_id: UUID) -> VPNCredential | Job:
         """Уже отозванный credential возвращается как есть (идемпотентно), иначе ставится REVOKE_ACCESS.

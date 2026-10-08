@@ -38,6 +38,10 @@ export function ConfigDialog({
     gcTime: 0,
   });
   const config = reveal.data?.config ?? null;
+  // Строка vpn:// для AmneziaVPN (с именем сервера); нет — у протокола своего формата нет, главный — сам конфиг.
+  const shareLink = reveal.data?.share_link ?? null;
+  // Тот же конфиг серией QR — в формате сканера AmneziaVPN: одиночный код со всей строкой слишком плотный.
+  const shareQr = reveal.data?.share_qr ?? null;
 
   function close(next: boolean) {
     if (!next) {
@@ -48,8 +52,9 @@ export function ConfigDialog({
   }
 
   async function copy() {
-    if (!config) return;
-    await navigator.clipboard.writeText(config);
+    const text = shareLink ?? config;
+    if (!text) return;
+    await navigator.clipboard.writeText(text);
     setCopied(true);
   }
 
@@ -85,13 +90,19 @@ export function ConfigDialog({
       )}
       {config && (
         <>
-          <QrCode text={config} />
+          {shareQr && shareQr.length > 0 ? (
+            <QrSeries codes={shareQr} />
+          ) : (
+            <QrCode text={shareLink ?? config} />
+          )}
           <p className={styles.hint}>
-            Отсканируйте в приложении AmneziaVPN или AmneziaWG на телефоне, либо передайте файл .conf.
+            {shareLink
+              ? "В AmneziaVPN: «+» → «QR-код» и держите камеру на экране — приложение соберёт коды само. Или вставьте скопированный ключ vpn://. Файл .conf — для приложения AmneziaWG и роутеров."
+              : "Отсканируйте в приложении AmneziaVPN или AmneziaWG на телефоне, либо передайте файл .conf."}
           </p>
           <DialogActions>
             <Button variant="quiet" onClick={() => void copy()}>
-              {copied ? "Скопировано" : "Скопировать"}
+              {copied ? "Скопировано" : shareLink ? "Скопировать ключ vpn://" : "Скопировать"}
             </Button>
             <Button variant="quiet" onClick={download}>
               Скачать .conf
@@ -104,6 +115,41 @@ export function ConfigDialog({
   );
 }
 
+const SERIES_STEP_MS = 1000;
+
+/**
+ * Серия QR, как на экране экспорта в AmneziaVPN: коды сменяются сами, сканер приложения собирает их в любом
+ * порядке. При «уменьшить движение» в системе коды не листаются сами — только кнопкой.
+ */
+function QrSeries({ codes }: { codes: string[] }) {
+  const [index, setIndex] = useState(0);
+  const reducedMotion =
+    typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const current = index % codes.length;
+
+  useEffect(() => {
+    if (codes.length < 2 || reducedMotion) return;
+    const timer = window.setInterval(() => setIndex((value) => value + 1), SERIES_STEP_MS);
+    return () => window.clearInterval(timer);
+  }, [codes.length, reducedMotion]);
+
+  return (
+    <>
+      <QrCode text={codes[current] ?? ""} />
+      {codes.length > 1 && (
+        <div className={styles.qrSeries}>
+          <span className={styles.hint}>
+            Код {current + 1} из {codes.length}
+          </span>
+          <Button variant="quiet" onClick={() => setIndex((value) => value + 1)}>
+            Следующий код
+          </Button>
+        </div>
+      )}
+    </>
+  );
+}
+
 /** QR рисуется прямо в браузере — текст конфига никуда не отправляется. */
 function QrCode({ text }: { text: string }) {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -111,7 +157,9 @@ function QrCode({ text }: { text: string }) {
   useEffect(() => {
     if (!canvas.current) return;
     // Тёмное на белом и с полями — иначе камеры телефонов читают код хуже (и в тёмной теме тоже).
-    QRCode.toCanvas(canvas.current, text, { errorCorrectionLevel: "M", margin: 2, width: 280 }).catch(() =>
+    // Коррекция ошибок L: строка vpn:// длинная (~1,5 тыс. символов), а с экрана код не «повреждается» —
+    // меньше избыточности → крупнее модули → камера читает легче. Ширина — во всё окно (~130 модулей по 3+ px).
+    QRCode.toCanvas(canvas.current, text, { errorCorrectionLevel: "L", margin: 2, width: 440 }).catch(() =>
       setFailed(true),
     );
   }, [text]);

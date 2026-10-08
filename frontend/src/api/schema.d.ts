@@ -1024,6 +1024,10 @@ export interface components {
             access_grant_id: string;
             /** Config */
             config: string;
+            /** Share Link */
+            share_link?: string | null;
+            /** Share Qr */
+            share_qr?: string[] | null;
         };
         /**
          * VPNCredentialRead

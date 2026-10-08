@@ -1,5 +1,6 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import QRCode from "qrcode";
 
 import { json, renderWithProviders } from "../../test/render";
 import { UsersPage } from "../UsersPage";
@@ -64,7 +65,13 @@ function mockApi({ subscriptions = [subscription], credentials = [credential] as
       if (path === `/api/v1/access/${GRANT}/credentials`) return json(credentials);
       if (path === "/api/v1/servers") return json([server]);
       if (path === "/api/v1/credentials/cred-1/config") {
-        return json({ id: "cred-1", access_grant_id: GRANT, config: "[Interface]\nPrivateKey = test-only" });
+        return json({
+          id: "cred-1",
+          access_grant_id: GRANT,
+          config: "[Interface]\nPrivateKey = test-only",
+          share_link: "vpn://test-only-link",
+          share_qr: ["test-chunk-1", "test-chunk-2"],
+        });
       }
       return json({ detail: "unexpected" }, 500);
     }),
@@ -143,6 +150,21 @@ describe("UserPage", () => {
     );
     expect(await screen.findByRole("img", { name: "QR-код конфига" })).toBeInTheDocument();
     expect(calls.filter((call) => call === "POST /api/v1/credentials/cred-1/config")).toHaveLength(1);
+    // Главный формат — AmneziaVPN: серия QR в формате его сканера (по коду за раз), а не текст .conf.
+    expect(vi.mocked(QRCode.toCanvas)).toHaveBeenLastCalledWith(
+      expect.anything(),
+      "test-chunk-1",
+      expect.anything(),
+    );
+    expect(screen.getByText("Код 1 из 2")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Следующий код" }));
+    expect(vi.mocked(QRCode.toCanvas)).toHaveBeenLastCalledWith(
+      expect.anything(),
+      "test-chunk-2",
+      expect.anything(),
+    );
+    expect(screen.getByRole("button", { name: "Скопировать ключ vpn://" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Скачать .conf" })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Готово" }));
     await userEvent.click(screen.getByRole("button", { name: "Показать конфиг" }));

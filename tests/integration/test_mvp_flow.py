@@ -12,6 +12,7 @@ import httpx
 
 from infrastructure.workers.worker import JobWorker
 from tests.integration.conftest import AdminLogin, drain
+from tests.unit.test_amnezia_link import decode as decode_share_link
 
 
 async def run_job(api: httpx.AsyncClient, worker: JobWorker, response: httpx.Response) -> dict[str, Any]:
@@ -61,6 +62,10 @@ async def test_definition_of_done(api: httpx.AsyncClient, worker: JobWorker, adm
     assert reveal.status_code == 200 and reveal.headers["cache-control"] == "no-store"
     config = reveal.json()["config"]
     assert f"Endpoint = 203.0.113.10:{protocol['port']}" in config and "PrivateKey" in config
+    # Тот же конфиг для приложения AmneziaVPN — с именем сервера из панели вместо «СЕРВЕР 1».
+    app_document = decode_share_link(reveal.json()["share_link"])
+    assert app_document["description"] == "de-1" and app_document["hostName"] == "203.0.113.10"
+    assert len(reveal.json()["share_qr"]) >= 2  # серия QR для сканера приложения
 
     # смена срока
     new_until = (now + timedelta(days=60)).isoformat()

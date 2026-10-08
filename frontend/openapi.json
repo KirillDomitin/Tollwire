@@ -3607,6 +3607,31 @@
           "config": {
             "type": "string",
             "title": "Config"
+          },
+          "share_link": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Share Link"
+          },
+          "share_qr": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Share Qr"
           }
         },
         "type": "object",

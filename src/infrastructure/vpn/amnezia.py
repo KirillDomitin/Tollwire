@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 
 from core.ssh_exception import CommandExecutionError, DockerError, InstallError, InvalidServerConfigurationError
 from infrastructure.ssh.client import SSHClient
+from infrastructure.vpn.amnezia_link import amnezia_qr_codes, amnezia_share_link
 from infrastructure.vpn.awg_config import (
     append_peer,
     ensure_nat_hooks,
@@ -133,6 +134,16 @@ class AmneziaWGProvider(VPNProvider):
         super().__init__(ssh_client)
         self.ssh_client = ssh_client
         self.installer = AmneziaInstaller(ssh_client)
+
+    @staticmethod
+    def share_link(client_config: str, display_name: str) -> str | None:
+        """Строка vpn:// для приложения AmneziaVPN; display_name приложение покажет как имя сервера."""
+        return amnezia_share_link(client_config, display_name)
+
+    @staticmethod
+    def share_qr_codes(client_config: str, display_name: str) -> list[str] | None:
+        """Серия QR в формате экспорта AmneziaVPN: одиночный код со всей строкой vpn:// камера не читает."""
+        return amnezia_qr_codes(client_config, display_name)
 
     async def install(self) -> ProviderStatus:
         test = await self.ssh_client.execute(f"test -f {CONFIG_PATH}/awg0.conf")
