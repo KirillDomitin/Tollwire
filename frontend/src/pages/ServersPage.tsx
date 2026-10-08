@@ -1,14 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 
-import { api, unwrap, type Server } from "../api/client";
+import { api, unwrap, type Schemas, type Server } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Button } from "../components/Button";
 import { Notice } from "../components/Notice";
 import { fleetSummary, serverSignal } from "../lib/serverSignal";
 import { exactTime, timeAgo } from "../lib/time";
+import { formatPercent } from "../lib/units";
 import { AddServerDialog } from "./server/AddServerDialog";
 import styles from "./Ledger.module.css";
+
+type LatestMetrics = Schemas["LatestMetrics"];
 
 /** Состояние парка меняют фоновые задачи (health, sync) — список подтягивается сам раз в 30 секунд. */
 const REFRESH_MS = 30_000;
@@ -20,6 +23,13 @@ export function ServersPage() {
     queryFn: () => unwrap(api.GET("/api/v1/servers")),
     refetchInterval: REFRESH_MS,
   });
+  // Последние замеры мониторинга — для столбцов «Клиенты» и «CPU». Замеры раз в минуту — и подтягиваем так же.
+  const metrics = useQuery({
+    queryKey: ["metrics", "latest"],
+    queryFn: () => unwrap(api.GET("/api/v1/metrics/latest")),
+    refetchInterval: 60_000,
+  });
+  const latest = freshMetrics(metrics.data ?? [], metrics.dataUpdatedAt);
 
   return (
     <section aria-labelledby="servers-title">
@@ -58,18 +68,31 @@ export function ServersPage() {
         </p>
       )}
 
-      {servers.data && servers.data.length > 0 && <ServerTable servers={servers.data} />}
+      {servers.data && servers.data.length > 0 && <ServerTable servers={servers.data} metrics={latest} />}
     </section>
   );
 }
 
-function ServerTable({ servers }: { servers: Server[] }) {
+/** Замер старше 5 минут на момент получения не показываем: устаревшая цифра хуже прочерка. */
+const STALE_MS = 5 * 60_000;
+
+export function freshMetrics(items: LatestMetrics[], receivedAt: number): Map<string, LatestMetrics> {
+  return new Map(
+    items
+      .filter((item) => receivedAt - new Date(item.ts).getTime() <= STALE_MS)
+      .map((item) => [item.server_id, item]),
+  );
+}
+
+function ServerTable({ servers, metrics }: { servers: Server[]; metrics: Map<string, LatestMetrics> }) {
   return (
     <table className={styles.table}>
       <thead>
         <tr>
           <th scope="col">Сервер</th>
           <th scope="col">Состояние</th>
+          <th scope="col">Клиенты</th>
+          <th scope="col">CPU</th>
           <th scope="col">Проверка</th>
           <th scope="col">Ключ хоста</th>
         </tr>
@@ -77,6 +100,7 @@ function ServerTable({ servers }: { servers: Server[] }) {
       <tbody>
         {servers.map((server) => {
           const { signal, label } = serverSignal(server);
+          const metric = metrics.get(server.id);
           return (
             <tr key={server.id} className={styles.row} data-signal={signal}>
               <th scope="row" className={styles.name}>
@@ -93,6 +117,12 @@ function ServerTable({ servers }: { servers: Server[] }) {
                   {label}
                 </span>
               </td>
+              <td className={styles.meta} title="Онлайн из всех клиентов на сервере">
+                {metric?.clients_online === null || metric?.clients_online === undefined
+                  ? "—"
+                  : `${metric.clients_online} из ${metric.clients_total ?? 0}`}
+              </td>
+              <td className={styles.meta}>{formatPercent(metric?.cpu_percent)}</td>
               <td className={styles.meta}>
                 {server.last_health_at ? (
                   <time dateTime={server.last_health_at} title={exactTime(server.last_health_at)}>

@@ -1,0 +1,29 @@
+.chart {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-3) var(--space-4) var(--space-2);
+  background: var(--paper);
+}
+
+.title {
+  font-size: var(--text-meta);
+  font-weight: 600;
+  color: var(--pine-soft);
+}
+
+.plot {
+  min-width: 0;
+}
+
+/* Легенда uPlot (значения под курсором) — в цветах темы и мелким шрифтом, как подписи журнала. */
+.plot :global(.u-legend) {
+  font-size: var(--text-meta);
+  color: var(--pine-soft);
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+}
+.plot :global(.u-legend .u-marker) {
+  border-radius: 1px;
+}

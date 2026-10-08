@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState, type ReactNode } from "react";
+import { lazy, Suspense, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 
 import { api, unwrap, type Credential, type Job, type Server } from "../../api/client";
@@ -15,6 +15,11 @@ import { HostKeyDialog } from "./HostKeyDialog";
 import { JobsLog } from "./JobsLog";
 import styles from "./ServerPage.module.css";
 import { keys, useServerData, useStartJob } from "./useServer";
+
+// Графики (uPlot) нужны только на карточке сервера — отдельным файлом, а не в общем бандле панели.
+const MonitoringSection = lazy(() =>
+  import("./MonitoringSection").then((module) => ({ default: module.MonitoringSection })),
+);
 
 const AUTH_LABELS: Record<Credential["auth_type"], string> = {
   password: "по паролю",
@@ -109,6 +114,13 @@ export function ServerPage() {
           port={protocol?.port ?? null}
           jobs={jobList}
         />
+      )}
+
+      {/* Замеры снимаются только с серверов, куда панель может зайти по SSH. */}
+      {setup.credential && (
+        <Suspense fallback={<p className={styles.hint}>Загружаем графики…</p>}>
+          <MonitoringSection serverId={data.id} />
+        </Suspense>
       )}
 
       <section className={styles.section} aria-labelledby="jobs-title">
