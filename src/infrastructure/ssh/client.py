@@ -5,6 +5,7 @@ import contextlib
 import logging
 import posixpath
 import secrets
+import stat
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ from core.config import settings
 from core.exceptions import (
     SSHAuthError,
     SSHConnectionError,
+    SSHError,
     SSHHostKeyError,
     SSHHostKeyNotPinnedError,
     SSHTimeoutError,
@@ -51,6 +53,11 @@ def load_private_key(text: str) -> asyncssh.SSHKey:
         return asyncssh.import_private_key(text.strip())
     except (asyncssh.KeyImportError, asyncssh.KeyEncryptionError, ValueError):
         raise ValueError("Not a valid unencrypted SSH private key") from None
+
+
+def private_key_fingerprint(text: str) -> str:
+    """Отпечаток (SHA256:…) приватного ключа; ValueError — не ключ или ключ с passphrase."""
+    return load_private_key(text).convert_to_public().get_fingerprint()
 
 
 class SSHClient:
@@ -258,6 +265,71 @@ class SSHClient:
             raise SSHTimeoutError("File write timeout exceeded") from exc
         except (asyncssh.Error, OSError) as exc:
             raise SSHConnectionError(f"File write: host={self.host}, path={remote_path}") from exc
+
+    async def home_dir(self) -> str:
+        """Домашний каталог пользователя: SFTP-сессия начинается в нём, поэтому realpath(".") — его адрес.
+        Без shell и $HOME — работает и для не-root."""
+        sftp = await self._sftp()
+        try:
+            async with sftp:
+                home = await sftp.realpath(".")
+        except TimeoutError as exc:
+            raise SSHTimeoutError("SFTP timeout exceeded") from exc
+        except (asyncssh.Error, OSError) as exc:
+            raise SSHConnectionError(f"Home directory: host={self.host}") from exc
+        return home
+
+    async def ensure_private_dir(self, remote_path: str) -> None:
+        """Каталог только для владельца (0700): создать или ужесточить права. Симлинк — отказ: не идём туда,
+        куда ссылку направил кто-то на сервере. chmod — явно: при mkdir umask сервера срезал бы биты."""
+        logger.debug("ssh ensure private dir", extra={"host": self.host, "remote_path": remote_path})
+        sftp = await self._sftp()
+        try:
+            async with sftp:
+                try:
+                    attrs = await sftp.lstat(remote_path)
+                except asyncssh.SFTPNoSuchFile:
+                    await sftp.mkdir(remote_path, asyncssh.SFTPAttrs(permissions=0o700))
+                else:
+                    mode = attrs.permissions or 0
+                    if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
+                        raise SSHError(f"Refusing to use {remote_path}: not a plain directory")
+                await sftp.chmod(remote_path, 0o700)
+        except TimeoutError as exc:
+            raise SSHTimeoutError("SFTP timeout exceeded") from exc
+        except (asyncssh.Error, OSError) as exc:
+            raise SSHConnectionError(f"Directory: host={self.host}, path={remote_path}") from exc
+
+    async def read_file_optional(self, remote_path: str) -> str | None:
+        """Содержимое обычного файла или None, если файла нет. Симлинк и прочие сбои — ошибка, а не None:
+        «не прочли» не должно превращаться в «файла нет» (иначе следующая запись затёрла бы непрочитанное)."""
+        logger.debug("ssh read file", extra={"host": self.host, "remote_path": remote_path})
+        sftp = await self._sftp()
+        try:
+            async with sftp:
+                try:
+                    attrs = await sftp.lstat(remote_path)
+                except asyncssh.SFTPNoSuchFile:
+                    return None
+                if stat.S_ISLNK(attrs.permissions or 0):
+                    raise SSHError(f"Refusing to follow symlink {remote_path}")
+                async with sftp.open(remote_path, "r") as f:
+                    content = _to_str(await f.read())
+        except TimeoutError as exc:
+            raise SSHTimeoutError("File read timeout exceeded") from exc
+        except (asyncssh.Error, OSError) as exc:
+            raise SSHConnectionError(f"File read: host={self.host}, path={remote_path}") from exc
+        return content
+
+    async def _sftp(self) -> asyncssh.SFTPClient:
+        if self._conn is None:
+            raise RuntimeError("SSH connection is not established")
+        try:
+            return await self._conn.start_sftp_client()
+        except TimeoutError as exc:
+            raise SSHTimeoutError("SFTP timeout exceeded") from exc
+        except (asyncssh.Error, OSError) as exc:
+            raise SSHConnectionError(f"SFTP: host={self.host}") from exc
 
     async def read_file(self, remote_path: str) -> str:
         if self._conn is None:

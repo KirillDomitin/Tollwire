@@ -808,6 +808,72 @@
         }
       }
     },
+    "/api/v1/servers/{server_id}/ssh-key": {
+      "post": {
+        "tags": [
+          "servers"
+        ],
+        "summary": "Install Ssh Key",
+        "description": "Панель ставит свой SSH-ключ и переходит на вход по нему (повторный вызов — новый ключ вместо прежнего).\nЛогин и пароль в теле сохраняются как учётка перед постановкой задачи.",
+        "operationId": "install_ssh_key_api_v1_servers__server_id__ssh_key_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Server Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SshKeyInstall"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/servers/{server_id}/protocol": {
       "post": {
         "tags": [
@@ -2856,6 +2922,9 @@
           "server_sync_started",
           "server_sync_completed",
           "server_sync_failed",
+          "server_ssh_key_install_started",
+          "server_ssh_key_install_completed",
+          "server_ssh_key_install_failed",
           "protocol_install_started",
           "protocol_install_completed",
           "protocol_install_failed",
@@ -3024,6 +3093,21 @@
             "type": "string",
             "title": "Username"
           },
+          "managed_key": {
+            "type": "boolean",
+            "title": "Managed Key"
+          },
+          "key_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Fingerprint"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -3036,6 +3120,7 @@
           "server_id",
           "auth_type",
           "username",
+          "managed_key",
           "created_at"
         ],
         "title": "CredentialRead"
@@ -3272,7 +3357,8 @@
           "install_server",
           "remove_protocol",
           "uninstall_server",
-          "install_protocol"
+          "install_protocol",
+          "install_ssh_key"
         ],
         "title": "JobType"
       },
@@ -3877,6 +3963,40 @@
         },
         "type": "object",
         "title": "ServerUpdate"
+      },
+      "SshKeyInstall": {
+        "properties": {
+          "username": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9._-]+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 16384,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "title": "SshKeyInstall",
+        "description": "Тело POST /ssh-key. Пусто — ключ ставится по текущей учётке (или меняется на новый); логин и пароль —\nсначала сохранить их как учётку («пароль один раз»). Только оба поля или ни одного."
       },
       "SubscriptionCreate": {
         "properties": {

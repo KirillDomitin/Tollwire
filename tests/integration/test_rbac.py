@@ -182,6 +182,7 @@ CRITICAL = {
     "PUT /api/v1/servers/{server_id}/credentials": Permission.SERVERS_MANAGE,
     "POST /api/v1/servers/{server_id}/test-connection": Permission.SERVERS_MANAGE,
     "POST /api/v1/servers/{server_id}/install": Permission.SERVERS_MANAGE,
+    "POST /api/v1/servers/{server_id}/ssh-key": Permission.SERVERS_MANAGE,
     "PUT /api/v1/servers/{server_id}/host-key": Permission.SERVERS_MANAGE,
     "DELETE /api/v1/servers/{server_id}/host-key": Permission.SERVERS_MANAGE,
     "DELETE /api/v1/servers/{server_id}": Permission.SERVERS_MANAGE,

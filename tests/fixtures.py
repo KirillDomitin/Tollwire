@@ -22,6 +22,7 @@ from modules.audit.actor import SYSTEM_ACTOR
 from modules.audit.models.audit_log import AuditAction, AuditLog
 from modules.jobs.models.job import Job, JobType
 from modules.protocols.models.protocol import ProtocolType, VPNProtocol
+from modules.servers.models.credential import AuthType
 from modules.servers.models.server import VPNServer
 from modules.servers.schemas import CredentialCreate, ServerCreate
 from modules.servers.service import CredentialService, ServerConnectionService, ServerService
@@ -42,13 +43,19 @@ def fakes(monkeypatch: pytest.MonkeyPatch) -> dict[UUID, FakeServer]:
     """Подменяет создание SSH-клиента: вместо сети — FakeServer этого сервера. Остальной код — настоящий."""
     servers: dict[UUID, FakeServer] = {}
 
-    async def create_ssh_client(self: ServerConnectionService, server_id: UUID) -> FakeSSHClient:
+    async def create_ssh_client(
+        self: ServerConnectionService, server_id: UUID, *, private_key: str | None = None
+    ) -> FakeSSHClient:
+        """private_key — войти ТОЛЬКО этим ключом, а не сохранённой учёткой (так сервис ключа проверяет новый
+        ключ). Учётка с auth_type=ssh_key тоже входит по ключу: фейк пускает его, лишь если он в authorized_keys."""
         server = await self.servers.get_by_id(server_id)
         if not server:
             raise NotFoundError
-        await self.credentials.get(server_id)  # как настоящий метод: без учётки — CredentialNotFound
+        credential = await self.credentials.get(server_id)  # как настоящий метод: без учётки — CredentialNotFound
+        if private_key is None and credential.auth_type == AuthType.SSH_KEY:
+            private_key = await self.credentials.get_decrypted_secret(server_id)
         # Сервер, созданный через API, получает свой чистый фейк при первом подключении.
-        return FakeSSHClient(servers.setdefault(server_id, FakeServer(host=server.host)))
+        return FakeSSHClient(servers.setdefault(server_id, FakeServer(host=server.host)), private_key=private_key)
 
     monkeypatch.setattr(ServerConnectionService, "create_ssh_client", create_ssh_client)
     return servers

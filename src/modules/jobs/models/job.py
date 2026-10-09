@@ -30,6 +30,7 @@ class JobType(enum.Enum):
     REMOVE_PROTOCOL = "remove_protocol"
     UNINSTALL_SERVER = "uninstall_server"
     INSTALL_PROTOCOL = "install_protocol"
+    INSTALL_SSH_KEY = "install_ssh_key"
 
 
 class Job(UuidPkMixin, TimestampMixin, Base):

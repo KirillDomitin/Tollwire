@@ -8,6 +8,7 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import asyncssh
 import httpx
 
 from infrastructure.workers.worker import JobWorker
@@ -33,6 +34,17 @@ async def test_definition_of_done(api: httpx.AsyncClient, worker: JobWorker, adm
     assert (await api.put(f"/api/v1/servers/{sid}/credentials", json={"secret": "root-password"})).status_code == 200
     connection = (await api.post(f"/api/v1/servers/{sid}/test-connection")).json()
     assert connection["success"] is True
+
+    # панель ставит на сервер свой SSH-ключ вместо пароля (ключ хоста закреплён: пароль уходит только на проверенный)
+    host_key = asyncssh.generate_private_key("ssh-ed25519").convert_to_public().export_public_key().decode()
+    assert (await api.put(f"/api/v1/servers/{sid}/host-key", json={"public_key": host_key})).status_code == 200
+    job = await run_job(api, worker, await api.post(f"/api/v1/servers/{sid}/ssh-key"))
+    assert job["status"] == "success", job
+    assert job["result"]["replaced"] == "password" and job["result"]["fingerprint"].startswith("SHA256:")
+    stored = (await api.get(f"/api/v1/servers/{sid}/credentials")).json()
+    assert stored["auth_type"] == "ssh_key" and stored["managed_key"] is True
+    assert stored["key_fingerprint"] == job["result"]["fingerprint"]
+    assert "secret" not in stored and "PRIVATE KEY" not in str(stored) and "root-password" not in str(job)
 
     # установка платформы и протокола (через задачи и воркер)
     job = await run_job(api, worker, await api.post(f"/api/v1/servers/{sid}/install"))
@@ -96,6 +108,8 @@ async def test_definition_of_done(api: httpx.AsyncClient, worker: JobWorker, adm
         "login",
         "server_created",
         "server_credentials_set",
+        "server_ssh_key_install_started",
+        "server_ssh_key_install_completed",
         "server_install_started",
         "server_install_completed",
         "protocol_install_completed",
@@ -111,7 +125,8 @@ async def test_definition_of_done(api: httpx.AsyncClient, worker: JobWorker, adm
         "server_sync_completed",
     } <= actions
     dump = str(logs)
-    assert "root-password" not in dump and "PrivateKey" not in dump  # секреты в журнал не попали
+    # секреты в журнал не попали (ни пароль, ни приватный ключ панели, ни ключ сервера в конфигах)
+    assert "root-password" not in dump and "PrivateKey" not in dump and "PRIVATE KEY" not in dump
 
 
 async def test_api_error_mapping(api: httpx.AsyncClient, worker: JobWorker) -> None:

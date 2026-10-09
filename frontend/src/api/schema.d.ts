@@ -198,6 +198,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/servers/{server_id}/ssh-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Install Ssh Key
+         * @description Панель ставит свой SSH-ключ и переходит на вход по нему (повторный вызов — новый ключ вместо прежнего).
+         *     Логин и пароль в теле сохраняются как учётка перед постановкой задачи.
+         */
+        post: operations["install_ssh_key_api_v1_servers__server_id__ssh_key_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/servers/{server_id}/protocol": {
         parameters: {
             query?: never;
@@ -744,7 +765,7 @@ export interface components {
          * AuditAction
          * @enum {string}
          */
-        AuditAction: "login" | "login_failed" | "login_locked" | "logout" | "admin_created" | "admin_updated" | "server_created" | "server_updated" | "server_deleted" | "server_credentials_set" | "server_credentials_deleted" | "server_host_key_pinned" | "server_host_key_reset" | "server_host_key_mismatch" | "server_install_started" | "server_install_completed" | "server_install_failed" | "server_sync_started" | "server_sync_completed" | "server_sync_failed" | "protocol_install_started" | "protocol_install_completed" | "protocol_install_failed" | "protocol_remove_started" | "protocol_remove_completed" | "protocol_remove_failed" | "vpn_user_created" | "vpn_user_updated" | "vpn_user_deleted" | "subscription_created" | "subscription_updated" | "subscription_activated" | "subscription_revoked" | "subscription_expired" | "subscription_deleted" | "access_granted" | "access_updated" | "access_revoked" | "access_expired" | "access_deleted" | "credential_issued" | "credential_issue_failed" | "credential_revoked" | "credential_revoke_failed" | "config_viewed";
+        AuditAction: "login" | "login_failed" | "login_locked" | "logout" | "admin_created" | "admin_updated" | "server_created" | "server_updated" | "server_deleted" | "server_credentials_set" | "server_credentials_deleted" | "server_host_key_pinned" | "server_host_key_reset" | "server_host_key_mismatch" | "server_install_started" | "server_install_completed" | "server_install_failed" | "server_sync_started" | "server_sync_completed" | "server_sync_failed" | "server_ssh_key_install_started" | "server_ssh_key_install_completed" | "server_ssh_key_install_failed" | "protocol_install_started" | "protocol_install_completed" | "protocol_install_failed" | "protocol_remove_started" | "protocol_remove_completed" | "protocol_remove_failed" | "vpn_user_created" | "vpn_user_updated" | "vpn_user_deleted" | "subscription_created" | "subscription_updated" | "subscription_activated" | "subscription_revoked" | "subscription_expired" | "subscription_deleted" | "access_granted" | "access_updated" | "access_revoked" | "access_expired" | "access_deleted" | "credential_issued" | "credential_issue_failed" | "credential_revoked" | "credential_revoke_failed" | "config_viewed";
         /** AuditLogRead */
         AuditLogRead: {
             /**
@@ -803,6 +824,10 @@ export interface components {
             auth_type: components["schemas"]["AuthType"];
             /** Username */
             username: string;
+            /** Managed Key */
+            managed_key: boolean;
+            /** Key Fingerprint */
+            key_fingerprint?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -882,7 +907,7 @@ export interface components {
          * JobType
          * @enum {string}
          */
-        JobType: "create_user" | "delete_user" | "sync_server" | "health_check" | "revoke_access" | "install_server" | "remove_protocol" | "uninstall_server" | "install_protocol";
+        JobType: "create_user" | "delete_user" | "sync_server" | "health_check" | "revoke_access" | "install_server" | "remove_protocol" | "uninstall_server" | "install_protocol" | "install_ssh_key";
         /**
          * LatestMetrics
          * @description Последний замер сервера — для списка серверов.
@@ -1066,6 +1091,17 @@ export interface components {
             ssh_port?: number | null;
             /** Description */
             description?: string | null;
+        };
+        /**
+         * SshKeyInstall
+         * @description Тело POST /ssh-key. Пусто — ключ ставится по текущей учётке (или меняется на новый); логин и пароль —
+         *     сначала сохранить их как учётку («пароль один раз»). Только оба поля или ни одного.
+         */
+        SshKeyInstall: {
+            /** Username */
+            username?: string | null;
+            /** Password */
+            password?: string | null;
         };
         /** SubscriptionCreate */
         SubscriptionCreate: {
@@ -1786,6 +1822,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    install_ssh_key_api_v1_servers__server_id__ssh_key_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SshKeyInstall"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             202: {

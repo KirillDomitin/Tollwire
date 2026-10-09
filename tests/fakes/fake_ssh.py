@@ -7,9 +7,12 @@ AssertionError: если провайдер начнёт слать что-то 
 
 import re
 import shlex
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
-from core.exceptions import SSHConnectionError
+import asyncssh
+
+from core.exceptions import SSHAuthError, SSHConnectionError
 from infrastructure.monitoring.host_metrics import HOST_METRICS_COMMAND
 from infrastructure.ssh.client import CommandResult
 from infrastructure.vpn.awg_config import interface_values, list_peers, public_key_from_private
@@ -26,6 +29,16 @@ from infrastructure.vpn.config import (
 CONFIG_FILE = f"{HOST_CONFIG_DIR}/{CONFIG_FILE_NAME}"
 _PS_RE = re.compile(r"docker ps -a --filter (\S+) --format '\{\{\.(\w+)\}\}'")
 _EXEC = f"docker exec {CONTAINER_NAME} "
+
+
+HOME_DIR = "/root"
+AUTHORIZED_KEYS = f"{HOME_DIR}/.ssh/authorized_keys"
+
+
+def key_blob(private_key: str) -> str:
+    """Base64-часть публичного ключа (2-е поле строки authorized_keys) для приватного ключа в OpenSSH/PEM."""
+    public = asyncssh.import_private_key(private_key.strip()).convert_to_public()
+    return public.export_public_key("openssh").decode().split()[1]
 
 
 def _ok(stdout: str = "") -> CommandResult:
@@ -50,6 +63,11 @@ class FakeServer:
     interface_peers: set[str] = field(default_factory=set)  # ключи, применённые к живому интерфейсу
     handshakes: dict[str, int] = field(default_factory=dict)  # ключ → unix-время последнего рукопожатия
     commands: list[str] = field(default_factory=list)
+    dirs: dict[str, int] = field(default_factory=dict)  # каталоги, созданные через SFTP → права (0o700 для .ssh)
+    key_auth_enabled: bool = True  # False — как sshd с PubkeyAuthentication no: вход по ключу отвергается
+    # Вызывается перед каждой командой, выполняемой по ключу: (клиент, команда). Тест подставляет сюда
+    # событие «посреди задачи» (например, смену учётки), не полагаясь на время.
+    on_key_command: Callable[[str], Awaitable[None]] | None = None
     # Счётчики /proc для мониторинга: тест сдвигает их между замерами и проверяет расчёт скоростей.
     host_stats: dict[str, float] = field(
         default_factory=lambda: {
@@ -77,6 +95,15 @@ class FakeServer:
             f"  eth0: {int(h['rx'])} 0 0 0 0 0 0 0 {int(h['tx'])} 0 0 0 0 0 0 0\n"
             f"@diskstats\n 253 0 vda 0 0 {int(h['read_sectors'])} 0 0 0 {int(h['written_sectors'])} 0 0 0 0\n"
         )
+
+    def authorized_blobs(self) -> set[str]:
+        """blob'ы из /root/.ssh/authorized_keys фейка (2-е поле строки; строки с options не поддерживаются)."""
+        found: set[str] = set()
+        for line in self.files.get(AUTHORIZED_KEYS, "").splitlines():
+            fields = line.split()
+            if len(fields) >= 2 and not line.lstrip().startswith("#"):
+                found.add(fields[1])
+        return found
 
     @property
     def running(self) -> bool:
@@ -193,9 +220,10 @@ class FakeServer:
 class FakeSSHClient:
     """Тот же интерфейс, что у SSHClient, но вместо сети — FakeServer."""
 
-    def __init__(self, server: FakeServer):
+    def __init__(self, server: FakeServer, private_key: str | None = None):
         self.server = server
         self.host = server.host
+        self._private_key = private_key
         self.connected = False
 
     async def __aenter__(self) -> "FakeSSHClient":
@@ -208,6 +236,10 @@ class FakeSSHClient:
     async def connect(self) -> None:
         if not self.server.reachable:
             raise SSHConnectionError(f"Connection error: host={self.host}, port=22")
+        if self._private_key is not None:
+            # Как настоящий sshd: пускает по ключу, только если он записан в authorized_keys и вход по ключам включён.
+            if not self.server.key_auth_enabled or key_blob(self._private_key) not in self.server.authorized_blobs():
+                raise SSHAuthError("Incorrect username or password/secret_key")
         self.connected = True
 
     async def close(self) -> None:
@@ -215,6 +247,8 @@ class FakeSSHClient:
 
     async def execute(self, command: str, timeout: int | None = None) -> CommandResult:
         assert self.connected, "execute() before connect()"
+        if self._private_key is not None and self.server.on_key_command is not None:
+            await self.server.on_key_command(command)
         return self.server.run(command)
 
     async def read_file(self, remote_path: str) -> str:
@@ -226,3 +260,15 @@ class FakeSSHClient:
     async def write_file(self, remote_path: str, content: str) -> None:
         assert self.connected, "write_file() before connect()"
         self.server.files[remote_path] = content
+
+    async def home_dir(self) -> str:
+        assert self.connected, "home_dir() before connect()"
+        return HOME_DIR
+
+    async def ensure_private_dir(self, remote_path: str) -> None:
+        assert self.connected, "ensure_private_dir() before connect()"
+        self.server.dirs[remote_path] = 0o700
+
+    async def read_file_optional(self, remote_path: str) -> str | None:
+        assert self.connected, "read_file_optional() before connect()"
+        return self.server.files.get(remote_path)

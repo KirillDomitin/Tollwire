@@ -25,12 +25,14 @@ _STARTED: dict[JobType, AuditAction] = {
     JobType.INSTALL_PROTOCOL: AuditAction.PROTOCOL_INSTALL_STARTED,
     JobType.REMOVE_PROTOCOL: AuditAction.PROTOCOL_REMOVE_STARTED,
     JobType.SYNC_SERVER: AuditAction.SERVER_SYNC_STARTED,
+    JobType.INSTALL_SSH_KEY: AuditAction.SERVER_SSH_KEY_INSTALL_STARTED,
 }
 _COMPLETED: dict[JobType, AuditAction] = {
     JobType.INSTALL_SERVER: AuditAction.SERVER_INSTALL_COMPLETED,
     JobType.INSTALL_PROTOCOL: AuditAction.PROTOCOL_INSTALL_COMPLETED,
     JobType.REMOVE_PROTOCOL: AuditAction.PROTOCOL_REMOVE_COMPLETED,
     JobType.SYNC_SERVER: AuditAction.SERVER_SYNC_COMPLETED,
+    JobType.INSTALL_SSH_KEY: AuditAction.SERVER_SSH_KEY_INSTALL_COMPLETED,
 }
 _FAILED: dict[JobType, AuditAction] = {
     JobType.INSTALL_SERVER: AuditAction.SERVER_INSTALL_FAILED,
@@ -39,7 +41,10 @@ _FAILED: dict[JobType, AuditAction] = {
     JobType.SYNC_SERVER: AuditAction.SERVER_SYNC_FAILED,
     JobType.CREATE_USER: AuditAction.CREDENTIAL_ISSUE_FAILED,
     JobType.REVOKE_ACCESS: AuditAction.CREDENTIAL_REVOKE_FAILED,
+    JobType.INSTALL_SSH_KEY: AuditAction.SERVER_SSH_KEY_INSTALL_FAILED,
 }
+# Задачи, чей result (без секретов) целиком попадает в meta аудита: итог виден в журнале, а не только в задаче.
+_RESULT_IN_AUDIT = frozenset({JobType.INSTALL_SSH_KEY})
 _ERROR_MAX_LENGTH = 500
 
 
@@ -130,7 +135,10 @@ class JobService:
 
     @staticmethod
     def _meta(job: Job) -> dict[str, Any]:
-        return {"job_id": job.id}
+        meta: dict[str, Any] = {"job_id": job.id}
+        if job.type in _RESULT_IN_AUDIT and job.result:
+            meta.update(job.result)
+        return meta
 
     async def get(self, job_id: UUID) -> Job:
         job = await self.jobs.get_by_id(job_id)

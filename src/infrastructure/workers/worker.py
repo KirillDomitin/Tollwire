@@ -25,6 +25,7 @@ from modules.jobs.service import JobService, job_error_text
 from modules.protocols.models.protocol import ProtocolType, VPNProtocol
 from modules.servers.health import ServerHealthService
 from modules.servers.service import ServerConnectionService
+from modules.servers.ssh_key import ServerSshKeyService
 from modules.servers.sync import ServerSyncService
 
 logger = logging.getLogger("worker")
@@ -94,6 +95,7 @@ class JobWorker:
                 JobType.REVOKE_ACCESS,
                 JobType.SYNC_SERVER,
                 JobType.HEALTH_CHECK,
+                JobType.INSTALL_SSH_KEY,
             ]:
                 if not job.server_id:
                     await self._reject(session, job, f"Job with type '{job.type.value}' must have server_id")
@@ -147,6 +149,10 @@ class JobWorker:
                             async with ServerLock(server_id):
                                 await self.install_protocol(session, server_id, ProtocolType.AMNEZIA_WG)
 
+                        case JobType.INSTALL_SSH_KEY:
+                            async with ServerLock(server_id):
+                                job.result = await ServerSshKeyService(session, actor).install(server_id)
+
                         case _:
                             raise JobTypeError(f"Unknown type name '{job.type}'")
                 except ServerBusyError:
@@ -174,6 +180,8 @@ class JobWorker:
                     job = reloaded
                     job.progress = 0
                     job.error = job_error_text(exc)
+                    # Несекретные подробности сбоя от сервиса (например, откатилась ли установка ключа).
+                    job.result = exc.job_result if isinstance(exc, AppError) else None
                     job.status = JobStatus.FAILED
                     job.finished_at = datetime.now(timezone.utc)
                     JobService(session, actor).record_finished(job)

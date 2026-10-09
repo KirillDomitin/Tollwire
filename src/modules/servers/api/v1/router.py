@@ -28,9 +28,11 @@ from modules.servers.schemas import (
     ServerCreate,
     ServerRead,
     ServerUpdate,
+    SshKeyInstall,
     TestConnectionResult,
 )
 from modules.servers.service import CredentialService, ServerConnectionService, ServerService
+from modules.servers.ssh_key import ServerSshKeyService
 
 router = APIRouter(prefix="/api/v1/servers", tags=["servers"], dependencies=[Depends(get_current_admin)])
 
@@ -62,6 +64,12 @@ def get_host_key_service(
     session: Annotated[AsyncSession, Depends(get_session)], actor: Annotated[AuditActor, Depends(get_audit_actor)]
 ) -> ServerHostKeyService:
     return ServerHostKeyService(session, actor)
+
+
+def get_ssh_key_service(
+    session: Annotated[AsyncSession, Depends(get_session)], actor: Annotated[AuditActor, Depends(get_audit_actor)]
+) -> ServerSshKeyService:
+    return ServerSshKeyService(session, actor)
 
 
 def get_connection_service(session: Annotated[AsyncSession, Depends(get_session)]) -> ServerConnectionService:
@@ -174,6 +182,32 @@ async def test_connection(
 )
 async def server_install(server_id: UUID, service: ServerService = Depends(get_server_service)) -> Job:
     return await schedule(service, server_id, JobType.INSTALL_SERVER)
+
+
+@router.post(
+    "/{server_id}/ssh-key",
+    dependencies=[Depends(require(Permission.SERVERS_MANAGE))],
+    response_model=JobRead,
+    status_code=202,
+)
+async def install_ssh_key(
+    server_id: UUID,
+    service: Annotated[ServerSshKeyService, Depends(get_ssh_key_service)],
+    body: SshKeyInstall | None = None,
+) -> Job:
+    """Панель ставит свой SSH-ключ и переходит на вход по нему (повторный вызов — новый ключ вместо прежнего).
+    Логин и пароль в теле сохраняются как учётка перед постановкой задачи."""
+    credential = (
+        CredentialCreate(username=body.username, secret=body.password)
+        if body is not None and body.username is not None and body.password is not None
+        else None
+    )
+    try:
+        return await service.schedule_install(server_id, credential)
+    except NotFoundError:
+        raise HTTPException(404, detail="Server not found")
+    except CredentialNotFound:
+        raise HTTPException(409, detail="Credentials do not exist to perform this operation")
 
 
 @router.post(

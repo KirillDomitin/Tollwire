@@ -17,7 +17,7 @@ from core.exceptions import (
     UnsupportedProtocolError,
 )
 from core.security import decrypt_secret, encrypt_secret
-from infrastructure.ssh.client import SSHClient, load_private_key
+from infrastructure.ssh.client import SSHClient, private_key_fingerprint
 from infrastructure.ssh.host_keys import HostKey
 from infrastructure.vpn.amnezia import AmneziaInstaller, AmneziaWGProvider
 from infrastructure.vpn.provider import ProviderStatus, VPNProvider
@@ -44,6 +44,14 @@ def provider_class(protocol_type: ProtocolType) -> type[VPNProvider]:
             return AmneziaWGProvider
         case _:
             raise UnsupportedProtocolError(f"Unsupported protocol '{protocol_type}'")
+
+
+def panel_key_warning(credential: ServerCredential) -> dict[str, object]:
+    """Ключ панели остаётся в authorized_keys сервера, когда учётку удаляют: снять его по SSH уже нельзя (сервер
+    мёртв или по старому адресу чужая машина). Отпечаток — в аудит, чтобы админ убрал строку vpn-panel:<id>."""
+    if credential.managed_key and credential.key_fingerprint:
+        return {"panel_key_left_on_server": credential.key_fingerprint}
+    return {}
 
 
 class ServerService:
@@ -99,6 +107,7 @@ class ServerService:
                 server.ssh_host_key = server.ssh_host_key_fingerprint = None
             credential = await self.credentials.get_by_server_id(server.id)
             if credential is not None:
+                meta.update(panel_key_warning(credential))
                 await self.credentials.delete(credential)
                 meta["credentials_deleted"] = True
         for field, value in fields.items():
@@ -126,10 +135,12 @@ class ServerService:
     async def delete(self, server_id: UUID) -> None:
         server = await self.get(server_id)
         await self._ensure_no_live_clients(server_id)
+        meta: dict[str, object] = {"name": server.name, "host": server.host}
+        credential = await self.credentials.get_by_server_id(server_id)
+        if credential is not None:
+            meta.update(panel_key_warning(credential))
         await self.servers.delete(server)
-        self.audit.record(
-            AuditAction.SERVER_DELETED, AuditEntity.SERVER, server.id, {"name": server.name, "host": server.host}
-        )
+        self.audit.record(AuditAction.SERVER_DELETED, AuditEntity.SERVER, server.id, meta)
         await self.session.commit()
 
 
@@ -144,26 +155,33 @@ class CredentialService:
         server = await self.servers.get_by_id(server_id)
         if not server:
             raise NotFoundError
-        if data.auth_type == AuthType.SSH_KEY:
-            load_private_key(data.secret)  # ValueError → 422 сейчас, а не «неверный ключ» при первом подключении
+        # ValueError → 422 сейчас, а не «неверный ключ» при первом подключении.
+        fingerprint = private_key_fingerprint(data.secret) if data.auth_type == AuthType.SSH_KEY else None
         encrypted_secret = encrypt_secret(data.secret)
-        # Секрет в журнал не попадает — только факт смены и несекретные поля.
-        self.audit.record(
-            AuditAction.SERVER_CREDENTIALS_SET,
-            AuditEntity.SERVER,
-            server_id,
-            {"username": data.username, "auth_type": data.auth_type},
-        )
         cred = await self.credentials.get_by_server_id(server_id)
+        # Секрет в журнал не попадает — только факт смены и несекретные поля. Заменённый ключ панели остаётся в
+        # authorized_keys (по SSH здесь не снимаем) — его отпечаток в журнал, чтобы админ мог убрать строку.
+        meta: dict[str, object] = {"username": data.username, "auth_type": data.auth_type}
+        if cred:
+            meta.update(panel_key_warning(cred))
+        self.audit.record(AuditAction.SERVER_CREDENTIALS_SET, AuditEntity.SERVER, server_id, meta)
         if cred:
             cred.username = data.username
             cred.auth_type = data.auth_type
             cred.secret_encrypted = encrypted_secret
+            # Учётку задал админ — это уже не ключ панели (даже если раньше был): панель его не ротирует.
+            cred.managed_key = False
+            cred.public_key = None
+            cred.key_fingerprint = fingerprint
             await self.session.commit()
             return cred
 
         new_cred = ServerCredential(
-            server_id=server_id, auth_type=data.auth_type, username=data.username, secret_encrypted=encrypted_secret
+            server_id=server_id,
+            auth_type=data.auth_type,
+            username=data.username,
+            secret_encrypted=encrypted_secret,
+            key_fingerprint=fingerprint,
         )
         await self.credentials.create(new_cred)
         await self.session.commit()
@@ -179,8 +197,9 @@ class CredentialService:
         cred = await self.credentials.get_by_server_id(server_id)
         if not cred:
             raise CredentialNotFound
+        meta = panel_key_warning(cred)
         await self.credentials.delete(cred)
-        self.audit.record(AuditAction.SERVER_CREDENTIALS_DELETED, AuditEntity.SERVER, server_id)
+        self.audit.record(AuditAction.SERVER_CREDENTIALS_DELETED, AuditEntity.SERVER, server_id, meta or None)
         await self.session.commit()
 
     async def get_decrypted_secret(self, server_id: UUID) -> str:
@@ -236,18 +255,23 @@ class ServerConnectionService:
             server.status = ServerStatus.READY
             await self.session.commit()
 
-    async def create_ssh_client(self, server_id: UUID) -> SSHClient:
+    async def create_ssh_client(self, server_id: UUID, *, private_key: str | None = None) -> SSHClient:
+        """Клиент по сохранённой учётке. private_key — войти ТОЛЬКО этим ключом под тем же пользователем (так
+        проверяется новый ключ панели до того, как он заменит учётку)."""
         server = await self.servers.get_by_id(server_id)
         if not server:
             raise NotFoundError
         server_credential = await self.credentials.get(server_id)
-        auth_type = server_credential.auth_type
-        secret = await self.credentials.get_decrypted_secret(server_id)
-        auth: dict[str, str | None] = (
-            {"password": secret, "private_key": None}
-            if auth_type == AuthType.PASSWORD
-            else {"password": None, "private_key": secret}
-        )
+        auth: dict[str, str | None]
+        if private_key is not None:
+            auth = {"password": None, "private_key": private_key}
+        else:
+            secret = await self.credentials.get_decrypted_secret(server_id)
+            auth = (
+                {"password": secret, "private_key": None}
+                if server_credential.auth_type == AuthType.PASSWORD
+                else {"password": None, "private_key": secret}
+            )
 
         # Закрепление и несовпадение ключа пишутся в СВОЕЙ транзакции: запись должна сохраниться, даже если
         # вызывающая операция потом откатится или упадёт (а несовпадение её как раз и роняет).

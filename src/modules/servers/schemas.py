@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from core.schemas import PatchModel
 from modules.servers.models.credential import AuthType
@@ -17,6 +17,9 @@ Name = Annotated[str, Field(min_length=1, max_length=100)]
 Host = Annotated[str, Field(min_length=1, max_length=100, pattern=HOST_PATTERN)]
 Port = Annotated[int, Field(ge=1, le=65535)]
 Description = Annotated[str, Field(max_length=300)]
+# Имя пользователя SSH: только безопасные символы — оно уходит в подключение, логи и аудит.
+Username = Annotated[str, Field(min_length=1, max_length=50, pattern=r"^[A-Za-z0-9._-]+$")]
+Secret = Annotated[str, Field(min_length=1, max_length=16384)]  # пустой секрет SSHClient всё равно не примет
 
 
 class ServerCreate(BaseModel):
@@ -50,8 +53,8 @@ class ServerRead(BaseModel):
 
 class CredentialCreate(BaseModel):
     auth_type: AuthType = AuthType.PASSWORD
-    username: str = Field(default="root", min_length=1, max_length=50, pattern=r"^[A-Za-z0-9._-]+$")
-    secret: str = Field(min_length=1, max_length=16384)  # пустой секрет SSHClient всё равно не примет
+    username: Username = "root"
+    secret: Secret
 
 
 class CredentialRead(BaseModel):
@@ -60,7 +63,23 @@ class CredentialRead(BaseModel):
     server_id: UUID
     auth_type: AuthType
     username: str
+    managed_key: bool  # ключ сгенерирован и поставлен панелью
+    key_fingerprint: str | None = None  # отпечаток ключа входа (None — вход по паролю)
     created_at: datetime
+
+
+class SshKeyInstall(BaseModel):
+    """Тело POST /ssh-key. Пусто — ключ ставится по текущей учётке (или меняется на новый); логин и пароль —
+    сначала сохранить их как учётку («пароль один раз»). Только оба поля или ни одного."""
+
+    username: Username | None = None
+    password: Secret | None = None
+
+    @model_validator(mode="after")
+    def both_or_none(self) -> "SshKeyInstall":
+        if (self.username is None) != (self.password is None):
+            raise ValueError("Provide both username and password, or neither")
+        return self
 
 
 class HostKeyPin(BaseModel):

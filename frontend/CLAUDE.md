@@ -19,7 +19,7 @@ npm run typecheck && npm run lint && npm test && npm run build
 | `src/api/session.ts` | Access-токен **только в памяти**; `authFetch`: 401 → один общий refresh (single-flight) → повтор. |
 | `src/auth/AuthContext.tsx` | Состояния checking/signed-out/signed-in, `can(permission)` — по `permissions` из `/auth/me`. |
 | `src/App.tsx` | Маршруты: `/login`, `/servers`, `/servers/:serverId`, `/users`, `/users/:userId`. |
-| `src/pages/server/` | Карточка сервера: чек-лист подготовки, обслуживание, мониторинг (ленивый чанк), журнал задач, опасные действия. |
+| `src/pages/server/` | Карточка сервера: чек-лист подготовки (ключ хоста, учётка, установка, протокол), обслуживание (учётка, ключ панели), мониторинг (ленивый чанк), журнал задач, опасные действия. |
 | `src/pages/user/` | Карточка пользователя: подписка, «Выдать доступ» (подписка → гранты → задачи выдачи), срок, отзыв, конфиг (vpn:// + серия QR + .conf). |
 | `src/pages/Ledger.module.css` | Общие стили таблиц-журналов. |
 | `src/components/` | Button, Dialog, ConfirmDialog (с последствиями), TextField, Notice, AppShell, ThemeSwitch, TimeChart (uPlot). |

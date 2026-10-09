@@ -277,6 +277,19 @@
   gap: var(--space-2);
 }
 
+.check {
+  display: grid;
+  gap: var(--space-1);
+}
+.check label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.check .hint {
+  padding-left: calc(1em + var(--space-2)); /* под текстом подписи, а не под флажком */
+}
+
 .textarea {
   display: grid;
   gap: var(--space-1);

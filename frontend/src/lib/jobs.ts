@@ -4,6 +4,7 @@ export const JOB_LABELS: Record<Job["type"], string> = {
   install_server: "Установка Amnezia",
   uninstall_server: "Удаление Amnezia",
   install_protocol: "Установка AmneziaWG",
+  install_ssh_key: "Установка ключа панели",
   remove_protocol: "Снятие протокола",
   sync_server: "Сверка с базой",
   health_check: "Проверка состояния",

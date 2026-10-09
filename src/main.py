@@ -7,6 +7,8 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -18,9 +20,11 @@ from core.exceptions import (
     AdminRuleError,
     AlreadyExistsError,
     AppError,
+    CredentialChangedError,
     CredentialNotFound,
     InactiveAccessError,
     InvalidDataError,
+    JobAlreadyRunningError,
     LiveCredentialExistsError,
     NotFoundError,
     SSHHostKeyNotPinnedError,
@@ -73,6 +77,8 @@ _STATUS_BY_ERROR: dict[type[AppError], int] = {
     InactiveAccessError: 409,
     AdminRuleError: 409,
     SSHHostKeyNotPinnedError: 409,  # сначала scan + pin ключа сервера
+    JobAlreadyRunningError: 409,  # такая же задача по серверу ещё не завершена
+    CredentialChangedError: 409,
 }
 
 
@@ -91,6 +97,14 @@ async def integrity_error(request: Request, exc: Exception) -> JSONResponse:
 for error_class in _STATUS_BY_ERROR:
     app.add_exception_handler(error_class, domain_error)
 app.add_exception_handler(IntegrityError, integrity_error)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+    # Как стандартный ответ FastAPI, но без поля input: в нём присланное значение целиком, а в теле бывают
+    # пароль и приватный ключ (например, пароль без логина в POST /ssh-key вернулся бы в 422 открытым текстом).
+    errors = [{key: value for key, value in error.items() if key != "input"} for error in exc.errors()]
+    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(errors)})
 
 
 @app.exception_handler(RateLimitExceeded)

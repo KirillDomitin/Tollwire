@@ -15,14 +15,18 @@
 
 | Папка | Что |
 |---|---|
-| `unit/` | Чистые функции: awg_config, amnezia_link, host_metrics, host_keys, логи, правила, провайдер на фейке; `test_ssh_real_server.py` — настоящий AsyncSSH-сервер в процессе. |
-| `services/` | Сервисы с настоящей БД и Redis: доступы, sync/health, ключ хоста, миграции (upgrade/downgrade), мониторинг. |
-| `integration/` | Через HTTP (`httpx.ASGITransport`, `base_url=http://testserver` для cookie), настоящий login, RBAC-матрица по всем маршрутам, сценарий DoD целиком (`test_mvp_flow.py`), воркер через `process_next()`/`drain(worker)`. |
+| `unit/` | Чистые функции: awg_config, amnezia_link, host_metrics, host_keys, authorized_keys (текст файла), логи, правила, провайдер на фейке; `test_ssh_real_server.py` — настоящий AsyncSSH-сервер в процессе. |
+| `services/` | Сервисы с настоящей БД и Redis: доступы, sync/health, ключ хоста, ключ панели, миграции (upgrade/downgrade), мониторинг. |
+| `integration/` | Через HTTP (`httpx.ASGITransport`, `base_url=http://testserver` для cookie), настоящий login, RBAC-матрица по всем маршрутам, сценарий DoD целиком (`test_mvp_flow.py`), воркер через `process_next()`/`drain(worker)`, установка SSH-ключа панели. |
 
 ## Фейковый SSH (`fakes/fake_ssh.py`)
 
 - `FakeServer` отвечает ровно на команды провайдера (контейнер, `awg0.conf`, `awg show`, замер метрик через
   `host_stats`); незнакомая команда → `AssertionError` — так тест ловит новые команды, о которых фейк не знает.
+- Ключ панели в фейке: `home_dir`/`ensure_private_dir`/`read_file_optional` над `files`; вход по `private_key` —
+  только если его blob есть в `/root/.ssh/authorized_keys` и `key_auth_enabled`; `on_key_command` — событие
+  «посреди задачи» перед командой по ключу. Права и симлинки фейк не моделирует — они в
+  `unit/test_authorized_keys_real_server.py` (POSIX-тесты пропускаются на Windows, гонять в Linux).
 - Подмена — monkeypatch `ServerConnectionService.create_ssh_client`; в integration — autouse-фикстура
   `_no_real_ssh` (настоящий SSH в тестах невозможен).
 - Новая SSH-команда в провайдере → научить ей `FakeServer`.

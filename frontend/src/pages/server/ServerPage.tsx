@@ -26,6 +26,10 @@ const AUTH_LABELS: Record<Credential["auth_type"], string> = {
   ssh_key: "по SSH-ключу",
 };
 
+function authLabel(credential: Credential): string {
+  return credential.managed_key ? "по ключу панели" : AUTH_LABELS[credential.auth_type];
+}
+
 interface Setup {
   key: boolean;
   credential: boolean;
@@ -299,6 +303,7 @@ function Maintenance({
   const [credOpen, setCredOpen] = useState(false);
   const checking = hasRunning(jobs, "health_check");
   const syncing = hasRunning(jobs, "sync_server");
+  const installingKey = hasRunning(jobs, "install_ssh_key");
 
   return (
     <section className={styles.section} aria-labelledby="service-title">
@@ -343,11 +348,32 @@ function Maintenance({
 
         <dt>SSH-доступ</dt>
         <dd>
-          {credential ? `${credential.username}, ${AUTH_LABELS[credential.auth_type]}` : "задан"}
+          {credential ? `${credential.username}, ${authLabel(credential)}` : "задан"}
+          {credential?.key_fingerprint && (
+            <code className={styles.keyValue}>{credential.key_fingerprint}</code>
+          )}
           {manage && (
             <Button variant="quiet" onClick={() => setCredOpen(true)}>
               Заменить
             </Button>
+          )}
+          {manage && credential && (
+            <ConfirmDialog
+              trigger={
+                <Button variant="quiet" busy={installingKey} busyLabel="Ставим ключ…">
+                  {credential.managed_key ? "Обновить ключ" : "Перейти на ключ панели"}
+                </Button>
+              }
+              title={credential.managed_key ? "Обновить ключ панели?" : "Перейти на вход по ключу панели?"}
+              consequences={
+                credential.managed_key
+                  ? "Панель создаст новый ключ, проверит вход по нему и снимет с сервера прежний. Если сервер не примет новый ключ, останется прежний."
+                  : "Панель войдёт по текущему доступу, поставит на сервер свой ключ и после проверки входа будет пользоваться только им. Сохранённый пароль или ключ в панели будет заменён. Ваши собственные ключи в authorized_keys не меняются."
+              }
+              actionLabel={credential.managed_key ? "Обновить ключ" : "Поставить ключ"}
+              busyLabel="Ставим в очередь…"
+              onConfirm={() => start.mutateAsync("ssh-key")}
+            />
           )}
         </dd>
       </dl>

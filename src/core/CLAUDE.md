@@ -9,7 +9,7 @@
 | `database/postgres.py` | `AsyncEngine`, `async_sessionmaker`, `get_session` (Depends). |
 | `redis.py` | `get_redis()` — один клиент `redis.asyncio` на процесс, `decode_responses=True`. |
 | `security.py` | Argon2id (`hash_password`/`verify_password`, `DUMMY_PASSWORD_HASH` против тайминг-атаки), JWT access (`create/decode_access_token`), refresh (`generate_refresh_token`, `hash_refresh_token`), Fernet (`encrypt_secret`/`decrypt_secret`). |
-| `exceptions.py` | Доменные ошибки, база `AppError`. Коды HTTP для них — в `main.py` (`_STATUS_BY_ERROR`). |
+| `exceptions.py` | Доменные ошибки, база `AppError` (поле `job_result` для подробностей в Job.result). Коды HTTP для них — в `main.py` (`_STATUS_BY_ERROR`). |
 | `ssh_exception.py` | Ошибки выполнения на сервере: `SSHServerError` → `InstallError`, `CommandExecutionError`, `InvalidServerConfigurationError`, `DockerError`. |
 | `schemas.py` | `PatchModel` — база PATCH-схем: явный `null` в поле без `NULLABLE` → 422. |
 | `log.py` | Логи: `JsonFormatter`/`TextFormatter`, `bind(**поля)` на contextvars (request_id, job_id, server_id), `redact()` — страховка от секретов. |
@@ -20,9 +20,10 @@
 ## Ошибки → HTTP (main.py)
 
 `NotFoundError` 404 · `InvalidDataError` 422 · `AlreadyExistsError`, `CredentialNotFound`, `LiveCredentialExistsError`,
-`InactiveAccessError`, `AdminRuleError`, `SSHHostKeyNotPinnedError` → 409 · `IntegrityError` (сработал уникальный
-индекс) → 409 без текста БД. Новый класс ошибки, который должен дойти до клиента осмысленным кодом, — добавить в
-`_STATUS_BY_ERROR`; наследник уже зарегистрированного класса получает его код, прочие `AppError` дадут 500.
+`InactiveAccessError`, `AdminRuleError`, `SSHHostKeyNotPinnedError`, `JobAlreadyRunningError`, `CredentialChangedError`
+→ 409 · `IntegrityError` (сработал уникальный индекс) → 409 без текста БД · `RequestValidationError` → 422 без
+чувствительных данных (без поля `input`). Новый класс ошибки, который должен дойти до клиента осмысленным кодом,
+— добавить в `_STATUS_BY_ERROR`; наследник уже зарегистрированного класса получает его код, прочие `AppError` дадут 500.
 
 ## Настройки — что важно
 

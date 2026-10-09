@@ -2,8 +2,14 @@
 # -*- coding: utf-8 -*-
 
 
+from typing import Any
+
+
 class AppError(Exception):
     """Базовое исключение приложения."""
+
+    # Несекретные подробности сбоя для Job.result (например, откатилась ли установка ключа). Ставит сервис.
+    job_result: dict[str, Any] | None = None
 
 
 class InvalidCredentialsError(AppError): ...
@@ -42,6 +48,10 @@ class SSHHostKeyNotPinnedError(SSHError):
     """Вход по паролю на сервер с незакреплённым ключом запрещён: пароль ушёл бы непроверенному хосту."""
 
 
+class SSHKeyVerificationError(SSHError):
+    """Ключ панели записан в authorized_keys, но сервер не пускает по нему: запись снята, учётка не изменилась."""
+
+
 class SSHHostKeyError(SSHError):
     """Ключ SSH-сервера не совпал с закреплённым: возможна подмена сервера (MITM). Не повторяется автоматически."""
 
@@ -70,6 +80,14 @@ class JobExecutionError(JobError): ...
 
 
 class ServerBusyError(JobError): ...
+
+
+class JobAlreadyRunningError(AppError):
+    """Такая же задача по этому серверу ещё не завершена — дубль не ставим."""
+
+
+class CredentialChangedError(AppError):
+    """SSH-учётку сменили, пока задача на неё опиралась: выбор админа важнее, итог задачи не сохраняется."""
 
 
 class InactiveAccessError(AppError):

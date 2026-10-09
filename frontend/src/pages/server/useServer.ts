@@ -54,6 +54,7 @@ export function useServerData(serverId: string) {
     if (running < previous.current) {
       void queryClient.invalidateQueries({ queryKey: keys.server(serverId), exact: true });
       void queryClient.invalidateQueries({ queryKey: keys.protocols(serverId) });
+      void queryClient.invalidateQueries({ queryKey: keys.credential(serverId) }); // ключ панели меняет учётку
       void queryClient.invalidateQueries({ queryKey: ["servers"] });
     }
     previous.current = running;
@@ -62,7 +63,7 @@ export function useServerData(serverId: string) {
   return { server, credential, protocols, jobs };
 }
 
-export type ServerAction = "install" | "protocol" | "sync" | "health" | "remove-protocol";
+export type ServerAction = "install" | "protocol" | "sync" | "health" | "remove-protocol" | "ssh-key";
 
 /** Поставить серверную задачу (202 + Job) и сразу начать следить за ней. */
 export function useStartJob(serverId: string) {
@@ -75,7 +76,10 @@ export function useStartJob(serverId: string) {
             409: "Снять протокол нельзя: на сервере есть живые клиенты (сначала отзовите доступы) или не задан SSH-доступ.",
           })
         : unwrap(api.POST(`/api/v1/servers/{server_id}/${action}`, path), {
-            409: "Сначала задайте SSH-доступ к серверу.",
+            409:
+              action === "ssh-key"
+                ? "Ключ не поставить: установка уже идёт, ключ сервера не закреплён или SSH-доступ не задан."
+                : "Сначала задайте SSH-доступ к серверу.",
           }),
     onSuccess: (job) => {
       queryClient.setQueryData<Job[]>(keys.jobs(serverId), (jobs = []) => [job, ...jobs]);

@@ -72,6 +72,16 @@ class CredentialRepository:
         cred = await self.session.execute(sql_request)
         return cred.scalar_one_or_none()
 
+    async def get_for_update(self, server_id: UUID) -> ServerCredential | None:
+        """Учётка под блокировкой строки и со свежими значениями из БД (не из кеша сессии)."""
+        sql_request = (
+            select(ServerCredential)
+            .where(ServerCredential.server_id == server_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return (await self.session.execute(sql_request)).scalar_one_or_none()
+
     async def create(self, credential: ServerCredential) -> ServerCredential:
         self.session.add(credential)
         await self.session.flush()
