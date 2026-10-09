@@ -8,6 +8,8 @@ npm ci && npm run gen:api && npm run dev        # Vite :5173, /api прокси�
 npm run typecheck && npm run lint && npm test && npm run build
 ```
 
+Превью в Claude Desktop — `.claude/launch.json`: `api` (uvicorn :8000) и `web` (vite :5173).
+
 ## Устройство
 
 | Путь | Что |
