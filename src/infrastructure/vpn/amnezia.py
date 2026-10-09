@@ -57,6 +57,9 @@ _ALLOWED = re.compile(r"[a-zA-Z0-9_-]{1,32}")
 CONFIG_PATH = HOST_CONFIG_DIR
 HOST_CONFIG_FILE = f"{HOST_CONFIG_DIR}/{CONFIG_FILE_NAME}"
 CONTAINER_CONFIG_FILE = f"{CONTAINER_CONFIG_DIR}/{CONFIG_FILE_NAME}"
+# apt-get update + install на свежем сервере — минуты (с общим SSH_COMMAND_TIMEOUT установка падала, а apt на
+# сервере продолжал работу и доставлял Docker уже без панели).
+DOCKER_INSTALL_TIMEOUT = 600
 
 
 def validate_name(name: str) -> None:
@@ -86,7 +89,9 @@ class AmneziaInstaller:
     async def _ensure_docker(self) -> None:
         check_docker = await self.ssh_client.execute("command -v docker")
         if check_docker.exit_status != 0:
-            install_docker = await self.ssh_client.execute("apt-get update && apt-get install -y docker.io")
+            install_docker = await self.ssh_client.execute(
+                "apt-get update && apt-get install -y docker.io", timeout=DOCKER_INSTALL_TIMEOUT
+            )
             if install_docker.exit_status != 0:
                 raise InstallError(f"Docker installation crashed with the following error: {install_docker.stderr}")
 

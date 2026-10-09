@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import pytest
 
 from core.ssh_exception import CommandExecutionError
+from infrastructure.ssh.client import CommandResult
 from infrastructure.vpn.amnezia import AmneziaInstaller, AmneziaWGProvider
 from infrastructure.vpn.awg_config import interface_values, list_peers, parse_client_config, remove_peer
 from infrastructure.vpn.config import CONTAINER_NAME, NAT_POST_UP
@@ -162,3 +163,19 @@ async def test_installer_platform_checks() -> None:
     fake.internet = True
     async with FakeSSHClient(fake) as ssh:
         assert await AmneziaInstaller(ssh).internet_latency_ms() == 42
+
+
+async def test_docker_install_gets_long_timeout() -> None:
+    """apt-get на свежем сервере идёт минуты: с общим таймаутом команды (30 с) установка падала, хотя apt на
+    сервере продолжал работу. Таймаут этой команды — свой, длинный."""
+    timeouts: dict[str, int | None] = {}
+
+    class Recording(FakeSSHClient):
+        async def execute(self, command: str, timeout: int | None = None) -> CommandResult:
+            timeouts[command] = timeout
+            return await super().execute(command, timeout)
+
+    async with Recording(FakeServer(docker_installed=False)) as ssh:
+        await AmneziaInstaller(ssh).ensure_ready()
+    (apt_timeout,) = [t for command, t in timeouts.items() if command.startswith("apt-get")]
+    assert apt_timeout is not None and apt_timeout >= 600
