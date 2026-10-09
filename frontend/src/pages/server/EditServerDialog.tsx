@@ -23,12 +23,17 @@ export function EditServerDialog({ server }: { server: Server }) {
           422: "Проверьте имя: от 1 до 100 символов.",
         },
       ),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: keys.server(server.id), exact: true });
-      await queryClient.invalidateQueries({ queryKey: ["servers"] });
-      setOpen(false);
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: keys.server(server.id), exact: true });
+      void queryClient.invalidateQueries({ queryKey: ["servers"] });
+      close(false);
     },
   });
+
+  function close(next: boolean) {
+    if (!next) save.reset();
+    setOpen(next);
+  }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -44,10 +49,7 @@ export function EditServerDialog({ server }: { server: Server }) {
       </Button>
       <Dialog
         open={open}
-        onOpenChange={(next) => {
-          if (!next) save.reset();
-          setOpen(next);
-        }}
+        onOpenChange={close}
         title="Изменить сервер"
         description="Имя и заметка видны только в панели, на самом сервере ничего не меняется."
       >
@@ -61,7 +63,7 @@ export function EditServerDialog({ server }: { server: Server }) {
           />
           {save.isError && <Notice>{save.error.message}</Notice>}
           <DialogActions>
-            <Button variant="quiet" onClick={() => setOpen(false)}>
+            <Button variant="quiet" onClick={() => close(false)}>
               Отмена
             </Button>
             <Button type="submit" busy={save.isPending} busyLabel="Сохраняем…">

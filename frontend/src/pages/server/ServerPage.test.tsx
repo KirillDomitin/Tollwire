@@ -39,10 +39,17 @@ interface Backend {
   credential?: unknown;
   protocols?: unknown[];
   jobs?: unknown[];
+  patchStatus?: number;
 }
 
 /** Подменный API: отвечает по методу и пути, запоминает все запросы. */
-function mockApi({ server = {}, credential: cred = null, protocols = [], jobs = [] }: Backend = {}) {
+function mockApi({
+  server = {},
+  credential: cred = null,
+  protocols = [],
+  jobs = [],
+  patchStatus = 200,
+}: Backend = {}) {
   const calls: string[] = [];
   let current: Record<string, unknown> = { ...baseServer, ...server };
   const fetchMock = vi.fn(async (request: Request) => {
@@ -53,6 +60,7 @@ function mockApi({ server = {}, credential: cred = null, protocols = [], jobs = 
     if (request.method === "PATCH" && path === base) {
       const body = (await request.json()) as Record<string, unknown>;
       calls.push(`PATCH body ${JSON.stringify(body)}`);
+      if (patchStatus !== 200) return json({ detail: "conflict" }, patchStatus);
       current = { ...current, ...body };
       return json(current);
     }
@@ -168,6 +176,39 @@ describe("ServerPage permissions and dangerous actions", () => {
 
     expect(await screen.findByRole("heading", { level: 1, name: "frankfurt-1" })).toBeInTheDocument();
     expect(calls).toContain('PATCH body {"name":"frankfurt-1","description":null}');
+  });
+
+  it("clears the note with null and trims the name", async () => {
+    const calls = mockApi({ server: { description: "стойка 4" } });
+    renderCard();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Изменить" }));
+    const dialog = await screen.findByRole("dialog");
+    const note = within(dialog).getByLabelText("Заметка (необязательно)");
+    expect(note).toHaveValue("стойка 4");
+    await userEvent.clear(note);
+    const name = within(dialog).getByLabelText("Имя в панели");
+    await userEvent.clear(name);
+    await userEvent.type(name, "  lab-2  ");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Сохранить" }));
+
+    expect(await screen.findByRole("heading", { level: 1, name: "lab-2" })).toBeInTheDocument();
+    expect(calls).toContain('PATCH body {"name":"lab-2","description":null}');
+  });
+
+  it("keeps the dialog open on a duplicate name and drops the error after cancel", async () => {
+    mockApi({ patchStatus: 409 });
+    renderCard();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Изменить" }));
+    let dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Сохранить" }));
+    expect(await within(dialog).findByText(/Сервер с таким именем уже есть/)).toBeInTheDocument();
+
+    await userEvent.click(within(dialog).getByRole("button", { name: "Отмена" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Изменить" }));
+    dialog = await screen.findByRole("dialog");
+    expect(within(dialog).queryByText(/Сервер с таким именем уже есть/)).not.toBeInTheDocument();
   });
 
   it("hides editing from a viewer", async () => {
