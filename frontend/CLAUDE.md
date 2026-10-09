@@ -21,7 +21,7 @@ npm run typecheck && npm run lint && npm test && npm run build
 | `src/pages/user/` | Карточка пользователя: подписка, «Выдать доступ» (подписка → гранты → задачи выдачи), срок, отзыв, конфиг (vpn:// + серия QR + .conf). |
 | `src/pages/Ledger.module.css` | Общие стили таблиц-журналов. |
 | `src/components/` | Button, Dialog, ConfirmDialog (с последствиями), TextField, Notice, AppShell, ThemeSwitch, TimeChart (uPlot). |
-| `src/lib/` | `access.ts` (сигнал доступа по датам), `serverSignal.ts`, `jobs.ts`, `time.ts`, `units.ts`, `theme.ts`; `audit.ts` — заготовка 20.4, не закоммичена. |
+| `src/lib/` | `access.ts` (сигнал доступа по датам), `serverSignal.ts`, `jobs.ts`, `time.ts`, `units.ts`, `theme.ts`; `audit.ts` — словарь событий аудита, не закоммичен (страниц аудита, задач и админов пока нет). |
 | `src/styles/tokens.css` | Дизайн-токены (светлая и тёмная тема). |
 
 ## Дизайн «Журнал связи»

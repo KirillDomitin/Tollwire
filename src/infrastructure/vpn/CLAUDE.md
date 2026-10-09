@@ -32,7 +32,7 @@
 - `list_clients()`, `sync()` (снимок без изменений), `health_check()`, `get_status()`, `uninstall()`.
 - Имя клиента — белый список `[a-zA-Z0-9_-]{1,32}` (`validate_name`, `re.fullmatch` — `$` пропускает `\n`).
 
-## Формат vpn:// и QR (этап 21.1)
+## Формат vpn:// и QR
 
 - `vpn://` + base64url без `=` от (4 байта длины big-endian + zlib(JSON)) — как `qCompress` в AmneziaVPN.
   JSON: `containers[0]` = `amnezia-awg2` с параметрами обфускации и `last_config`; `description` = имя сервера в

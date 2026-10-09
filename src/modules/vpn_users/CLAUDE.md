@@ -4,8 +4,7 @@
 
 - Модель `vpn_users`: username, `email` (unique, `EmailStr` во входных схемах), description, `status`
   (`VPNUserStatus`: active/disabled), таймстемпы.
-- ⚠️ Отступление от ТЗ §17 (там нет email): email — будущий идентификатор для регистрации через сайт/бота;
-  username не уникален. Решение пользователя.
+- Уникален email, а не username: email — будущий идентификатор для регистрации через сайт/бота.
 - API `/api/v1/vpn-users`: список, создание, просмотр, PATCH, удаление.
 - Список (`list_with_access`) отдаёт `VPNUserListItem` со сводкой `access` — последняя подписка пользователя
   (через `SubscriptionRepository.latest_by_user`, DISTINCT ON). Число серверов в сводку не входит.
