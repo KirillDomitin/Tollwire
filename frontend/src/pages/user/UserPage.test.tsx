@@ -51,7 +51,11 @@ const server = {
 const credential = { id: "cred-1", access_grant_id: GRANT, revoked_at: null, created_at: day(-9) };
 
 /** Подменный API пользователей: отвечает по методу и пути, запоминает запросы. */
-function mockApi({ subscriptions = [subscription], credentials = [credential] as unknown[] } = {}) {
+function mockApi({
+  subscriptions = [subscription],
+  credentials = [credential] as unknown[],
+  grants = [grant] as unknown[],
+} = {}) {
   const calls: string[] = [];
   vi.stubGlobal(
     "fetch",
@@ -61,7 +65,7 @@ function mockApi({ subscriptions = [subscription], credentials = [credential] as
       if (path === "/api/v1/vpn-users") return json([{ ...user, access: subscriptions[0] ?? null }]);
       if (path === `/api/v1/vpn-users/${USER}`) return json(user);
       if (path === `/api/v1/vpn-users/${USER}/subscriptions`) return json(subscriptions);
-      if (path === `/api/v1/subscriptions/${SUB}/grants`) return json([grant]);
+      if (path === `/api/v1/subscriptions/${SUB}/grants`) return json(grants);
       if (path === `/api/v1/access/${GRANT}/credentials`) return json(credentials);
       if (path === "/api/v1/servers") return json([server]);
       if (path === "/api/v1/credentials/cred-1/config") {
@@ -128,6 +132,25 @@ describe("UserPage", () => {
 
     expect(await screen.findByRole("button", { name: "Выдать конфиг" })).toBeInTheDocument();
     expect(screen.getByText("Конфиг не выдан")).toBeInTheDocument();
+  });
+
+  it("hides revoked grants, but keeps one whose client is still being removed from the server", async () => {
+    mockApi({
+      grants: [{ ...grant, status: "revoked", revoked_at: day(-1) }],
+      credentials: [credential],
+    });
+    const { unmount } = renderCard();
+    expect(await screen.findByText("Убираем клиента с сервера…")).toBeInTheDocument();
+    unmount();
+
+    mockApi({
+      grants: [{ ...grant, status: "revoked", revoked_at: day(-1) }],
+      credentials: [{ ...credential, revoked_at: day(-1) }],
+    });
+    renderCard();
+    expect(await screen.findByText(/серверов в доступе нет/)).toBeInTheDocument();
+    expect(screen.queryByText("Отозван")).not.toBeInTheDocument();
+    expect(screen.queryByText("US2")).not.toBeInTheDocument();
   });
 
   it("offers granting access when the user has none, mentioning how the last one ended", async () => {

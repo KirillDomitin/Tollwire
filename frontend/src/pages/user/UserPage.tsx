@@ -12,7 +12,7 @@ import { ChangePeriodDialog } from "./ChangePeriodDialog";
 import { GrantAccessDialog } from "./GrantAccessDialog";
 import { GrantRow } from "./GrantRow";
 import styles from "./UserPage.module.css";
-import { useAccessJobs, userKeys, useUserData } from "./useUser";
+import { liveCredential, useAccessJobs, userKeys, useUserData } from "./useUser";
 
 function period(subscription: Subscription): string {
   return `${formatDay(subscription.valid_from)} — ${formatDay(subscription.valid_until)}`;
@@ -48,7 +48,10 @@ export function UserPage() {
     .sort((a, b) => b.created_at.localeCompare(a.created_at));
   const { signal, label } = accessSignal(current ?? history[0] ?? null);
   const servers = new Map((data.servers.data ?? []).map((server) => [server.id, server]));
-  const grants = data.grants.data ?? [];
+  // Отозванные и истёкшие доступы не показываем; исключение — те, чей клиент ещё убирается с сервера.
+  const grants = (data.grants.data ?? []).filter(
+    (grant) => isLive(grant) || liveCredential(data.credentialsByGrant.get(grant.id)) !== null,
+  );
   const manage = can("access:manage");
 
   return (
