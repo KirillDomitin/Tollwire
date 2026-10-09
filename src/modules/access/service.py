@@ -115,7 +115,10 @@ class SubscriptionService:
             setattr(subscription, field, value)
         if changes:
             self.audit.record(
-                AuditAction.SUBSCRIPTION_UPDATED, AuditEntity.SUBSCRIPTION, subscription.id, {"changes": changes}
+                AuditAction.SUBSCRIPTION_UPDATED,
+                AuditEntity.SUBSCRIPTION,
+                subscription.id,
+                {"changes": changes, "user_id": subscription.user_id},
             )
         await self.session.commit()
         return subscription
@@ -149,7 +152,12 @@ class SubscriptionService:
                     AuditAction.ACCESS_REVOKED,
                     AuditEntity.ACCESS_GRANT,
                     grant.id,
-                    {"reason": "subscription_revoked", "subscription_id": subscription.id},
+                    {
+                        "reason": "subscription_revoked",
+                        "subscription_id": subscription.id,
+                        "user_id": subscription.user_id,
+                        "server_id": grant.server_id,
+                    },
                 )
             await self.session.commit()
             await VPNCredentialService(self.session, self.actor).schedule_revoke_for_grants(revoked)
@@ -223,7 +231,10 @@ class SubscriptionService:
         )
         for grant in expired:
             self.audit.record(
-                AuditAction.ACCESS_EXPIRED, AuditEntity.ACCESS_GRANT, grant.id, {"subscription_id": subscription.id}
+                AuditAction.ACCESS_EXPIRED,
+                AuditEntity.ACCESS_GRANT,
+                grant.id,
+                {"subscription_id": subscription.id, "user_id": subscription.user_id, "server_id": grant.server_id},
             )
         await self.session.commit()
         await VPNCredentialService(self.session, self.actor).schedule_revoke_for_grants(expired)
@@ -291,7 +302,18 @@ class AccessGrantService:
         if grant.status != AccessGrantStatus.REVOKED:
             grant.status = AccessGrantStatus.REVOKED
             grant.revoked_at = datetime.now(timezone.utc)
-            self.audit.record(AuditAction.ACCESS_REVOKED, AuditEntity.ACCESS_GRANT, grant.id, {"reason": "manual"})
+            subscription = await self.subscriptions.get_by_id(grant.subscription_id)
+            self.audit.record(
+                AuditAction.ACCESS_REVOKED,
+                AuditEntity.ACCESS_GRANT,
+                grant.id,
+                {
+                    "reason": "manual",
+                    "subscription_id": grant.subscription_id,
+                    "user_id": subscription.user_id if subscription else None,
+                    "server_id": grant.server_id,
+                },
+            )
             await self.session.commit()
             await VPNCredentialService(self.session, self.actor).schedule_revoke_for_grants([grant])
         return grant
@@ -450,7 +472,7 @@ class VPNCredentialService:
             AuditAction.CONFIG_VIEWED,
             AuditEntity.VPN_CREDENTIAL,
             credential.id,
-            {"access_grant_id": credential.access_grant_id},
+            {"access_grant_id": credential.access_grant_id, "server_id": grant.server_id},
         )
         # Сначала фиксируем факт выдачи: если запись не сохранится, конфиг не уйдёт.
         await self.session.commit()

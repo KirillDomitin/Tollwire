@@ -61,8 +61,11 @@ class AuditService:
         self.logs.add(log)
         return log
 
-    async def list(self, filters: AuditLogFilter, limit: int, offset: int) -> Sequence[AuditLog]:
+    async def list(self, filters: AuditLogFilter, limit: int, offset: int) -> Sequence[tuple[AuditLog, str | None]]:
         return await self.logs.list(filters, limit, offset)
+
+    async def list_actors(self) -> Sequence[tuple[UUID, str]]:
+        return await self.logs.list_actors()
 
     async def purge(self, older_than_days: int) -> int:
         """Политика хранения: удаляет записи старше N дней и коммитит (вызывает планировщик). 0 — хранить вечно."""

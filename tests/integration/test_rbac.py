@@ -190,6 +190,7 @@ CRITICAL = {
     "POST /api/v1/admins": Permission.ADMINS_MANAGE,
     "PATCH /api/v1/admins/{admin_id}": Permission.ADMINS_MANAGE,
     "GET /api/v1/audit-logs": Permission.AUDIT_READ,
+    "GET /api/v1/audit-logs/actors": Permission.AUDIT_READ,
     "POST /api/v1/access/{access_grant_id}/credentials": Permission.ACCESS_MANAGE,
 }
 

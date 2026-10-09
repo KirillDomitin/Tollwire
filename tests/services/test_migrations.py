@@ -44,6 +44,10 @@ JOB_TYPES_SQL = text(
 )
 
 
+# Откат миграции ключа панели вместе со всем, что накатано поверх неё (ревизия перед ней: b587ddfe2d19).
+BEFORE_SSH_KEY = "b587ddfe2d19"
+
+
 async def _query(sql: object) -> list[tuple[object, ...]]:
     async with engine.connect() as conn:
         return [tuple(row) for row in (await conn.execute(sql)).all()]  # type: ignore[call-overload]
@@ -65,7 +69,7 @@ async def test_ssh_key_migration_adds_columns_and_job_type() -> None:
 
 
 async def test_ssh_key_migration_downgrade_removes_columns_and_job_type_then_upgrade_restores() -> None:
-    await _alembic("downgrade", "-1")
+    await _alembic("downgrade", BEFORE_SSH_KEY)
     try:
         assert await _query(KEY_COLUMNS_SQL) == []
         assert "INSTALL_SSH_KEY" not in {row[0] for row in await _query(JOB_TYPES_SQL)}
@@ -82,9 +86,35 @@ async def test_ssh_key_migration_downgrade_deletes_jobs_of_new_type_and_keeps_ot
         session.add(Job(type=JobType.INSTALL_SSH_KEY, status=JobStatus.SUCCESS))
         session.add(Job(type=JobType.HEALTH_CHECK, status=JobStatus.SUCCESS))
         await session.commit()
-    await _alembic("downgrade", "-1")
+    await _alembic("downgrade", BEFORE_SSH_KEY)
     try:
         assert [row[0] for row in await _query(text("SELECT type::text FROM jobs"))] == ["HEALTH_CHECK"]
     finally:
         await _alembic("upgrade", "head")
     assert "INSTALL_SSH_KEY" in {row[0] for row in await _query(JOB_TYPES_SQL)}
+
+
+# --- журнал аудита: составной индекс (created_at DESC, id DESC) под курсорную пагинацию ---
+
+AUDIT_INDEX_SQL = text(
+    "SELECT indexdef FROM pg_indexes WHERE tablename = 'audit_logs' "
+    "AND indexdef ILIKE '%created_at DESC%' AND indexdef ILIKE '%id DESC%'"
+)
+
+
+def _is_cursor_index(definition: object) -> bool:
+    normalized = " ".join(str(definition).lower().split())
+    return "(created_at desc, id desc)" in normalized
+
+
+async def test_audit_cursor_index_exists_after_upgrade() -> None:
+    assert any(_is_cursor_index(row[0]) for row in await _query(AUDIT_INDEX_SQL))
+
+
+async def test_audit_cursor_index_downgrade_removes_it_then_upgrade_restores() -> None:
+    await _alembic("downgrade", "-1")
+    try:
+        assert not any(_is_cursor_index(row[0]) for row in await _query(AUDIT_INDEX_SQL))
+    finally:
+        await _alembic("upgrade", "head")
+    assert any(_is_cursor_index(row[0]) for row in await _query(AUDIT_INDEX_SQL))

@@ -53,3 +53,7 @@
 
 `subscription_*`, `access_granted/updated/revoked/expired/deleted`, `credential_issued/issue_failed/revoked/
 revoke_failed`, `config_viewed`. Секреты в метаданные аудита не пишутся.
+
+Для журнала (фильтры, ссылки на объекты) в `meta` есть id: `subscription_updated` — `user_id`;
+`access_revoked` и `access_expired` — `user_id`, `server_id`; `config_viewed` — `server_id`. У записей,
+сделанных до этого, ключей нет, и объект в журнале не называется.

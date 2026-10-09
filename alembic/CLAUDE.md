@@ -23,3 +23,9 @@
 Бизнес-правила «одна живая запись» держит БД (`postgresql_where=...`): одна незавершённая подписка на
 пользователя, один незавершённый грант на (подписка, протокол), один живой credential на грант. Нарушение →
 `IntegrityError` → 409 (обработчик в `main.py`).
+
+## CONCURRENTLY
+
+- `CREATE/DROP INDEX CONCURRENTLY` — только в `op.get_context().autocommit_block()` (см. `7c1e4a9d2b30`).
+- Оборванный CONCURRENTLY оставляет INVALID-индекс, который `IF NOT EXISTS` примет за готовый: перед
+  созданием — `drop_index(..., if_exists=True)`.

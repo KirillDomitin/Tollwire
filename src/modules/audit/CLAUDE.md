@@ -12,7 +12,13 @@
   откатывает и запись).
 - `diff_changes(obj, new_values)` — что поменялось в PATCH (для `*_updated`).
 - **Без секретов:** пароли, ключи, токены, конфиги в `meta` не кладутся.
-- API: `GET /api/v1/audit-logs` (фильтры `AuditLogFilter`, limit/offset), право `audit:read`.
+- API: `GET /api/v1/audit-logs`, право `audit:read`. Фильтры: `admin_id`, `action` (несколько значений),
+  `entity_type`, `entity_id`, `since`, `until` (граница не включается). Курсор: `before_created_at` и
+  `before_id` только вместе, иначе 422. `limit` ≤ 100, `offset` остаётся. Ответ — список с `admin_email`
+  (NULL у анонимных событий и у удалённых админов).
+- `GET /api/v1/audit-logs/actors` — админы, которые есть в журнале (фильтр «Админ»), право `audit:read`.
+- Сортировка `created_at DESC, id DESC`. Индекс `ix_audit_logs_created_at_id`; одиночного индекса по
+  `created_at` больше нет.
+- Email админов видят все роли с `audit:read` — осознанное решение.
 - Хранение — правило `retention` (`AUDIT_RETENTION_DAYS`, по умолчанию 365).
-- Страницы журнала во фронтенде пока нет; словарь событий для интерфейса — `frontend/src/lib/audit.ts`
-  (не закоммичен).
+- Страница `/audit` — во фронтенде, см. `frontend/CLAUDE.md`.

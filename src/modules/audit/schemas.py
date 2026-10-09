@@ -13,6 +13,7 @@ class AuditLogRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
     admin_id: UUID | None
+    admin_email: str | None = None  # None — анонимное событие (login_failed) или админ удалён
     action: AuditAction
     entity_type: str | None
     entity_id: UUID | None
@@ -20,3 +21,8 @@ class AuditLogRead(BaseModel):
     metadata: dict[str, Any] | None = Field(default=None, validation_alias="meta")
     ip_address: str | None
     created_at: datetime
+
+
+class AuditActorRead(BaseModel):
+    id: UUID
+    email: str

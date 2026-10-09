@@ -49,8 +49,8 @@ async def test_subscription_requires_user_and_one_active(world: World) -> None:
 
 
 async def test_revoke_cascades_and_is_idempotent(world: World) -> None:
-    _, protocol, _ = await world.server()
-    _, subscription, grant = await world.access(protocol)
+    server, protocol, _ = await world.server()
+    user, subscription, grant = await world.access(protocol)
     revoked = await subscriptions(world).revoke(subscription.id)
     first_revoked_at = revoked.revoked_at
     await world.session.refresh(grant)
@@ -59,7 +59,12 @@ async def test_revoke_cascades_and_is_idempotent(world: World) -> None:
     assert again.revoked_at == first_revoked_at
     assert len(await world.audit(AuditAction.SUBSCRIPTION_REVOKED)) == 1
     (access_revoked,) = await world.audit(AuditAction.ACCESS_REVOKED, grant.id)
-    assert access_revoked.meta == {"reason": "subscription_revoked", "subscription_id": str(subscription.id)}
+    assert access_revoked.meta == {
+        "reason": "subscription_revoked",
+        "subscription_id": str(subscription.id),
+        "user_id": str(user.id),
+        "server_id": str(server.id),
+    }
 
 
 async def test_expire_only_after_valid_until_and_revoked_wins(world: World) -> None:
@@ -263,3 +268,47 @@ async def test_cannot_delete_with_live_client(world: World) -> None:
         await VPNUserService(world.session, SYSTEM_ACTOR).delete(user.id)
     await world.credentials().deprovision(grant.id)
     await VPNUserService(world.session, SYSTEM_ACTOR).delete(user.id)  # после отзыва — можно
+
+
+# --- ссылки из журнала аудита: id пользователя и сервера в meta событий --------------------------------------------
+
+
+async def test_subscription_updated_event_carries_user_id(world: World) -> None:
+    _, protocol, _ = await world.server()
+    user, subscription, _ = await world.access(protocol)
+    await subscriptions(world).update(
+        subscription.id, SubscriptionUpdate(valid_until=datetime.now(timezone.utc) + 2 * HOUR)
+    )
+    (updated,) = await world.audit(AuditAction.SUBSCRIPTION_UPDATED, subscription.id)
+    assert updated.meta is not None and updated.meta["user_id"] == str(user.id)
+
+
+async def test_manual_access_revoke_event_carries_user_and_server(world: World) -> None:
+    server, protocol, _ = await world.server()
+    user, _, grant = await world.access(protocol)
+    await grants(world).revoke(grant.id)
+    (revoked,) = await world.audit(AuditAction.ACCESS_REVOKED, grant.id)
+    assert revoked.meta is not None
+    assert revoked.meta["reason"] == "manual"
+    assert (revoked.meta["user_id"], revoked.meta["server_id"]) == (str(user.id), str(server.id))
+
+
+async def test_access_expired_event_carries_user_and_server(world: World) -> None:
+    server, protocol, _ = await world.server()
+    user, subscription, grant = await world.access(protocol)
+    await subscriptions(world).update(
+        subscription.id, SubscriptionUpdate(valid_until=datetime.now(timezone.utc) - HOUR)
+    )
+    await subscriptions(world).expire(subscription.id)
+    (expired,) = await world.audit(AuditAction.ACCESS_EXPIRED, grant.id)
+    assert expired.meta is not None
+    assert (expired.meta["user_id"], expired.meta["server_id"]) == (str(user.id), str(server.id))
+
+
+async def test_config_viewed_event_carries_server_id_and_no_config(world: World) -> None:
+    server, protocol, _ = await world.server()
+    _, _, _, credential = await world.issued(protocol)
+    await world.credentials().reveal_config(credential.id)
+    (viewed,) = await world.audit(AuditAction.CONFIG_VIEWED, credential.id)
+    assert viewed.meta is not None and viewed.meta["server_id"] == str(server.id)
+    assert "[Interface]" not in str(viewed.meta) and "PrivateKey" not in str(viewed.meta)
