@@ -2425,7 +2425,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "$ref": "#/components/schemas/AuditAction"
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AuditAction"
+                  }
                 },
                 {
                   "type": "null"
@@ -2502,6 +2505,40 @@
             }
           },
           {
+            "name": "before_created_at",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before Created At"
+            }
+          },
+          {
+            "name": "before_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before Id"
+            }
+          },
+          {
             "name": "limit",
             "in": "query",
             "required": false,
@@ -2551,6 +2588,36 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/audit-logs/actors": {
+      "get": {
+        "tags": [
+          "audit"
+        ],
+        "summary": "List Audit Actors",
+        "operationId": "list_audit_actors_api_v1_audit_logs_actors_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AuditActorRead"
+                  },
+                  "type": "array",
+                  "title": "Response List Audit Actors Api V1 Audit Logs Actors Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/v1/servers/{server_id}/metrics": {
@@ -2953,6 +3020,25 @@
         ],
         "title": "AuditAction"
       },
+      "AuditActorRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "email"
+        ],
+        "title": "AuditActorRead"
+      },
       "AuditLogRead": {
         "properties": {
           "id": {
@@ -2971,6 +3057,17 @@
               }
             ],
             "title": "Admin Id"
+          },
+          "admin_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admin Email"
           },
           "action": {
             "$ref": "#/components/schemas/AuditAction"

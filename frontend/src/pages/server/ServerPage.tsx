@@ -88,7 +88,14 @@ export function ServerPage() {
             {data.host}:{data.ssh_port}
           </p>
           {data.description && <p className={styles.description}>{data.description}</p>}
-          {manage && <EditServerDialog server={data} />}
+          <div className={styles.row}>
+            {manage && <EditServerDialog server={data} />}
+            {can("audit:read") && (
+              <Link to={`/audit?entity_type=server&entity_id=${data.id}`} className={styles.back}>
+                События сервера
+              </Link>
+            )}
+          </div>
         </div>
         <div className={styles.state}>
           <span className={styles.stateLabel} data-signal={signal}>

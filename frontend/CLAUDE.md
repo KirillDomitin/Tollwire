@@ -18,12 +18,13 @@ npm run typecheck && npm run lint && npm test && npm run build
 | `src/api/schema.d.ts` | Генерируется: `PYTHONPATH=src uv run python -m scripts.export_openapi frontend/openapi.json` (из корня) → `npm run gen:api`. Руками не править. |
 | `src/api/session.ts` | Access-токен **только в памяти**; `authFetch`: 401 → один общий refresh (single-flight) → повтор. |
 | `src/auth/AuthContext.tsx` | Состояния checking/signed-out/signed-in, `can(permission)` — по `permissions` из `/auth/me`. |
-| `src/App.tsx` | Маршруты: `/login`, `/servers`, `/servers/:serverId`, `/users`, `/users/:userId`. |
-| `src/pages/server/` | Карточка сервера: правка имени и заметки (`EditServerDialog`; адрес не меняется — его смена сбрасывает ключ и доступ), чек-лист подготовки (ключ хоста, учётка, установка, протокол), обслуживание (учётка, ключ панели), мониторинг (ленивый чанк), журнал задач, опасные действия. |
+| `src/App.tsx` | Маршруты: `/login`, `/servers`, `/servers/:serverId`, `/users`, `/users/:userId`, `/audit` (`lazy`, отдельный чанк). |
+| `src/pages/server/` | Карточка сервера: правка имени и заметки (`EditServerDialog`; адрес не меняется — его смена сбрасывает ключ и доступ), чек-лист подготовки (ключ хоста, учётка, установка, протокол), обслуживание (учётка, ключ панели), мониторинг (ленивый чанк), журнал задач, опасные действия; ссылка «События сервера» (при `audit:read`) открывает журнал по серверу. |
 | `src/pages/user/` | Карточка пользователя: подписка, «Выдать доступ» (подписка → гранты → задачи выдачи), срок, отзыв, конфиг (vpn:// + серия QR + .conf). |
+| `src/pages/AuditPage.tsx` | Журнал `/audit`: фильтры в URL (`admin_id`, `group`, `entity_type`, `entity_id`, `from`, `to`); подгрузка `useInfiniteQuery` по 100, курсор — `before_created_at`/`before_id` последней строки. Имена объектов — из уже загруженных списков серверов и пользователей (без права на список объект не называется). |
 | `src/pages/Ledger.module.css` | Общие стили таблиц-журналов. |
 | `src/components/` | Button, Dialog, ConfirmDialog (с последствиями), TextField, Notice, AppShell, ThemeSwitch, TimeChart (uPlot). |
-| `src/lib/` | `access.ts` (сигнал доступа по датам), `serverSignal.ts`, `jobs.ts`, `time.ts`, `units.ts`, `theme.ts`; `audit.ts` — словарь событий аудита, не закоммичен (страниц аудита, задач и админов пока нет). |
+| `src/lib/` | `access.ts` (сигнал доступа по датам), `serverSignal.ts`, `jobs.ts`, `time.ts`, `units.ts`, `theme.ts`; `audit.ts` — словарь событий (`AUDIT_ACTIONS`: подпись, группа, тон), `actionGroups`/`actionsOfGroup` для фильтра, `auditActor`, `auditSubject`, `auditDetails`. |
 | `src/styles/tokens.css` | Дизайн-токены (светлая и тёмная тема). |
 
 ## Дизайн «Журнал связи»
@@ -37,6 +38,8 @@ npm run typecheck && npm run lint && npm test && npm run build
 ## Правила
 
 - Кнопки и разделы показывать по правам (`can(...)`), viewer — только чтение.
+- Новое событие аудита — строка в `AUDIT_ACTIONS` (это `Record` по типу из openapi, без неё typecheck падает).
+  В подробности выводятся только ключи из белого списка `DETAIL_LABELS` и `changes`.
 - Опрос задач: каждые 2 с, пока есть pending/running; по завершении — invalidate связанных запросов.
 - Конфиг: `useMutation` с `gcTime: 0`, сброс при закрытии диалога; QR и конфиги не скриншотить (в них ключ).
 - uPlot рисует на canvas: цвета читать из CSS-переменных через `getComputedStyle`, перерисовка при смене темы;

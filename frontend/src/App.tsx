@@ -40,6 +40,11 @@ export const router = createBrowserRouter([
           { path: "/servers/:serverId", element: <ServerPage /> },
           { path: "/users", element: <UsersPage /> },
           { path: "/users/:userId", element: <UserPage /> },
+          // Журнал нужен не каждому и не сразу — отдельным файлом, чтобы не раздувать основной бандл.
+          {
+            path: "/audit",
+            lazy: async () => ({ Component: (await import("./pages/AuditPage")).AuditPage }),
+          },
           { path: "*", element: <NotFoundPage /> },
         ],
       },

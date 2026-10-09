@@ -1,0 +1,87 @@
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+.field {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 11rem;
+}
+
+.label {
+  font-size: var(--text-meta);
+  color: var(--pine-faint);
+}
+
+.control {
+  min-height: 2.5rem;
+  padding: var(--space-1) var(--space-3);
+  font: inherit;
+  color: inherit;
+  background: var(--paper);
+  border: 1px solid var(--rule-strong);
+  border-radius: 4px;
+}
+
+.count {
+  margin-bottom: var(--space-3);
+  font-size: var(--text-meta);
+  color: var(--pine-soft);
+}
+
+.event {
+  display: grid;
+  gap: var(--space-1);
+  font-weight: 550;
+}
+
+.event[data-tone="down"] .text {
+  color: var(--signal-down);
+}
+.event[data-tone="warn"] .text {
+  color: var(--signal-warn-text);
+}
+
+.details summary {
+  cursor: pointer;
+  font-size: var(--text-meta);
+  font-weight: 400;
+  color: var(--pine-soft);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-meta);
+  font-weight: 400;
+}
+
+.fact {
+  display: contents;
+}
+
+.facts dt {
+  color: var(--pine-faint);
+}
+
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.pager {
+  margin-top: var(--space-5);
+}
+
+@media (max-width: 760px) {
+  .field {
+    flex: 1 1 100%;
+  }
+}

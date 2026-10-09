@@ -10,6 +10,7 @@ import { ThemeSwitch } from "./ThemeSwitch";
 const SECTIONS: { to: string; label: string; permission: string }[] = [
   { to: "/servers", label: "Серверы", permission: "servers:read" },
   { to: "/users", label: "Пользователи", permission: "vpn_users:read" },
+  { to: "/audit", label: "Журнал", permission: "audit:read" },
 ];
 
 const ROLE_NAMES: Record<string, string> = {

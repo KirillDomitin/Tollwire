@@ -589,6 +589,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/audit-logs/actors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Audit Actors */
+        get: operations["list_audit_actors_api_v1_audit_logs_actors_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/servers/{server_id}/metrics": {
         parameters: {
             query?: never;
@@ -766,6 +783,16 @@ export interface components {
          * @enum {string}
          */
         AuditAction: "login" | "login_failed" | "login_locked" | "logout" | "admin_created" | "admin_updated" | "server_created" | "server_updated" | "server_deleted" | "server_credentials_set" | "server_credentials_deleted" | "server_host_key_pinned" | "server_host_key_reset" | "server_host_key_mismatch" | "server_install_started" | "server_install_completed" | "server_install_failed" | "server_sync_started" | "server_sync_completed" | "server_sync_failed" | "server_ssh_key_install_started" | "server_ssh_key_install_completed" | "server_ssh_key_install_failed" | "protocol_install_started" | "protocol_install_completed" | "protocol_install_failed" | "protocol_remove_started" | "protocol_remove_completed" | "protocol_remove_failed" | "vpn_user_created" | "vpn_user_updated" | "vpn_user_deleted" | "subscription_created" | "subscription_updated" | "subscription_activated" | "subscription_revoked" | "subscription_expired" | "subscription_deleted" | "access_granted" | "access_updated" | "access_revoked" | "access_expired" | "access_deleted" | "credential_issued" | "credential_issue_failed" | "credential_revoked" | "credential_revoke_failed" | "config_viewed";
+        /** AuditActorRead */
+        AuditActorRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Email */
+            email: string;
+        };
         /** AuditLogRead */
         AuditLogRead: {
             /**
@@ -775,6 +802,8 @@ export interface components {
             id: string;
             /** Admin Id */
             admin_id: string | null;
+            /** Admin Email */
+            admin_email?: string | null;
             action: components["schemas"]["AuditAction"];
             /** Entity Type */
             entity_type: string | null;
@@ -2829,11 +2858,13 @@ export interface operations {
         parameters: {
             query?: {
                 admin_id?: string | null;
-                action?: components["schemas"]["AuditAction"] | null;
+                action?: components["schemas"]["AuditAction"][] | null;
                 entity_type?: string | null;
                 entity_id?: string | null;
                 since?: string | null;
                 until?: string | null;
+                before_created_at?: string | null;
+                before_id?: string | null;
                 limit?: number;
                 offset?: number;
             };
@@ -2859,6 +2890,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_audit_actors_api_v1_audit_logs_actors_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditActorRead"][];
                 };
             };
         };

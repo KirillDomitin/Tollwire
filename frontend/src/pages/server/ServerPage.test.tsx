@@ -250,3 +250,21 @@ describe("ServerPage setup checklist without SSH access", () => {
     expect(screen.queryByRole("button", { name: "Установить протокол" })).not.toBeInTheDocument();
   });
 });
+
+describe("ServerPage audit link", () => {
+  it("links to the events of this server for those who may read the journal", async () => {
+    mockApi();
+    renderCard(["servers:read", "audit:read"]);
+
+    const link = await screen.findByRole("link", { name: "События сервера" });
+    expect(link).toHaveAttribute("href", `/audit?entity_type=server&entity_id=${ID}`);
+  });
+
+  it("does not show the link without the right to read the journal", async () => {
+    mockApi();
+    renderCard(["servers:read"]);
+
+    await screen.findByRole("heading", { name: "lab-1" });
+    expect(screen.queryByRole("link", { name: "События сервера" })).not.toBeInTheDocument();
+  });
+});
