@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # VPN Control Panel
 
 REST API + веб-интерфейс для управления VPN-серверами AmneziaWG: серверы, VPN-пользователи, доступы, выдача
@@ -6,6 +10,8 @@ REST API + веб-интерфейс для управления VPN-серве�
 
 ## Как работать
 
+- Фича: `architect` → решение пользователя → `tester` (красные тесты) → реализация → `reviewer` → исправления →
+  `doc-writer` → коммит. Агенты — `.claude/agents/`.
 - Архитектурную развилку — на решение пользователя до кода, с рекомендацией.
 - После изменений: ruff, mypy, тесты, миграции (upgrade/downgrade) и живой прогон.
 - Изменения на реальных серверах — только с явного согласия пользователя.
@@ -34,7 +40,12 @@ REST API + веб-интерфейс для управления VPN-серве�
 ## Команды
 
 ```bash
+docker compose up -d                             # Postgres + Redis (нужны API, воркеру и тестам)
 uv run uvicorn main:app --app-dir src --reload   # API
 uv run python src/worker.py                      # воркер + планировщик
 uv run ruff check . && uv run mypy src && uv run pytest
+uv run pytest tests/unit/test_x.py::test_y       # один тест
+uv run alembic upgrade head / downgrade -1       # миграции
 ```
+
+Фронтенд (`frontend/`): `npm run dev`, проверки — `npm run typecheck && npm run lint && npm test`.
