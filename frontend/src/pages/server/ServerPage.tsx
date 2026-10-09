@@ -11,6 +11,7 @@ import { isUnfinished } from "../../lib/jobs";
 import { serverSignal } from "../../lib/serverSignal";
 import { exactTime, timeAgo } from "../../lib/time";
 import { CredentialsDialog } from "./CredentialsDialog";
+import { EditServerDialog } from "./EditServerDialog";
 import { HostKeyDialog } from "./HostKeyDialog";
 import { JobsLog } from "./JobsLog";
 import styles from "./ServerPage.module.css";
@@ -87,6 +88,7 @@ export function ServerPage() {
             {data.host}:{data.ssh_port}
           </p>
           {data.description && <p className={styles.description}>{data.description}</p>}
+          {manage && <EditServerDialog server={data} />}
         </div>
         <div className={styles.state}>
           <span className={styles.stateLabel} data-signal={signal}>

@@ -44,11 +44,18 @@ interface Backend {
 /** Подменный API: отвечает по методу и пути, запоминает все запросы. */
 function mockApi({ server = {}, credential: cred = null, protocols = [], jobs = [] }: Backend = {}) {
   const calls: string[] = [];
+  let current: Record<string, unknown> = { ...baseServer, ...server };
   const fetchMock = vi.fn(async (request: Request) => {
     const path = new URL(request.url).pathname;
     calls.push(`${request.method} ${path}`);
     const base = `/api/v1/servers/${ID}`;
-    if (request.method === "GET" && path === base) return json({ ...baseServer, ...server });
+    if (request.method === "GET" && path === base) return json(current);
+    if (request.method === "PATCH" && path === base) {
+      const body = (await request.json()) as Record<string, unknown>;
+      calls.push(`PATCH body ${JSON.stringify(body)}`);
+      current = { ...current, ...body };
+      return json(current);
+    }
     if (path === `${base}/credentials`) return cred ? json(cred) : json({ detail: "not set" }, 404);
     if (path === `${base}/protocols`) return json(protocols);
     if (path === "/api/v1/jobs") return json(jobs);
@@ -145,6 +152,30 @@ describe("ServerPage permissions and dangerous actions", () => {
     expect(screen.queryByRole("button", { name: "Проверить состояние" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Заменить" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Опасные действия" })).not.toBeInTheDocument();
+  });
+
+  it("renames a server and shows the new name", async () => {
+    const calls = mockApi();
+    renderCard();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Изменить" }));
+    const dialog = await screen.findByRole("dialog");
+    const name = within(dialog).getByLabelText("Имя в панели");
+    expect(name).toHaveValue("lab-1");
+    await userEvent.clear(name);
+    await userEvent.type(name, "frankfurt-1");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Сохранить" }));
+
+    expect(await screen.findByRole("heading", { level: 1, name: "frankfurt-1" })).toBeInTheDocument();
+    expect(calls).toContain('PATCH body {"name":"frankfurt-1","description":null}');
+  });
+
+  it("hides editing from a viewer", async () => {
+    mockApi();
+    renderCard(["servers:read"]);
+
+    await screen.findByRole("heading", { level: 1, name: "lab-1" });
+    expect(screen.queryByRole("button", { name: "Изменить" })).not.toBeInTheDocument();
   });
 
   it("deletes a server only after its name is typed, then returns to the list", async () => {
