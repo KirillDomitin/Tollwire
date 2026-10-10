@@ -67,6 +67,57 @@ describe("ServersPage", () => {
     expect(screen.queryByRole("button", { name: "Добавить сервер" })).not.toBeInTheDocument();
   });
 
+  it("puts the chosen country flag in front of the new server's name", async () => {
+    const bodies: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (request: Request) => {
+        if (request.method === "POST") {
+          const body = await request.json();
+          bodies.push(body);
+          return json(server({ ...body }), 201);
+        }
+        return json([]);
+      }),
+    );
+    renderWithProviders(<ServersPage />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Добавить сервер" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.selectOptions(within(dialog).getByLabelText("Страна (необязательно)"), "🇫🇮");
+    await userEvent.type(within(dialog).getByLabelText("Имя в панели"), "helsinki-1");
+    await userEvent.type(within(dialog).getByLabelText("Адрес (IP или домен)"), "203.0.113.7");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Добавить" }));
+
+    await vi.waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({ name: "🇫🇮 helsinki-1", host: "203.0.113.7" });
+  });
+
+  it("keeps the name as typed when no country is chosen", async () => {
+    const bodies: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (request: Request) => {
+        if (request.method === "POST") {
+          const body = await request.json();
+          bodies.push(body);
+          return json(server({ ...body }), 201);
+        }
+        return json([]);
+      }),
+    );
+    renderWithProviders(<ServersPage />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Добавить сервер" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.type(within(dialog).getByLabelText("Имя в панели"), "lab-1");
+    await userEvent.type(within(dialog).getByLabelText("Адрес (IP или домен)"), "203.0.113.8");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Добавить" }));
+
+    await vi.waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({ name: "lab-1" });
+  });
+
   it("explains a failed load and lets the admin retry", async () => {
     const fetchMock = vi.fn(async () => json({ detail: "boom" }, 500));
     vi.stubGlobal("fetch", fetchMock);

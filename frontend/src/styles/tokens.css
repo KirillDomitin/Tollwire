@@ -21,7 +21,7 @@
   --focus: #3554a5;
   --danger-bg: #fbecec;
 
-  --font-sans: "Golos Text Variable", "Golos Text", system-ui, sans-serif;
+  --font-sans: "Twemoji Country Flags", "Golos Text Variable", "Golos Text", system-ui, sans-serif;
   /* Моноширинный — только для того, что копируют: отпечатки ключей, адреса. */
   --font-mono: ui-monospace, "Cascadia Mono", "SFMono-Regular", Menlo, Consolas, monospace;
 

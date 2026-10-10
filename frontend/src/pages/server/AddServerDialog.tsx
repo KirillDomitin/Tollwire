@@ -4,9 +4,11 @@ import { useNavigate } from "react-router";
 
 import { api, unwrap } from "../../api/client";
 import { Button } from "../../components/Button";
+import { CountrySelect } from "../../components/CountrySelect";
 import { Dialog, DialogActions } from "../../components/Dialog";
 import { Notice } from "../../components/Notice";
 import { TextField } from "../../components/TextField";
+import { NAME_MAX_WITH_FLAG, withFlag } from "../../lib/flags";
 import styles from "./ServerPage.module.css";
 
 /** Новый сервер: только адрес и имя. Дальше — карточка сервера с шагами подготовки. */
@@ -33,7 +35,7 @@ export function AddServerDialog() {
     const form = new FormData(event.currentTarget);
     const description = String(form.get("description")).trim();
     create.mutate({
-      name: String(form.get("name")).trim(),
+      name: withFlag(String(form.get("flag")), String(form.get("name")).trim()),
       host: String(form.get("host")).trim(),
       ssh_port: Number(form.get("ssh_port")),
       description: description || null,
@@ -53,11 +55,12 @@ export function AddServerDialog() {
         description="Панель пока ничего не делает с сервером — только запоминает адрес. Подготовка — по шагам на его карточке."
       >
         <form className={styles.form} onSubmit={submit}>
+          <CountrySelect name="flag" />
           <TextField
             label="Имя в панели"
             name="name"
             required
-            maxLength={100}
+            maxLength={NAME_MAX_WITH_FLAG}
             placeholder="Например, frankfurt-1"
           />
           <TextField

@@ -196,6 +196,34 @@ describe("ServerPage permissions and dangerous actions", () => {
     expect(calls).toContain('PATCH body {"name":"lab-2","description":null}');
   });
 
+  it("splits the flag from the name in the edit form and joins them back on save", async () => {
+    const calls = mockApi({ server: { name: "🇩🇪 frankfurt-1" } });
+    renderCard();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Изменить" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByLabelText("Имя в панели")).toHaveValue("frankfurt-1");
+    const country = within(dialog).getByLabelText("Страна (необязательно)");
+    expect(country).toHaveValue("🇩🇪");
+    await userEvent.selectOptions(country, "🇳🇱");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Сохранить" }));
+
+    expect(await screen.findByRole("heading", { level: 1, name: "🇳🇱 frankfurt-1" })).toBeInTheDocument();
+    expect(calls).toContain('PATCH body {"name":"🇳🇱 frankfurt-1","description":null}');
+  });
+
+  it("removes the flag when 'no flag' is chosen", async () => {
+    const calls = mockApi({ server: { name: "🇩🇪 frankfurt-1" } });
+    renderCard();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Изменить" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.selectOptions(within(dialog).getByLabelText("Страна (необязательно)"), "");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Сохранить" }));
+
+    expect(calls).toContain('PATCH body {"name":"frankfurt-1","description":null}');
+  });
+
   it("keeps the dialog open on a duplicate name and drops the error after cancel", async () => {
     mockApi({ patchStatus: 409 });
     renderCard();
