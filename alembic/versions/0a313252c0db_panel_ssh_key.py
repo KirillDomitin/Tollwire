@@ -5,6 +5,7 @@ Revises: b587ddfe2d19
 Create Date: 2026-10-09 22:53:57.343026
 
 """
+
 from typing import Sequence, Union
 
 import sqlalchemy as sa
@@ -12,8 +13,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = '0a313252c0db'
-down_revision: Union[str, Sequence[str], None] = 'b587ddfe2d19'
+revision: str = "0a313252c0db"
+down_revision: Union[str, Sequence[str], None] = "b587ddfe2d19"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -37,17 +38,17 @@ def upgrade() -> None:
     with op.get_context().autocommit_block():
         op.execute("ALTER TYPE jobtype ADD VALUE IF NOT EXISTS 'INSTALL_SSH_KEY'")
     op.add_column(
-        'server_credentials', sa.Column('managed_key', sa.Boolean(), server_default=sa.false(), nullable=False)
+        "server_credentials", sa.Column("managed_key", sa.Boolean(), server_default=sa.false(), nullable=False)
     )
-    op.add_column('server_credentials', sa.Column('public_key', sa.Text(), nullable=True))
-    op.add_column('server_credentials', sa.Column('key_fingerprint', sa.String(length=100), nullable=True))
+    op.add_column("server_credentials", sa.Column("public_key", sa.Text(), nullable=True))
+    op.add_column("server_credentials", sa.Column("key_fingerprint", sa.String(length=100), nullable=True))
 
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.drop_column('server_credentials', 'key_fingerprint')
-    op.drop_column('server_credentials', 'public_key')
-    op.drop_column('server_credentials', 'managed_key')
+    op.drop_column("server_credentials", "key_fingerprint")
+    op.drop_column("server_credentials", "public_key")
+    op.drop_column("server_credentials", "managed_key")
     # Значение из enum в PostgreSQL не удалить: тип пересоздаётся без него. Задачи этого типа (история)
     # удаляются — иначе приведение к старому типу упадёт; аудит их результатов остаётся.
     op.execute("DELETE FROM jobs WHERE type = 'INSTALL_SSH_KEY'")
