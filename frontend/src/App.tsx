@@ -5,10 +5,6 @@ import { AppShell } from "./components/AppShell";
 import { BrandMark } from "./components/BrandMark";
 import { LoginPage } from "./pages/LoginPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
-import { ServersPage } from "./pages/ServersPage";
-import { ServerPage } from "./pages/server/ServerPage";
-import { UserPage } from "./pages/user/UserPage";
-import { UsersPage } from "./pages/UsersPage";
 
 /** Пускает дальше только вошедшего админа; пока сессия восстанавливается — экран ожидания. */
 function RequireAuth() {
@@ -36,11 +32,24 @@ export const router = createBrowserRouter([
         element: <AppShell />,
         children: [
           { index: true, element: <Navigate to="/servers" replace /> },
-          { path: "/servers", element: <ServersPage /> },
-          { path: "/servers/:serverId", element: <ServerPage /> },
-          { path: "/users", element: <UsersPage /> },
-          { path: "/users/:userId", element: <UserPage /> },
-          // Журнал нужен не каждому и не сразу — отдельным файлом, чтобы не раздувать основной бандл.
+          // Каждый раздел — отдельным файлом: открытая страница не тянет код остальных (в основном бандле —
+          // каркас, вход и словари). Тяжёлое внутри раздела (QR-коды, графики) грузится ещё позже.
+          {
+            path: "/servers",
+            lazy: async () => ({ Component: (await import("./pages/ServersPage")).ServersPage }),
+          },
+          {
+            path: "/servers/:serverId",
+            lazy: async () => ({ Component: (await import("./pages/server/ServerPage")).ServerPage }),
+          },
+          {
+            path: "/users",
+            lazy: async () => ({ Component: (await import("./pages/UsersPage")).UsersPage }),
+          },
+          {
+            path: "/users/:userId",
+            lazy: async () => ({ Component: (await import("./pages/user/UserPage")).UserPage }),
+          },
           {
             path: "/audit",
             lazy: async () => ({ Component: (await import("./pages/AuditPage")).AuditPage }),

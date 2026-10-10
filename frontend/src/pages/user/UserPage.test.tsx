@@ -213,8 +213,9 @@ describe("UserPage", () => {
 
     await userEvent.click(await screen.findByRole("button", { name: "Показать конфиг" }));
     expect(calls).not.toContain("POST /api/v1/credentials/cred-1/config"); // открыть окно ≠ показать конфиг
+    // Диалог конфига грузится лениво (вместе с библиотекой QR) — при первом открытии он появляется не сразу.
     await userEvent.click(
-      within(screen.getByRole("dialog")).getByRole("button", { name: "Показать конфиг" }),
+      within(await screen.findByRole("dialog")).getByRole("button", { name: "Показать конфиг" }),
     );
     expect(await screen.findByRole("img", { name: "QR-код конфига" })).toBeInTheDocument();
     expect(calls.filter((call) => call === "POST /api/v1/credentials/cred-1/config")).toHaveLength(1);
@@ -237,7 +238,7 @@ describe("UserPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Готово" }));
     await userEvent.click(screen.getByRole("button", { name: "Показать конфиг" }));
     // Снова открыли — конфига нет, пока его явно не запросят ещё раз.
-    expect(within(screen.getByRole("dialog")).queryByRole("img")).not.toBeInTheDocument();
+    expect(within(await screen.findByRole("dialog")).queryByRole("img")).not.toBeInTheDocument();
   });
 });
 

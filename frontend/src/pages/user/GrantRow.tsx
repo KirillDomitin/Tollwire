@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { api, unwrap, type Grant, type Job, type Server, type VPNCredential } from "../../api/client";
@@ -10,9 +10,13 @@ import { Notice } from "../../components/Notice";
 import i18n from "../../i18n";
 import { formatDay, isLive } from "../../lib/access";
 import { isUnfinished } from "../../lib/jobs";
-import { ConfigDialog } from "./ConfigDialog";
 import styles from "./UserPage.module.css";
 import { liveCredential, userKeys } from "./useUser";
+
+// Диалог конфига тянет библиотеку QR-кодов — грузим при первом открытии, а не вместе со страницей.
+const ConfigDialog = lazy(() =>
+  import("./ConfigDialog").then((module) => ({ default: module.ConfigDialog })),
+);
 
 type RowState = { tone: "ok" | "process" | "down" | "idle"; text: string };
 
@@ -154,13 +158,15 @@ export function GrantRow({
           )}
         </div>
       )}
-      {credential && (
-        <ConfigDialog
-          credentialId={credential.id}
-          fileName={fileName}
-          open={configOpen}
-          onOpenChange={setConfigOpen}
-        />
+      {credential && configOpen && (
+        <Suspense fallback={null}>
+          <ConfigDialog
+            credentialId={credential.id}
+            fileName={fileName}
+            open={configOpen}
+            onOpenChange={setConfigOpen}
+          />
+        </Suspense>
       )}
     </li>
   );
