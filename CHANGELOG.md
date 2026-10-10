@@ -1,27 +1,40 @@
 # Changelog
 
-Формат — [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/).
+English · [Русский](CHANGELOG.ru.md)
+
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### Добавлено
+### Added
 
-- Ключ панели вместо пароля: при задании SSH-доступа по паролю панель ставит на сервер свой ключ (галочка
-  «Заменить пароль ключом панели», включена по умолчанию), проверяет вход по нему и после этого пароль не хранит.
-- «Обновить ключ» и «Перейти на ключ панели» в обслуживании сервера; в SSH-доступе виден отпечаток ключа.
-- Журнал аудита: установка ключа панели (начата / завершена / не удалась); при удалении сервера или учётки и при
-  смене адреса — отпечаток ключа панели, оставшегося в authorized_keys сервера.
-- Страница «Журнал» (`/audit`, для ролей с правом чтения аудита): фильтры по админу, группе событий, объекту и
-  датам, подгрузка записей по 100. Пункт меню и ссылка «События сервера» на карточке сервера.
-- В журнале — email админа вместо id.
+- Country flag in a server's name: pick a country when adding or editing a server (🇩🇪 `frankfurt-1`). A bundled
+  flag font makes flags render on Windows too.
+- Server monitoring: CPU, memory, disk, network and clients online, collected over SSH; charts on the server
+  page and the latest values in the servers table.
+- Editing a VPN user's name, email and note.
+- Renaming a server and editing its note.
+- Panel key instead of a password: when SSH access is set with a password, the panel installs its own key on the
+  server (the "Replace the password with the panel key" checkbox, on by default), verifies the login with it and
+  then stores no password.
+- "Renew key" and "Switch to the panel key" in server maintenance; the SSH access card shows the key fingerprint.
+- Audit log: panel key installation (started / finished / failed); on deleting a server or credentials and on an
+  address change — the fingerprint of the panel key left in the server's authorized_keys.
+- The "Audit" page (`/audit`, for roles with the audit read permission): filters by admin, event group, object and
+  dates, records loaded 100 at a time. A menu item and an "Events of this server" link on the server page.
+- The admin's email instead of an id in the audit log.
 
-### Изменено
+### Changed
 
-- В записях о доступе и конфигах указаны пользователь и сервер; у записей до обновления их нет, и объект
-  в журнале не называется.
+- Monitoring endpoints are now `/api/v1/monitoring/latest` and `/api/v1/servers/{id}/monitoring` (they were
+  `…/metrics`): ad blockers cut off any URL containing "metrics".
+- The product is named Tollwire.
+- Access and config records now name the user and the server; records from before the update lack them, so the
+  object is not named in the log.
 
-### Безопасность
+### Security
 
-- Ответы 422 больше не возвращают присланные значения: пароль или ключ из неверного запроса не попадает в ответ.
-- Ключ ставится только на сервер с закреплённым ключом хоста; если сервер не принял ключ, он снимается и прежний
-  доступ остаётся.
+- 422 responses no longer echo the submitted values: a password or key from an invalid request does not end up
+  in the response.
+- The key is installed only on a server with a pinned host key; if the server does not accept the key it is
+  removed and the previous access stays.

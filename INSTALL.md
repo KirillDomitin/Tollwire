@@ -1,93 +1,95 @@
-# Установка и запуск
+# Installation and running
 
-Tollwire — панель управления VPN-серверами. Это четыре части:
+English · [Русский](INSTALL.ru.md)
 
-| Часть | Что делает | Как запускается |
+Tollwire is a control panel for VPN servers. It has four parts:
+
+| Part | What it does | How it runs |
 |---|---|---|
-| **API** | REST API на FastAPI | `uvicorn` |
-| **Воркер** | фоновые задачи (установка, выдача конфигов, проверки) и планировщик | `python src/worker.py` |
-| **Фронтенд** | админ-панель (React + Vite) | dev-сервер Vite / статика в nginx |
-| **PostgreSQL + Redis** | данные; очередь задач и блокировки | Docker |
+| **API** | REST API on FastAPI | `uvicorn` |
+| **Worker** | background jobs (install, issue configs, checks) and the scheduler | `python src/worker.py` |
+| **Frontend** | admin panel (React + Vite) | Vite dev server / static files in nginx |
+| **PostgreSQL + Redis** | data; job queue and locks | Docker |
 
-Без воркера панель открывается, но задачи (установка, выдача и отзыв конфигов, проверки) стоят в очереди и не выполняются.
+Without the worker the panel opens, but jobs (install, issue and revoke configs, checks) stay in the queue and never run.
 
-- [Разработка (dev)](#разработка-dev)
-- [Продакшен (prod)](#продакшен-prod)
-- [Частые проблемы](#частые-проблемы)
+- [Development](#development)
+- [Production](#production)
+- [Troubleshooting](#troubleshooting)
 
 ---
 
-## Разработка (dev)
+## Development
 
-Локально: PostgreSQL и Redis — в Docker, API, воркер и фронтенд — прямо на машине.
+Locally: PostgreSQL and Redis run in Docker; the API, the worker and the frontend run directly on your machine.
 
-### Что нужно установить
+### What to install
 
-| Инструмент | Версия | Зачем |
+| Tool | Version | Used for |
 |---|---|---|
-| Docker + Docker Compose | любая свежая | PostgreSQL и Redis |
-| Python | 3.12+ (в образе — 3.14) | бэкенд |
-| [uv](https://docs.astral.sh/uv/) | свежая | зависимости Python (строго по `uv.lock`) |
-| Node.js | 24 | фронтенд |
+| Docker + Docker Compose | any recent | PostgreSQL and Redis |
+| Python | 3.12+ (3.14 in the image) | backend |
+| [uv](https://docs.astral.sh/uv/) | recent | Python dependencies (strictly from `uv.lock`) |
+| Node.js | 24 | frontend |
 
-Команды ниже — для bash (Linux, macOS, Git Bash на Windows). Отличия для PowerShell — в конце раздела.
+The commands below are for bash (Linux, macOS, Git Bash on Windows). PowerShell differences are at the end of this section.
 
-### 1. Зависимости
+### 1. Dependencies
 
 ```bash
-git clone <адрес репозитория> tollwire
+git clone <repository-url> tollwire
 cd tollwire
 uv sync
 cd frontend && npm ci && cd ..
 ```
 
-### 2. PostgreSQL и Redis
+### 2. PostgreSQL and Redis
 
 ```bash
 docker compose up -d
 ```
 
-Поднимает `postgres` (пользователь `user`, пароль `password`, база `vpn_panel`) и `redis`. Оба слушают **только localhost** (`127.0.0.1:5432`, `127.0.0.1:6379`) — пароли тут учебные, наружу их не открываем.
+This starts `postgres` (user `user`, password `password`, database `vpn_panel`) and `redis`. Both listen on **localhost only** (`127.0.0.1:5432`, `127.0.0.1:6379`) — the passwords are for development and must never be exposed.
 
-### 3. Файл `.env`
+### 3. The `.env` file
 
 ```bash
 cp .env.example .env
 ```
 
-В `.env` обязательно заменить два значения (с заглушками приложение не запустится или будет небезопасно):
+Two values in `.env` must be replaced (with the placeholders the app will not start, or will be insecure):
 
 ```bash
-# JWT_SECRET_KEY — не короче 32 символов и не «change_me…» (иначе API не стартует)
+# JWT_SECRET_KEY — at least 32 characters and not "change_me…" (otherwise the API will not start)
 uv run python -c "import secrets; print(secrets.token_hex(32))"
 
-# ENCRYPTION_KEY — ключ Fernet, им шифруются SSH-учётки и VPN-конфиги в БД
+# ENCRYPTION_KEY — a Fernet key; it encrypts SSH credentials and VPN configs in the database
 uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-Остальное в `.env.example` уже настроено под dev (`DATABASE_URL`, `REDIS_URL`, `COOKIE_SECURE=false` — локально API работает по http).
+Everything else in `.env.example` is already set for development (`DATABASE_URL`, `REDIS_URL`, `COOKIE_SECURE=false` — locally the API runs over http).
 
-> `ENCRYPTION_KEY` нельзя менять после того, как в базу записали SSH-учётки или конфиги: старые записи станут нечитаемыми.
+> Do not change `ENCRYPTION_KEY` once SSH credentials or configs have been written to the database: the old records become unreadable.
 
-### 4. Миграции
+### 4. Migrations
 
 ```bash
 uv run alembic upgrade head
 ```
 
-### 5. Первый админ
+### 5. First admin
 
 ```bash
 PYTHONPATH=src uv run python -m scripts.create_admin you@example.com
 ```
 
-Пароль спросит скрыто (не короче 12 символов). Роль по умолчанию — `superadmin`; для других ролей — `--role operator` или `--role viewer` (их удобнее заводить в самой панели).
+The password is asked for silently (at least 12 characters). The default role is `superadmin`; for other roles use `--role operator` or `--role viewer` (it is easier to create them in the panel itself).
 
-Запускать из корня репозитория и **в интерактивном терминале**: пароль читается с консоли, через pipe его не передать.
+Run it from the repository root and **in an interactive terminal**: the password is read from the console and cannot be piped in.
 
-### 6. Запуск
+### 6. Run
 
-Три процесса, каждый в своём терминале:
+Three processes, each in its own terminal:
 
 ```bash
 # API → http://localhost:8000
@@ -95,48 +97,48 @@ uv run uvicorn main:app --app-dir src --reload --port 8000
 ```
 
 ```bash
-# Воркер (задачи + планировщик)
+# Worker (jobs + scheduler)
 uv run python src/worker.py
 ```
 
 ```bash
-# Фронтенд → http://localhost:5173
+# Frontend → http://localhost:5173
 cd frontend && npm run dev
 ```
 
-Панель — **http://localhost:5173**. Vite проксирует `/api` на `localhost:8000`, поэтому для браузера фронтенд и API — один адрес (как в проде): refresh-cookie работает, CORS не нужен.
+The panel is at **http://localhost:5173**. Vite proxies `/api` to `localhost:8000`, so for the browser the frontend and the API share one origin (as in production): the refresh cookie works and CORS is not needed.
 
-Документация API (Swagger) — http://localhost:8000/api/openapi, проверка живости — http://localhost:8000/health.
+API documentation (Swagger) is at http://localhost:8000/api/openapi, the liveness check at http://localhost:8000/health.
 
-> **Воркер подключается к настоящим серверам.** Его планировщик периодически запускает проверку состояния (health) и сверку (sync) всех серверов из базы. Если в dev-базе есть боевые серверы — помните об этом, или выключите планировщик: `SCHEDULER_ENABLED=false` в `.env`.
+> **The worker connects to real servers.** Its scheduler periodically runs health checks and sync for every server in the database. If your dev database contains production servers, keep that in mind, or turn the scheduler off with `SCHEDULER_ENABLED=false` in `.env`.
 
-### Проверки перед коммитом
+### Checks before a commit
 
 ```bash
-# бэкенд
+# backend
 uv run ruff check . && uv run ruff format --check .
 uv run mypy src
-uv run pytest          # нужен docker compose up: тесты создают свою БД vpn_panel_test и берут Redis db 15
+uv run pytest          # needs docker compose up: tests create their own database vpn_panel_test and use Redis db 15
 
-# фронтенд
+# frontend
 cd frontend
 npm run typecheck && npm run lint && npm test && npm run build
 ```
 
-### Изменили API — обновите типы фронтенда
+### Changed the API? Update the frontend types
 
-Фронтенд берёт типы запросов и ответов из OpenAPI-схемы бэкенда. После изменения схем или эндпоинтов:
+The frontend takes request and response types from the backend's OpenAPI schema. After changing schemas or endpoints:
 
 ```bash
 PYTHONPATH=src uv run python -m scripts.export_openapi frontend/openapi.json
 cd frontend && npm run gen:api
 ```
 
-Сервер для этого запускать не нужно — схема выгружается из кода.
+No server needs to run for this — the schema is exported from the code.
 
 ### PowerShell (Windows)
 
-Отличается только установка переменной окружения:
+Only setting the environment variable differs:
 
 ```powershell
 $env:PYTHONPATH = "src"; uv run python -m scripts.create_admin you@example.com
@@ -145,73 +147,73 @@ $env:PYTHONPATH = "src"; uv run python -m scripts.export_openapi frontend/openap
 
 ---
 
-## Продакшен (prod)
+## Production
 
-Всё в Docker (`docker-compose.prod.yml`):
+Everything runs in Docker (`docker-compose.prod.yml`):
 
 ```
-интернет ── 80/443 ──► nginx ──► api ──► postgres, redis
-                    (статика      worker ──► postgres, redis
-                     фронтенда)           └─► SSH к VPN-серверам
+internet ── 80/443 ──► nginx ──► api ──► postgres, redis
+                    (frontend     worker ──► postgres, redis
+                     static files)         └─► SSH to VPN servers
 ```
 
-- наружу открыт **только nginx** (80 → редирект на 443, HTTPS);
-- `api`, `worker` и одноразовый `migrate` — один образ из корневого `Dockerfile`;
-- `postgres` и `redis` — во внутренней сети без выхода в интернет;
-- миграции применяются автоматически при каждом запуске (`migrate`), api и воркер стартуют только после них;
-- документация API (`/api/openapi`) в проде выключена.
+- **only nginx** is exposed (80 redirects to 443, HTTPS);
+- `api`, `worker` and the one-shot `migrate` share one image built from the root `Dockerfile`;
+- `postgres` and `redis` sit on an internal network with no internet access;
+- migrations are applied on every start (`migrate`); the API and the worker start only after it finishes;
+- the API documentation (`/api/openapi`) is disabled in production.
 
-### Что нужно
+### Requirements
 
-- Linux-сервер с Docker и Docker Compose (плагин `docker compose`);
-- домен, указывающий на сервер, и TLS-сертификат для него;
-- открытые входящие порты 80 и 443; исходящий доступ по SSH к VPN-серверам (его использует воркер).
+- a Linux server with Docker and Docker Compose (the `docker compose` plugin);
+- a domain pointing at the server and a TLS certificate for it;
+- inbound ports 80 and 443 open; outbound SSH access to the VPN servers (the worker uses it).
 
-### 1. Код
+### 1. Code
 
 ```bash
-git clone <адрес репозитория> vpn-panel
-cd vpn-panel
+git clone <repository-url> tollwire
+cd tollwire
 ```
 
-### 2. Секреты: `.env.prod`
+### 2. Secrets: `.env.prod`
 
 ```bash
 cp .env.prod.example .env.prod
 chmod 600 .env.prod
 ```
 
-Заполнить:
+Fill in:
 
-| Переменная | Чем заполнить |
+| Variable | What to put |
 |---|---|
-| `POSTGRES_PASSWORD` | `openssl rand -hex 32` — только `[0-9a-f]`, пароль подставляется в URL базы |
+| `POSTGRES_PASSWORD` | `openssl rand -hex 32` — only `[0-9a-f]`, the password is substituted into the database URL |
 | `JWT_SECRET_KEY` | `openssl rand -hex 32` |
-| `ENCRYPTION_KEY` | ключ Fernet — см. ниже |
+| `ENCRYPTION_KEY` | a Fernet key — see below |
 
-Ключ Fernet, если на сервере нет Python с `cryptography`, — через собранный образ приложения:
+If the server has no Python with `cryptography`, generate the Fernet key with the built application image:
 
 ```bash
 docker compose --env-file .env.prod -f docker-compose.prod.yml build api
 docker run --rm vpn-panel:latest python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-`DATABASE_URL`, `REDIS_URL`, `COOKIE_SECURE`, `LOG_FORMAT` в `.env.prod` не задаются — их собирает `docker-compose.prod.yml`.
+`DATABASE_URL`, `REDIS_URL`, `COOKIE_SECURE` and `LOG_FORMAT` are not set in `.env.prod` — `docker-compose.prod.yml` builds them.
 
-> **`ENCRYPTION_KEY` — самое ценное.** Им зашифрованы SSH-учётки серверов и VPN-конфиги в базе. Потеряете — бэкап базы бесполезен; смените — старые записи не расшифровать. Храните копию отдельно от сервера (менеджер паролей, сейф). `.env.prod` и `certs/` — в `.gitignore`, в git они не попадают.
+> **`ENCRYPTION_KEY` is the most valuable thing here.** It encrypts the servers' SSH credentials and the VPN configs in the database. Lose it and a database backup is useless; change it and the old records cannot be decrypted. Keep a copy away from the server (a password manager, a safe). `.env.prod` and `certs/` are in `.gitignore` and never reach git.
 
-### 3. TLS-сертификат
+### 3. TLS certificate
 
-nginx ждёт два файла:
+nginx expects two files:
 
 ```
-certs/fullchain.pem   — сертификат с цепочкой
-certs/privkey.pem     — приватный ключ
+certs/fullchain.pem   — certificate with the chain
+certs/privkey.pem     — private key
 ```
 
-Например, из Let's Encrypt: получить сертификат (certbot) и скопировать `fullchain.pem` и `privkey.pem` в `certs/`. После обновления сертификата — `docker compose --env-file .env.prod -f docker-compose.prod.yml restart nginx`.
+For example, from Let's Encrypt: obtain a certificate (certbot) and copy `fullchain.pem` and `privkey.pem` into `certs/`. After renewing the certificate run `docker compose --env-file .env.prod -f docker-compose.prod.yml restart nginx`.
 
-Для пробного запуска без домена подойдёт самоподписанный сертификат (браузер предупредит):
+For a trial run without a domain a self-signed certificate will do (the browser will warn):
 
 ```bash
 mkdir -p certs
@@ -219,95 +221,95 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 30 -subj "/CN=localhost" \
   -keyout certs/privkey.pem -out certs/fullchain.pem
 ```
 
-### 4. Запуск
+### 4. Start
 
 ```bash
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 ```
 
-`--env-file .env.prod` обязателен: из него берутся пароль базы и порты для самого compose-файла.
+`--env-file .env.prod` is required: compose itself takes the database password and ports from it.
 
-Проверка:
+Check:
 
 ```bash
-docker compose --env-file .env.prod -f docker-compose.prod.yml ps   # migrate — exited (0), остальные — running/healthy
-curl -fsS https://<ваш-домен>/health
+docker compose --env-file .env.prod -f docker-compose.prod.yml ps   # migrate — exited (0), the rest — running/healthy
+curl -fsS https://<your-domain>/health
 ```
 
-### 5. Первый админ
+### 5. First admin
 
 ```bash
 docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm api python -m scripts.create_admin you@example.com
 ```
 
-Пароль спросит в терминале. Дальше — вход на `https://<ваш-домен>`, остальных админов удобнее заводить в панели.
+The password is asked for in the terminal. Then sign in at `https://<your-domain>`; it is easier to create the other admins in the panel.
 
-### Обновление
+### Updating
 
 ```bash
 git pull
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 ```
 
-Новые миграции применятся сами (сервис `migrate`). Воркер при остановке дожидается текущей задачи (до 60 с).
+New migrations are applied automatically (the `migrate` service). On shutdown the worker waits for the current job (up to 60 s).
 
-### Логи
+### Logs
 
-Логи — в JSON, по строке на событие; запрос в nginx и его обработку в api связывает общий `request_id`:
+Logs are JSON, one line per event; a shared `request_id` ties a request in nginx to its handling in the API:
 
 ```bash
 docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f api worker
 docker compose --env-file .env.prod -f docker-compose.prod.yml logs --no-log-prefix api | jq .
 ```
 
-Пароли, ключи, токены и VPN-конфиги в логи не пишутся. `LOG_LEVEL=debug` в `.env.prod` добавляет текст каждой SSH-команды (без её вывода).
+Passwords, keys, tokens and VPN configs are never written to logs. `LOG_LEVEL=debug` in `.env.prod` adds the text of every SSH command (without its output).
 
-### Резервная копия
+### Backup
 
 ```bash
-# бэкап базы
+# back up the database
 docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres \
   sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > backup-$(date +%F).dump
 
-# восстановление (в пустую базу)
+# restore (into an empty database)
 docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres \
   sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists' < backup-YYYY-MM-DD.dump
 ```
 
-Бэкап без `ENCRYPTION_KEY` из того же `.env.prod` бесполезен — храните их вместе (но не на том же сервере).
+A backup without the `ENCRYPTION_KEY` from the same `.env.prod` is useless — keep them together (but not on the same server).
 
-### Остановка
+### Stop
 
 ```bash
 docker compose --env-file .env.prod -f docker-compose.prod.yml down
 ```
 
-Данные (тома `pg_data`, `redis_data`) остаются. **`down -v` удаляет тома — то есть всю базу.**
+The data (volumes `pg_data`, `redis_data`) stays. **`down -v` deletes the volumes — that is, the whole database.**
 
-### Настройки, которые можно менять в `.env.prod`
+### Settings you can change in `.env.prod`
 
-| Переменная | По умолчанию | Что |
+| Variable | Default | What it does |
 |---|---|---|
-| `HTTP_PORT`, `HTTPS_PORT` | 80, 443 | порты nginx на хосте |
-| `EDGE_SUBNET` | 172.30.240.0/24 | подсеть внешней docker-сети — сменить, если пересекается с сетями хоста |
-| `LOG_LEVEL` | info | `debug` — подробнее |
-| `SCHEDULER_ENABLED` и `*_INTERVAL_SECONDS` | см. шаблон | планировщик: проверки, сверка, истечение доступов, чистка (0 — правило выключено) |
-| `JOB_RETENTION_DAYS`, `AUDIT_RETENTION_DAYS` | 90, 365 | сколько хранить задачи и журнал (0 — вечно) |
-| `LOGIN_*`, `REFRESH_*` | см. шаблон | лимиты попыток входа |
+| `HTTP_PORT`, `HTTPS_PORT` | 80, 443 | nginx ports on the host |
+| `EDGE_SUBNET` | 172.30.240.0/24 | subnet of the external docker network — change it if it overlaps the host's networks |
+| `LOG_LEVEL` | info | `debug` — more detail |
+| `SCHEDULER_ENABLED` and `*_INTERVAL_SECONDS` | see the template | scheduler: checks, sync, access expiry, cleanup (0 turns a rule off) |
+| `JOB_RETENTION_DAYS`, `AUDIT_RETENTION_DAYS` | 90, 365 | how long to keep jobs and the audit log (0 — forever) |
+| `LOGIN_*`, `REFRESH_*` | see the template | login attempt limits |
 
 ---
 
-## Частые проблемы
+## Troubleshooting
 
-| Симптом | Причина и решение |
+| Symptom | Cause and fix |
 |---|---|
-| API не стартует: `JWT_SECRET_KEY must be at least 32 random characters` | в `.env` осталась заглушка из шаблона — сгенерируйте ключ (шаг 3) |
-| `ModuleNotFoundError: No module named 'core'` | API запущен без `--app-dir src`, или скрипт — без `PYTHONPATH=src` |
-| скрипт не видит `.env` (ошибки про `DATABASE_URL`) | скрипты запускаются **из корня** репозитория — `.env` ищется в текущей папке |
-| задачи висят «В очереди» | не запущен воркер |
-| вход проходит, но после перезагрузки страницы снова форма входа (dev) | в `.env` нет `COOKIE_SECURE=false`: по http браузер не сохраняет cookie с флагом Secure |
-| dev-фронтенд: ошибки сети на `/api` | не запущен API на `:8000` — Vite проксирует туда |
-| prod: `migrate` упал, api/worker не стартуют | `docker compose ... logs migrate` — обычно неверный `POSTGRES_*` или нестандартные символы в пароле |
-| prod: nginx не стартует | нет `certs/fullchain.pem` / `certs/privkey.pem` |
-| prod: «порт занят» | на хосте уже что-то слушает 80/443 — освободите или задайте `HTTP_PORT`/`HTTPS_PORT` (при нестандартном HTTPS-порте редирект с http уводит на 443 без порта — открывайте сразу `https://…:<порт>`) |
-| задача сервера упала с `Host key of … is not pinned` | на карточке сервера закрепите ключ хоста (первый шаг подготовки) — пароль уходит только на сервер с закреплённым ключом |
+| The API does not start: `JWT_SECRET_KEY must be at least 32 random characters` | the placeholder from the template is still in `.env` — generate a key (step 3) |
+| `ModuleNotFoundError: No module named 'core'` | the API was started without `--app-dir src`, or a script without `PYTHONPATH=src` |
+| a script does not see `.env` (errors about `DATABASE_URL`) | scripts must run **from the repository root** — `.env` is looked up in the current folder |
+| jobs hang in "Queued" | the worker is not running |
+| sign-in works, but after a page reload the login form is back (dev) | `.env` lacks `COOKIE_SECURE=false`: over http the browser does not keep a cookie with the Secure flag |
+| dev frontend: network errors on `/api` | the API is not running on `:8000` — Vite proxies there |
+| prod: `migrate` failed, api/worker do not start | `docker compose ... logs migrate` — usually a wrong `POSTGRES_*` or unusual characters in the password |
+| prod: nginx does not start | `certs/fullchain.pem` / `certs/privkey.pem` are missing |
+| prod: "port in use" | something on the host already listens on 80/443 — free it or set `HTTP_PORT`/`HTTPS_PORT` (with a non-standard HTTPS port the http redirect sends you to 443 without the port — open `https://…:<port>` directly) |
+| a server job failed with `Host key of … is not pinned` | pin the host key on the server's page (the first preparation step) — the password is sent only to a server with a pinned key |
