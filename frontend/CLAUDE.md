@@ -15,18 +15,18 @@ npm run typecheck && npm run lint && npm test && npm run build
 | Путь | Что |
 |---|---|
 | `src/i18n/` | i18next + react-i18next, два языка: ru и en. Язык — из `localStorage` (`vpn-panel-lang`), иначе по браузеру (русский → ru, остальное → en). `format.ts` — текущий язык и кеш `Intl`-форматтеров. Смена языка пересоздаёт роутер (`LocalizedRouter` в `main.tsx`), поэтому даты и числа обновляются сразу. |
-| `src/locales/{ru,en}/` | Словари по разделам: `common`, `shell`, `auth`, `jobs` (типы и статусы задач — общие), `servers`, `users` (дальше — аудит). Ключи по смыслу: `t("shell.nav.servers")`. Типы ключей берутся из ru — опечатка ломает `tsc`. Вне компонентов — `i18n.t(...)` из `src/i18n`. |
+| `src/locales/{ru,en}/` | Словари по разделам: `common`, `shell`, `auth`, `jobs` (типы и статусы задач — общие), `servers`, `users`, `audit`. Ключи по смыслу: `t("shell.nav.servers")`. Типы ключей берутся из ru — опечатка ломает `tsc`. Вне компонентов — `i18n.t(...)` из `src/i18n`. |
 | `src/api/client.ts` | `api` (openapi-fetch, `baseUrl = window.location.origin`), `unwrap()`, тип `Schemas`. |
 | `src/api/schema.d.ts` | Генерируется: `PYTHONPATH=src uv run python -m scripts.export_openapi frontend/openapi.json` (из корня) → `npm run gen:api`. Руками не править. |
 | `src/api/session.ts` | Access-токен **только в памяти**; `authFetch`: 401 → один общий refresh (single-flight) → повтор. |
 | `src/auth/AuthContext.tsx` | Состояния checking/signed-out/signed-in, `can(permission)` — по `permissions` из `/auth/me`. |
-| `src/App.tsx` | Маршруты: `/login`, `/servers`, `/servers/:serverId`, `/users`, `/users/:userId`, `/audit` (`lazy`, отдельный чанк). |
+| `src/App.tsx` | Маршруты: `/login`, `/servers`, `/servers/:serverId`, `/users`, `/users/:userId`, `/audit` — каждый раздел грузится отдельным чанком (`lazy`), в основном бандле каркас, вход и словари. |
 | `src/pages/server/` | Карточка сервера: правка имени и заметки (`EditServerDialog`; адрес не меняется — его смена сбрасывает ключ и доступ), чек-лист подготовки (ключ хоста, учётка, установка, протокол), обслуживание (учётка, ключ панели), мониторинг (ленивый чанк), журнал задач, опасные действия; ссылка «События сервера» (при `audit:read`) открывает журнал по серверу. |
 | `src/pages/user/` | Карточка пользователя: правка имени, email и заметки (`EditUserDialog`), подписка, «Выдать доступ» (подписка → гранты → задачи выдачи), срок, отзыв, конфиг (vpn:// + серия QR + .conf). |
 | `src/pages/AuditPage.tsx` | Журнал `/audit`: фильтры в URL (`admin_id`, `group`, `entity_type`, `entity_id`, `from`, `to`); подгрузка `useInfiniteQuery` по 100, курсор — `before_created_at`/`before_id` последней строки. Имена объектов — из уже загруженных списков серверов и пользователей (без права на список объект не называется). |
 | `src/pages/Ledger.module.css` | Общие стили таблиц-журналов. |
 | `src/components/` | Button, Dialog, ConfirmDialog (с последствиями), TextField, Notice, AppShell, ThemeSwitch, TimeChart (uPlot). |
-| `src/lib/` | `access.ts` (сигнал доступа по датам), `serverSignal.ts`, `jobs.ts`, `time.ts`, `units.ts`, `theme.ts`; `audit.ts` — словарь событий (`AUDIT_ACTIONS`: подпись, группа, тон), `actionGroups`/`actionsOfGroup` для фильтра, `auditActor`, `auditSubject`, `auditDetails`. |
+| `src/lib/` | `access.ts` (сигнал доступа по датам), `serverSignal.ts`, `jobs.ts`, `time.ts`, `units.ts`, `theme.ts`; `audit.ts` — группа и важность событий (`AUDIT_ACTIONS`), текст события — в словаре `audit.actions.<action>` (`auditActionText`), группы — стабильные идентификаторы (`signIn`, `admins`, `servers`, `access`, `configs`: они в адресе `?group=servers`), `actionGroups`/`actionsOfGroup` для фильтра, `auditActor`, `auditSubject`, `auditDetails`. |
 | `src/styles/tokens.css` | Дизайн-токены (светлая и тёмная тема). |
 
 ## Дизайн «Журнал связи»
@@ -44,7 +44,7 @@ npm run typecheck && npm run lint && npm test && npm run build
   `if (n === 1)`. Даты, числа, единицы — через `Intl` с `currentLanguage()`, а не с жёстким `"ru"`.
 - Тесты идут на русском: `src/test/setup.ts` перед каждым тестом включает ru. Проверка другого языка — `i18n.changeLanguage("en")`.
 - Кнопки и разделы показывать по правам (`can(...)`), viewer — только чтение.
-- Новое событие аудита — строка в `AUDIT_ACTIONS` (это `Record` по типу из openapi, без неё typecheck падает).
+- Новое событие аудита — строка в `AUDIT_ACTIONS` (группа, тон) **и** `audit.actions.<action>` в обоих словарях (оба — `Record`/типизированные ключи по openapi: без них typecheck падает).
   В подробности выводятся только ключи из белого списка `DETAIL_LABELS` и `changes`.
 - Опрос задач: каждые 2 с, пока есть pending/running; по завершении — invalidate связанных запросов.
 - Конфиг: `useMutation` с `gcTime: 0`, сброс при закрытии диалога; QR и конфиги не скриншотить (в них ключ).

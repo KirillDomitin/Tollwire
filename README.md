@@ -37,6 +37,7 @@ Running a handful of VPN servers by hand means SSH sessions, copied configs and 
 | **Background jobs** | Installation, config issue and revoke, health checks and sync run in a worker with a Redis queue and a lock per server, so two operations never touch the same machine at once. Lost and stuck jobs are recovered automatically. |
 | **Audit log** | Who did what, to which server or user, and when. Filter by admin, event group, object and date. |
 | **Roles** | `viewer` (read only), `operator` (users, access, configs, checks), `superadmin` (infrastructure and admins). Buttons the role cannot use are hidden. |
+| **Languages** | The panel speaks English and Russian: a switch in the sidebar, remembered in the browser, defaulting to the browser's language. Dates, numbers and country names follow it. |
 | **Security** | Secrets encrypted in the database (Fernet); SSH only to servers with a pinned host key; the panel can replace a password with its own SSH key and then forget the password; login rate limiting and lockout; refresh-token rotation; no user input in SSH commands; no secrets in logs. |
 
 ## Architecture

@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- English interface. A RU / EN switch in the sidebar and on the sign-in page; the language is remembered in the
+  browser and, if not chosen, follows the browser's language (Russian → Russian, anything else → English).
+  Dates, numbers, units and country names follow the language too.
+
+### Changed
+
+- The audit page address uses stable group ids (`/audit?group=servers`) instead of the Russian group names.
+- Every section is loaded as its own chunk, so the main bundle stays small.
+
 ## [0.1.0] - 2026-10-10
 
 ### Added
