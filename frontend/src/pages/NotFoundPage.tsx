@@ -1,11 +1,13 @@
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 
 export function NotFoundPage() {
+  const { t } = useTranslation();
   return (
     <section>
-      <h1>Такой страницы нет</h1>
+      <h1>{t("shell.notFound.title")}</h1>
       <p>
-        Адрес мог устареть. <Link to="/servers">Открыть список серверов</Link>
+        {t("shell.notFound.hint")} <Link to="/servers">{t("shell.notFound.link")}</Link>
       </p>
     </section>
   );

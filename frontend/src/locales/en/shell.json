@@ -1,0 +1,33 @@
+{
+  "nav": {
+    "label": "Sections",
+    "servers": "Servers",
+    "users": "Users",
+    "audit": "Audit log",
+    "signOut": "Sign out"
+  },
+  "roles": {
+    "superadmin": "Superadmin",
+    "operator": "Operator",
+    "viewer": "Viewer"
+  },
+  "theme": {
+    "legend": "Theme",
+    "system": "Auto",
+    "light": "Light",
+    "dark": "Dark",
+    "systemTitle": "Same as system"
+  },
+  "language": {
+    "legend": "Language",
+    "ru": "RU",
+    "en": "EN",
+    "ruTitle": "Русский",
+    "enTitle": "English"
+  },
+  "notFound": {
+    "title": "Page not found",
+    "hint": "The address may be out of date.",
+    "link": "Open the servers list"
+  }
+}

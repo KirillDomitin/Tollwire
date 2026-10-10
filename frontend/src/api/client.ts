@@ -1,5 +1,6 @@
 import createClient from "openapi-fetch";
 
+import i18n from "../i18n";
 import { authFetch } from "./session";
 import type { components, paths } from "./schema";
 
@@ -34,11 +35,11 @@ export class ApiError extends Error {
 }
 
 export function messageForStatus(status: number): string {
-  if (status === 401) return "Сессия закончилась. Войдите снова.";
-  if (status === 403) return "Для этого действия у вашей роли нет прав.";
-  if (status === 429) return "Слишком много запросов. Подождите немного и повторите.";
-  if (status >= 500) return "Сервер панели ответил ошибкой. Повторите позже.";
-  return "Запрос не выполнен.";
+  if (status === 401) return i18n.t("common.errors.sessionExpired");
+  if (status === 403) return i18n.t("common.errors.forbidden");
+  if (status === 429) return i18n.t("common.errors.tooManyRequests");
+  if (status >= 500) return i18n.t("common.errors.server");
+  return i18n.t("common.errors.requestFailed");
 }
 
 /** Достаёт данные из ответа openapi-fetch или бросает ApiError — удобно для TanStack Query.
@@ -51,7 +52,7 @@ export async function unwrap<T>(
   try {
     result = await call;
   } catch {
-    throw new ApiError("Нет связи с сервером панели. Проверьте подключение.", 0);
+    throw new ApiError(i18n.t("common.errors.network"), 0);
   }
   const { status, ok } = result.response;
   if (ok) return result.data as T; // 204 — данных нет, и это успех

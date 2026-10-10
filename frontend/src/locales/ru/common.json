@@ -1,0 +1,31 @@
+{
+  "cancel": "Отмена",
+  "errors": {
+    "network": "Нет связи с сервером панели. Проверьте подключение.",
+    "sessionExpired": "Сессия закончилась. Войдите снова.",
+    "forbidden": "Для этого действия у вашей роли нет прав.",
+    "tooManyRequests": "Слишком много запросов. Подождите немного и повторите.",
+    "server": "Сервер панели ответил ошибкой. Повторите позже.",
+    "requestFailed": "Запрос не выполнен.",
+    "actionFailed": "Действие не выполнено. Повторите попытку."
+  },
+  "confirm": {
+    "typeToConfirm": "Введите «{{text}}», чтобы подтвердить"
+  },
+  "countrySelect": {
+    "label": "Страна (необязательно)",
+    "none": "Без флага"
+  },
+  "units": {
+    "byte": "Б",
+    "kilobyte": "КБ",
+    "megabyte": "МБ",
+    "gigabyte": "ГБ",
+    "terabyte": "ТБ",
+    "perSecond": "/с",
+    "bitPerSecond": "бит/с",
+    "kilobitPerSecond": "Кбит/с",
+    "megabitPerSecond": "Мбит/с",
+    "gigabitPerSecond": "Гбит/с"
+  }
+}

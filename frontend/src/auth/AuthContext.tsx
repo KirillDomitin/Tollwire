@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { api, ApiError, messageForStatus, type Admin } from "../api/client";
+import i18n from "../i18n";
 import { onSessionChange, refreshAccessToken, setAccessToken } from "../api/session";
 
 type AuthState = { status: "checking" } | { status: "signed-out" } | { status: "signed-in"; admin: Admin };
@@ -61,7 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         credentials: "same-origin",
       });
     } catch {
-      throw new ApiError("Нет связи с сервером панели. Проверьте подключение.", 0);
+      throw new ApiError(i18n.t("common.errors.network"), 0);
     }
     if (!response.ok) {
       const retryAfter = Number(response.headers.get("Retry-After")) || undefined;
@@ -93,13 +94,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 }
 
 export function loginErrorMessage(status: number, retryAfterSeconds?: number): string {
-  if (status === 401) return "Неверный email или пароль.";
-  if (status === 422) return "Проверьте, что email введён полностью.";
+  if (status === 401) return i18n.t("auth.errors.invalidCredentials");
+  if (status === 422) return i18n.t("auth.errors.incompleteEmail");
   if (status === 429) {
     const minutes = retryAfterSeconds ? Math.max(1, Math.ceil(retryAfterSeconds / 60)) : null;
     return minutes
-      ? `Слишком много попыток входа. Повторите через ${minutes} мин.`
-      : "Слишком много попыток входа. Повторите позже.";
+      ? i18n.t("auth.errors.tooManyAttemptsMinutes", { minutes })
+      : i18n.t("auth.errors.tooManyAttempts");
   }
   return messageForStatus(status);
 }

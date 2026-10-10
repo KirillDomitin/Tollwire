@@ -1,34 +1,32 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { applyTheme, loadTheme, type ThemeChoice } from "../lib/theme";
 import styles from "./ThemeSwitch.module.css";
 
-const OPTIONS: { value: ThemeChoice; label: string }[] = [
-  { value: "system", label: "Авто" },
-  { value: "light", label: "Светлая" },
-  { value: "dark", label: "Тёмная" },
-];
+const OPTIONS: ThemeChoice[] = ["system", "light", "dark"];
 
 export function ThemeSwitch() {
+  const { t } = useTranslation();
   const [choice, setChoice] = useState<ThemeChoice>(loadTheme);
   return (
     <fieldset className={styles.switch}>
-      <legend className={styles.legend}>Тема</legend>
+      <legend className={styles.legend}>{t("shell.theme.legend")}</legend>
       <div className={styles.options}>
-        {OPTIONS.map((option) => (
-          <label key={option.value} className={styles.option}>
+        {OPTIONS.map((value) => (
+          <label key={value} className={styles.option}>
             <input
-              title={option.value === "system" ? "Как в системе" : undefined}
+              title={value === "system" ? t("shell.theme.systemTitle") : undefined}
               type="radio"
               name="theme"
-              value={option.value}
-              checked={choice === option.value}
+              value={value}
+              checked={choice === value}
               onChange={() => {
-                setChoice(option.value);
-                applyTheme(option.value);
+                setChoice(value);
+                applyTheme(value);
               }}
             />
-            <span>{option.label}</span>
+            <span>{t(`shell.theme.${value}`)}</span>
           </label>
         ))}
       </div>

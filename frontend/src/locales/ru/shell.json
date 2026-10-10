@@ -1,0 +1,33 @@
+{
+  "nav": {
+    "label": "Разделы",
+    "servers": "Серверы",
+    "users": "Пользователи",
+    "audit": "Журнал",
+    "signOut": "Выйти"
+  },
+  "roles": {
+    "superadmin": "Суперадмин",
+    "operator": "Оператор",
+    "viewer": "Наблюдатель"
+  },
+  "theme": {
+    "legend": "Тема",
+    "system": "Авто",
+    "light": "Светлая",
+    "dark": "Тёмная",
+    "systemTitle": "Как в системе"
+  },
+  "language": {
+    "legend": "Язык",
+    "ru": "RU",
+    "en": "EN",
+    "ruTitle": "Русский",
+    "enTitle": "English"
+  },
+  "notFound": {
+    "title": "Такой страницы нет",
+    "hint": "Адрес мог устареть.",
+    "link": "Открыть список серверов"
+  }
+}

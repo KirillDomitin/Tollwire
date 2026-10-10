@@ -17,8 +17,8 @@ describe("units", () => {
 
   it("shows disk speed and percentages", () => {
     expect(formatByteRate(4096)).toBe("4 КБ/с");
-    expect(formatPercent(4.35)).toBe("4,4 %"); // половина округляется вверх
-    expect(formatPercent(57.8)).toBe("58 %");
+    expect(formatPercent(4.35)).toBe("4,4 %"); // половина округляется вверх; пробел неразрывный, как в Intl
+    expect(formatPercent(57.8)).toBe("58 %");
     expect(share(559, 961)).toBeCloseTo(58.17, 1);
     expect(share(1, 0)).toBeNull();
   });

@@ -1,4 +1,5 @@
 import type { AccessSummary } from "../api/client";
+import { currentLanguage } from "../i18n/format";
 import type { ServerSignal } from "./serverSignal";
 
 /** Сколько дней до конца доступа считать «скоро кончится» — пора продлевать. */
@@ -10,7 +11,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export function formatDay(iso: string, now: Date = new Date()): string {
   const date = new Date(iso);
   const sameYear = date.getFullYear() === now.getFullYear();
-  return new Intl.DateTimeFormat("ru", {
+  return new Intl.DateTimeFormat(currentLanguage(), {
     day: "numeric",
     month: "long",
     ...(sameYear ? {} : { year: "numeric" }),

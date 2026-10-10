@@ -1,5 +1,6 @@
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import { useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 import { ApiError } from "../api/client";
 import { Button } from "./Button";
@@ -29,6 +30,7 @@ export function ConfirmDialog({
   confirmText,
   onConfirm,
 }: ConfirmDialogProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
@@ -41,7 +43,7 @@ export function ConfirmDialog({
       await onConfirm();
       setOpen(false);
     } catch (exc) {
-      setError(exc instanceof ApiError ? exc.message : "Действие не выполнено. Повторите попытку.");
+      setError(exc instanceof ApiError ? exc.message : t("common.errors.actionFailed"));
     } finally {
       setBusy(false);
     }
@@ -64,7 +66,7 @@ export function ConfirmDialog({
           <AlertDialog.Description className={styles.description}>{consequences}</AlertDialog.Description>
           {confirmText && (
             <TextField
-              label={`Введите «${confirmText}», чтобы подтвердить`}
+              label={t("common.confirm.typeToConfirm", { text: confirmText })}
               value={typed}
               onChange={(event) => setTyped(event.target.value)}
               autoComplete="off"
@@ -73,7 +75,7 @@ export function ConfirmDialog({
           {error && <Notice>{error}</Notice>}
           <div className={styles.actions}>
             <AlertDialog.Cancel asChild>
-              <Button variant="quiet">Отмена</Button>
+              <Button variant="quiet">{t("common.cancel")}</Button>
             </AlertDialog.Cancel>
             <Button
               variant="danger"

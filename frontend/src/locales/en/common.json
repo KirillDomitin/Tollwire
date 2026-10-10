@@ -1,0 +1,31 @@
+{
+  "cancel": "Cancel",
+  "errors": {
+    "network": "Can't reach the panel server. Check your connection.",
+    "sessionExpired": "Your session has ended. Sign in again.",
+    "forbidden": "Your role doesn't allow this action.",
+    "tooManyRequests": "Too many requests. Wait a moment and try again.",
+    "server": "The panel server returned an error. Try again later.",
+    "requestFailed": "The request failed.",
+    "actionFailed": "The action failed. Try again."
+  },
+  "confirm": {
+    "typeToConfirm": "Type “{{text}}” to confirm"
+  },
+  "countrySelect": {
+    "label": "Country (optional)",
+    "none": "No flag"
+  },
+  "units": {
+    "byte": "B",
+    "kilobyte": "KB",
+    "megabyte": "MB",
+    "gigabyte": "GB",
+    "terabyte": "TB",
+    "perSecond": "/s",
+    "bitPerSecond": "bit/s",
+    "kilobitPerSecond": "Kbit/s",
+    "megabitPerSecond": "Mbit/s",
+    "gigabitPerSecond": "Gbit/s"
+  }
+}

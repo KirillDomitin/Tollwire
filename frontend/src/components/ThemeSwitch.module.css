@@ -14,7 +14,8 @@
    в светлой теме), но остаются в разметке — клавиатура и экранный диктор работают как с радиогруппой. */
 .options {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-auto-flow: column; /* сколько вариантов, столько и равных сегментов (тема, язык) */
+  grid-auto-columns: 1fr;
   border: 1px solid var(--rule-strong);
   border-radius: var(--radius-control);
   overflow: hidden;

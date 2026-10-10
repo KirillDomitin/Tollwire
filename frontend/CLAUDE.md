@@ -14,6 +14,8 @@ npm run typecheck && npm run lint && npm test && npm run build
 
 | Путь | Что |
 |---|---|
+| `src/i18n/` | i18next + react-i18next, два языка: ru и en. Язык — из `localStorage` (`vpn-panel-lang`), иначе по браузеру (русский → ru, остальное → en). `format.ts` — текущий язык и кеш `Intl`-форматтеров. Смена языка пересоздаёт роутер (`LocalizedRouter` в `main.tsx`), поэтому даты и числа обновляются сразу. |
+| `src/locales/{ru,en}/` | Словари по разделам: `common`, `shell`, `auth` (дальше — серверы, пользователи, аудит). Ключи по смыслу: `t("shell.nav.servers")`. Типы ключей берутся из ru — опечатка ломает `tsc`. Вне компонентов — `i18n.t(...)` из `src/i18n`. |
 | `src/api/client.ts` | `api` (openapi-fetch, `baseUrl = window.location.origin`), `unwrap()`, тип `Schemas`. |
 | `src/api/schema.d.ts` | Генерируется: `PYTHONPATH=src uv run python -m scripts.export_openapi frontend/openapi.json` (из корня) → `npm run gen:api`. Руками не править. |
 | `src/api/session.ts` | Access-токен **только в памяти**; `authFetch`: 401 → один общий refresh (single-flight) → повтор. |
@@ -37,6 +39,10 @@ npm run typecheck && npm run lint && npm test && npm run build
 
 ## Правила
 
+- Новый видимый текст — только через `t(...)`, ключ в **обоих** словарях (`i18n.test.ts` следит за совпадением ключей
+  и `{{подстановок}}`). Склонения — плюральными ключами (`key_one/_few/_many/_other` в ru, `_one/_other` в en), не
+  `if (n === 1)`. Даты, числа, единицы — через `Intl` с `currentLanguage()`, а не с жёстким `"ru"`.
+- Тесты идут на русском: `src/test/setup.ts` перед каждым тестом включает ru. Проверка другого языка — `i18n.changeLanguage("en")`.
 - Кнопки и разделы показывать по правам (`can(...)`), viewer — только чтение.
 - Новое событие аудита — строка в `AUDIT_ACTIONS` (это `Record` по типу из openapi, без неё typecheck падает).
   В подробности выводятся только ключи из белого списка `DETAIL_LABELS` и `changes`.

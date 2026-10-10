@@ -1,4 +1,4 @@
-import { COUNTRIES, flagEmoji, splitFlag, withFlag } from "./flags";
+import { COUNTRY_CODES, countryOptions, flagEmoji, splitFlag, withFlag } from "./flags";
 
 describe("flags", () => {
   it("builds a flag emoji from a country code", () => {
@@ -19,8 +19,16 @@ describe("flags", () => {
   });
 
   it("has unique two-letter codes", () => {
-    const codes = COUNTRIES.map(([code]) => code);
-    expect(new Set(codes).size).toBe(codes.length);
-    expect(codes.every((code) => /^[A-Z]{2}$/.test(code))).toBe(true);
+    expect(new Set(COUNTRY_CODES).size).toBe(COUNTRY_CODES.length);
+    expect(COUNTRY_CODES.every((code) => /^[A-Z]{2}$/.test(code))).toBe(true);
+  });
+
+  it("names countries in the interface language, sorted for that language", () => {
+    const russian = countryOptions("ru");
+    expect(russian.find((option) => option.flag === "🇩🇪")?.name).toBe("Германия");
+    expect(russian.map((option) => option.name)).toEqual(
+      [...russian.map((option) => option.name)].sort((a, b) => a.localeCompare(b, "ru")),
+    );
+    expect(countryOptions("en").find((option) => option.flag === "🇩🇪")?.name).toBe("Germany");
   });
 });
