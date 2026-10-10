@@ -9,7 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    project_name: str = "AmneziaAdminPanel"
+    project_name: str = "Tollwire"
     database_url: str
     redis_url: str
     jwt_secret_key: SecretStr

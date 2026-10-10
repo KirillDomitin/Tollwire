@@ -1,6 +1,6 @@
 # Установка и запуск
 
-VPN Control Panel — это четыре части:
+Tollwire — панель управления VPN-серверами. Это четыре части:
 
 | Часть | Что делает | Как запускается |
 |---|---|---|
@@ -35,8 +35,8 @@ VPN Control Panel — это четыре части:
 ### 1. Зависимости
 
 ```bash
-git clone <адрес репозитория> AmneziaAdminPanel
-cd AmneziaAdminPanel
+git clone <адрес репозитория> tollwire
+cd tollwire
 uv sync
 cd frontend && npm ci && cd ..
 ```

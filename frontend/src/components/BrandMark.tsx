@@ -9,7 +9,7 @@ export function BrandMark({ name = true }: { name?: boolean }) {
         <span className={styles.warn} />
         <span className={styles.down} />
       </span>
-      {name && <span className={styles.name}>VPN Control Panel</span>}
+      {name && <span className={styles.name}>Tollwire</span>}
     </span>
   );
 }
