@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-10
+
 ### Added
 
 - Country flag in a server's name: pick a country when adding or editing a server (🇩🇪 `frankfurt-1`). A bundled
@@ -38,3 +40,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   in the response.
 - The key is installed only on a server with a pinned host key; if the server does not accept the key it is
   removed and the previous access stays.
+
+[Unreleased]: https://github.com/KirillDomitin/Tollwire/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/KirillDomitin/Tollwire/releases/tag/v0.1.0
