@@ -2,6 +2,7 @@ import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
 
 import { api, unwrap, type Grant, type Job, type VPNCredential } from "../../api/client";
+import i18n from "../../i18n";
 import { isLive } from "../../lib/access";
 import { isUnfinished } from "../../lib/jobs";
 
@@ -27,7 +28,7 @@ export function useUserData(userId: string) {
     queryKey: userKeys.user(userId),
     queryFn: () =>
       unwrap(api.GET("/api/v1/vpn-users/{user_id}", path), {
-        404: "Пользователь не найден — возможно, его удалили.",
+        404: i18n.t("users.card.notFound"),
       }),
   });
   const subscriptions = useQuery({

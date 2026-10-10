@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 
 import { api, unwrap } from "../../api/client";
@@ -11,6 +12,7 @@ import styles from "./UserPage.module.css";
 
 /** Новый VPN-пользователь — это только запись о человеке. Доступ и конфиг выдаются на его странице. */
 export function AddUserDialog() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -18,8 +20,8 @@ export function AddUserDialog() {
   const create = useMutation({
     mutationFn: (body: { username: string; email: string; description: string | null }) =>
       unwrap(api.POST("/api/v1/vpn-users", { body }), {
-        409: "Пользователь с таким email уже есть.",
-        422: "Проверьте email — он должен быть полным, например name@example.com.",
+        409: t("users.add.errors.conflict"),
+        422: t("users.add.errors.invalid"),
       }),
     onSuccess: (user) => {
       void queryClient.invalidateQueries({ queryKey: ["vpn-users"] });
@@ -41,27 +43,40 @@ export function AddUserDialog() {
 
   return (
     <>
-      <Button onClick={() => setOpen(true)}>Добавить пользователя</Button>
+      <Button onClick={() => setOpen(true)}>{t("users.add.trigger")}</Button>
       <Dialog
         open={open}
         onOpenChange={(next) => {
           if (!next) create.reset();
           setOpen(next);
         }}
-        title="Новый пользователь"
-        description="Доступ к серверам выдаётся после — на странице пользователя."
+        title={t("users.add.title")}
+        description={t("users.add.description")}
       >
         <form className={styles.form} onSubmit={submit}>
-          <TextField label="Имя" name="username" required maxLength={100} autoComplete="off" />
-          <TextField label="Email" name="email" type="email" required maxLength={100} autoComplete="off" />
-          <TextField label="Заметка (необязательно)" name="description" maxLength={300} />
+          <TextField
+            label={t("users.add.name")}
+            name="username"
+            required
+            maxLength={100}
+            autoComplete="off"
+          />
+          <TextField
+            label={t("users.add.email")}
+            name="email"
+            type="email"
+            required
+            maxLength={100}
+            autoComplete="off"
+          />
+          <TextField label={t("users.add.note")} name="description" maxLength={300} />
           {create.isError && <Notice>{create.error.message}</Notice>}
           <DialogActions>
             <Button variant="quiet" onClick={() => setOpen(false)}>
-              Отмена
+              {t("common.cancel")}
             </Button>
-            <Button type="submit" busy={create.isPending} busyLabel="Добавляем…">
-              Добавить
+            <Button type="submit" busy={create.isPending} busyLabel={t("users.add.busy")}>
+              {t("users.add.submit")}
             </Button>
           </DialogActions>
         </form>

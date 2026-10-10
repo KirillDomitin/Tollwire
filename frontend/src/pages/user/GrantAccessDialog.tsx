@@ -1,5 +1,6 @@
 import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 
 import { api, unwrap, type Grant, type Job, type Server, type Subscription } from "../../api/client";
 import { Button } from "../../components/Button";
@@ -9,11 +10,7 @@ import { isLive } from "../../lib/access";
 import styles from "./UserPage.module.css";
 import { userKeys } from "./useUser";
 
-const PRESETS = [
-  { days: 30, label: "30 дней" },
-  { days: 90, label: "3 месяца" },
-  { days: 365, label: "Год" },
-] as const;
+const PRESETS = [30, 90, 365] as const;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -54,6 +51,7 @@ export function GrantAccessDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [preset, setPreset] = useState<number | "date">(30);
   const [untilDate, setUntilDate] = useState("");
@@ -87,8 +85,8 @@ export function GrantAccessDialog({
             body: newPeriod(preset, untilDate),
           }),
           {
-            409: "У пользователя уже есть действующий доступ — обновите страницу.",
-            422: "Проверьте срок доступа.",
+            409: t("users.grantDialog.errors.subscriptionConflict"),
+            422: t("users.grantDialog.errors.subscriptionInvalid"),
           },
         );
       }
@@ -98,13 +96,13 @@ export function GrantAccessDialog({
             params: { path: { subscription_id: subscription.id } },
             body: { protocol_id: protocolId },
           }),
-          { 409: `Доступ к серверу ${server.name} уже выдан.` },
+          { 409: t("users.grantDialog.errors.grantConflict", { server: server.name }) },
         );
         const job = await unwrap(
           api.POST("/api/v1/access/{access_grant_id}/credentials", {
             params: { path: { access_grant_id: created.id } },
           }),
-          { 409: `Конфиг для ${server.name} уже выдаётся или период доступа ещё не начался.` },
+          { 409: t("users.grantDialog.errors.credentialConflict", { server: server.name }) },
         );
         onIssued(created.id, job);
       }
@@ -138,18 +136,14 @@ export function GrantAccessDialog({
     <Dialog
       open={open}
       onOpenChange={close}
-      title={current ? "Добавить серверы" : "Выдать доступ"}
-      description={
-        current
-          ? "Серверы добавятся к текущему доступу, срок останется прежним."
-          : "Панель создаст доступ на выбранный срок и выдаст конфиги для выбранных серверов."
-      }
+      title={current ? t("users.grantDialog.titleAdd") : t("users.grantDialog.titleGrant")}
+      description={current ? t("users.grantDialog.descriptionAdd") : t("users.grantDialog.descriptionGrant")}
     >
       <form className={styles.form} onSubmit={submit}>
         {!current && (
           <fieldset className={styles.choice}>
-            <legend className={styles.label}>Срок</legend>
-            {PRESETS.map(({ days, label }) => (
+            <legend className={styles.label}>{t("users.grantDialog.term")}</legend>
+            {PRESETS.map((days) => (
               <label key={days}>
                 <input
                   type="radio"
@@ -157,7 +151,7 @@ export function GrantAccessDialog({
                   checked={preset === days}
                   onChange={() => setPreset(days)}
                 />
-                {label}
+                {t(`users.grantDialog.presets.${days}`)}
               </label>
             ))}
             <label>
@@ -167,12 +161,12 @@ export function GrantAccessDialog({
                 checked={preset === "date"}
                 onChange={() => setPreset("date")}
               />
-              До даты
+              {t("users.grantDialog.untilDate")}
             </label>
             {preset === "date" && (
               <input
                 type="date"
-                aria-label="Последний день доступа"
+                aria-label={t("users.grantDialog.lastDay")}
                 className={styles.date}
                 required
                 min={new Date().toISOString().slice(0, 10)}
@@ -184,13 +178,11 @@ export function GrantAccessDialog({
         )}
 
         <fieldset className={styles.servers}>
-          <legend className={styles.label}>Серверы</legend>
-          {loading && <p className={styles.hint}>Проверяем серверы…</p>}
+          <legend className={styles.label}>{t("users.grantDialog.servers")}</legend>
+          {loading && <p className={styles.hint}>{t("users.grantDialog.checking")}</p>}
           {!loading && available.length === 0 && (
             <p className={styles.hint}>
-              {granted.size > 0
-                ? "Все готовые серверы уже выданы этому пользователю."
-                : "Нет готовых серверов с AmneziaWG. Подготовьте сервер в разделе «Серверы»."}
+              {granted.size > 0 ? t("users.grantDialog.allGranted") : t("users.grantDialog.noReady")}
             </p>
           )}
           {available.map(({ server }) => (
@@ -212,10 +204,15 @@ export function GrantAccessDialog({
         {grant.isError && <Notice>{grant.error.message}</Notice>}
         <DialogActions>
           <Button variant="quiet" onClick={() => close(false)}>
-            Отмена
+            {t("common.cancel")}
           </Button>
-          <Button type="submit" disabled={!ready} busy={grant.isPending} busyLabel="Выдаём…">
-            {current ? "Добавить" : "Выдать доступ"}
+          <Button
+            type="submit"
+            disabled={!ready}
+            busy={grant.isPending}
+            busyLabel={t("users.grantDialog.busy")}
+          >
+            {current ? t("users.grantDialog.submitAdd") : t("users.grantDialog.submitGrant")}
           </Button>
         </DialogActions>
       </form>

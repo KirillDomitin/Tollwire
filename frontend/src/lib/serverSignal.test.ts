@@ -1,5 +1,5 @@
 import i18n from "../i18n";
-import { fleetSummary, pick, serverSignal } from "./serverSignal";
+import { fleetSummary, serverSignal } from "./serverSignal";
 
 describe("serverSignal", () => {
   it.each([
@@ -34,19 +34,6 @@ describe("fleetSummary", () => {
 
   it("handles an empty fleet", () => {
     expect(fleetSummary([])).toBe("Серверов пока нет");
-  });
-
-  it("picks Russian plural forms", () => {
-    const forms: [string, string, string] = ["сервер", "сервера", "серверов"];
-    expect([1, 2, 5, 11, 21, 22, 25].map((n) => pick(n, forms))).toEqual([
-      "сервер",
-      "сервера",
-      "серверов",
-      "серверов",
-      "сервер",
-      "сервера",
-      "серверов",
-    ]);
   });
 });
 

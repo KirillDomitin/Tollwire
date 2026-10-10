@@ -2,6 +2,7 @@ import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import QRCode from "qrcode";
 
+import i18n from "../../i18n";
 import { json, renderWithProviders } from "../../test/render";
 import { UsersPage } from "../UsersPage";
 import { UserPage } from "./UserPage";
@@ -237,5 +238,74 @@ describe("UserPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Показать конфиг" }));
     // Снова открыли — конфига нет, пока его явно не запросят ещё раз.
     expect(within(screen.getByRole("dialog")).queryByRole("img")).not.toBeInTheDocument();
+  });
+});
+
+describe("users in English", () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("en");
+  });
+
+  it("shows the users list with an English summary and headings", async () => {
+    mockApi();
+    renderWithProviders(<UsersPage />);
+
+    expect(await screen.findByRole("heading", { name: "Users" })).toBeInTheDocument();
+    expect(await screen.findByText("1 user — 1 with access")).toBeInTheDocument();
+    for (const name of ["User", "Access", "Note"]) {
+      expect(screen.getByRole("columnheader", { name })).toBeInTheDocument();
+    }
+    const row = screen.getByRole("link", { name: "alice" }).closest("tr")!;
+    expect(within(row).getByText(/^Until /)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add user" })).toBeInTheDocument();
+  });
+
+  it("describes the grants, history-free access and actions of a user in English", async () => {
+    mockApi();
+    renderCard();
+
+    const row = (await screen.findByText(/Config issued/)).closest("li")!;
+    expect(within(row).getByRole("button", { name: "Show config" })).toBeInTheDocument();
+    expect(within(row).getByRole("button", { name: "Revoke config" })).toBeInTheDocument();
+    expect(within(row).getByRole("button", { name: "Remove server" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "All users" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Access" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add servers" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Change term" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Revoke access" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Delete user" }));
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).getByText("Delete user “alice”?")).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("Type “alice” to confirm")).toBeInTheDocument();
+  });
+
+  it("explains granting access and the term choices in English", async () => {
+    mockApi({ subscriptions: [], grants: [], credentials: [] });
+    renderCard();
+
+    expect(await screen.findByText("There has been no access yet.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Grant access" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Term")).toBeInTheDocument();
+    for (const label of ["30 days", "3 months", "1 year", "Until a date"]) {
+      expect(within(dialog).getByLabelText(label)).toBeInTheDocument();
+    }
+    expect(within(dialog).getByText("Servers")).toBeInTheDocument();
+  });
+
+  it("reveals the config with English hints", async () => {
+    mockApi();
+    renderCard();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Show config" }));
+    const dialog = await screen.findByRole("dialog", { name: "Config for connecting" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Show config" }));
+
+    expect(await within(dialog).findByText(/In AmneziaVPN: “\+” → “QR code”/)).toBeInTheDocument();
+    expect(within(dialog).getByText("Code 1 of 2")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Copy the vpn:// key" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Download .conf" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Next code" })).toBeInTheDocument();
   });
 });

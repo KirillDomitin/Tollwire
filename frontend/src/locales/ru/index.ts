@@ -3,5 +3,6 @@ import common from "./common.json";
 import jobs from "./jobs.json";
 import servers from "./servers.json";
 import shell from "./shell.json";
+import users from "./users.json";
 
-export default { common, shell, auth, jobs, servers };
+export default { common, shell, auth, jobs, servers, users };

@@ -1,5 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router";
 
 import { api, unwrap, type Subscription } from "../../api/client";
@@ -7,6 +8,7 @@ import { useAuth } from "../../auth/AuthContext";
 import { Button } from "../../components/Button";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Notice } from "../../components/Notice";
+import i18n from "../../i18n";
 import { accessSignal, formatDay, isLive } from "../../lib/access";
 import { ChangePeriodDialog } from "./ChangePeriodDialog";
 import { EditUserDialog } from "./EditUserDialog";
@@ -16,10 +18,14 @@ import styles from "./UserPage.module.css";
 import { liveCredential, useAccessJobs, userKeys, useUserData } from "./useUser";
 
 function period(subscription: Subscription): string {
-  return `${formatDay(subscription.valid_from)} — ${formatDay(subscription.valid_until)}`;
+  return i18n.t("users.card.period", {
+    from: formatDay(subscription.valid_from),
+    to: formatDay(subscription.valid_until),
+  });
 }
 
 export function UserPage() {
+  const { t } = useTranslation();
   const { userId = "" } = useParams();
   const { can } = useAuth();
   const data = useUserData(userId);
@@ -27,13 +33,13 @@ export function UserPage() {
   const [grantOpen, setGrantOpen] = useState(false);
   const [periodOpen, setPeriodOpen] = useState(false);
 
-  if (data.user.isPending) return <p className={styles.hint}>Загружаем пользователя…</p>;
+  if (data.user.isPending) return <p className={styles.hint}>{t("users.card.loading")}</p>;
   if (data.user.isError) {
     return (
       <Notice
         action={
           <Link to="/users" className={styles.back}>
-            К списку пользователей
+            {t("users.card.toList")}
           </Link>
         }
       >
@@ -58,7 +64,7 @@ export function UserPage() {
   return (
     <article className={styles.page} aria-labelledby="user-title">
       <Link to="/users" className={styles.back}>
-        Все пользователи
+        {t("users.card.allUsers")}
       </Link>
 
       <header className={styles.header} data-signal={signal}>
@@ -80,7 +86,7 @@ export function UserPage() {
 
       <section className={styles.section} aria-labelledby="access-title">
         <h2 id="access-title" className={styles.sectionTitle}>
-          Доступ
+          {t("users.card.access")}
         </h2>
         {data.subscriptions.isError && <Notice>{data.subscriptions.error.message}</Notice>}
 
@@ -88,10 +94,17 @@ export function UserPage() {
           <div className={styles.empty}>
             <p className={styles.hint}>
               {history[0]
-                ? `Сейчас доступа нет — последний ${history[0].status === "expired" ? "истёк" : "отозван"} ${formatDay(history[0].revoked_at ?? history[0].valid_until)}.`
-                : "Доступа ещё не было."}
+                ? t(
+                    history[0].status === "expired"
+                      ? "users.card.noAccessExpired"
+                      : "users.card.noAccessRevoked",
+                    {
+                      date: formatDay(history[0].revoked_at ?? history[0].valid_until),
+                    },
+                  )
+                : t("users.card.noAccessYet")}
             </p>
-            {manage && <Button onClick={() => setGrantOpen(true)}>Выдать доступ</Button>}
+            {manage && <Button onClick={() => setGrantOpen(true)}>{t("users.card.grantAccess")}</Button>}
           </div>
         )}
 
@@ -99,16 +112,16 @@ export function UserPage() {
           <>
             {manage && (
               <div className={styles.row}>
-                <Button onClick={() => setGrantOpen(true)}>Добавить серверы</Button>
+                <Button onClick={() => setGrantOpen(true)}>{t("users.card.addServers")}</Button>
                 <Button variant="quiet" onClick={() => setPeriodOpen(true)}>
-                  Изменить срок
+                  {t("users.card.changePeriod")}
                 </Button>
                 <RevokeAccess subscription={current} userId={userId} />
               </div>
             )}
             {data.grants.isError && <Notice>{data.grants.error.message}</Notice>}
             {data.grants.data && grants.length === 0 && (
-              <p className={styles.hint}>Срок задан, но серверов в доступе нет — добавьте хотя бы один.</p>
+              <p className={styles.hint}>{t("users.card.noServers")}</p>
             )}
             {grants.length > 0 && (
               <ul className={styles.grants}>
@@ -145,7 +158,7 @@ export function UserPage() {
       {history.length > 0 && (
         <section className={styles.section} aria-labelledby="history-title">
           <h2 id="history-title" className={styles.sectionTitle}>
-            Прошлые доступы
+            {t("users.card.history")}
           </h2>
           <ul className={styles.history}>
             {history.map((subscription) => (
@@ -153,8 +166,10 @@ export function UserPage() {
                 <span>{period(subscription)}</span>
                 <span className={styles.hint}>
                   {subscription.status === "expired"
-                    ? "истёк"
-                    : `отозван ${formatDay(subscription.revoked_at ?? subscription.valid_until)}`}
+                    ? t("users.card.historyExpired")
+                    : t("users.card.historyRevoked", {
+                        date: formatDay(subscription.revoked_at ?? subscription.valid_until),
+                      })}
                 </span>
               </li>
             ))}
@@ -168,14 +183,15 @@ export function UserPage() {
 }
 
 function RevokeAccess({ subscription, userId }: { subscription: Subscription; userId: string }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   return (
     <ConfirmDialog
-      trigger={<Button variant="quiet">Отозвать доступ</Button>}
-      title="Отозвать весь доступ?"
-      consequences="Все конфиги пользователя перестанут работать: клиенты будут удалены со всех серверов. Срок обнулится — чтобы вернуть доступ, его придётся выдать заново."
-      actionLabel="Отозвать доступ"
-      busyLabel="Отзываем…"
+      trigger={<Button variant="quiet">{t("users.card.revoke.trigger")}</Button>}
+      title={t("users.card.revoke.title")}
+      consequences={t("users.card.revoke.consequences")}
+      actionLabel={t("users.card.revoke.action")}
+      busyLabel={t("users.card.revoke.busy")}
       onConfirm={async () => {
         await unwrap(
           api.POST("/api/v1/subscriptions/{subscription_id}/revoke", {
@@ -190,26 +206,27 @@ function RevokeAccess({ subscription, userId }: { subscription: Subscription; us
 }
 
 function DeleteUser({ userId, username }: { userId: string; username: string }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   return (
     <section className={`${styles.section} ${styles.danger}`} aria-labelledby="danger-title">
       <h2 id="danger-title" className={styles.sectionTitle}>
-        Опасные действия
+        {t("users.card.delete.title")}
       </h2>
       <div>
         <ConfirmDialog
-          trigger={<Button variant="quiet">Удалить пользователя</Button>}
-          title={`Удалить пользователя «${username}»?`}
-          consequences="Пользователь пропадёт из панели вместе с историей доступов. Пока у него есть рабочие конфиги, удалить нельзя — сначала отзовите доступ."
-          actionLabel="Удалить пользователя"
-          busyLabel="Удаляем…"
+          trigger={<Button variant="quiet">{t("users.card.delete.trigger")}</Button>}
+          title={t("users.card.delete.confirmTitle", { name: username })}
+          consequences={t("users.card.delete.consequences")}
+          actionLabel={t("users.card.delete.action")}
+          busyLabel={t("users.card.delete.busy")}
           confirmText={username}
           onConfirm={async () => {
             await unwrap(
               api.DELETE("/api/v1/vpn-users/{user_id}", { params: { path: { user_id: userId } } }),
               {
-                409: "У пользователя есть рабочие конфиги. Сначала отзовите доступ и дождитесь удаления клиентов.",
+                409: t("users.card.delete.conflict"),
               },
             );
             queryClient.removeQueries({ queryKey: userKeys.user(userId) });

@@ -1,12 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 
 import { api, unwrap, type VPNUserListItem } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Button } from "../components/Button";
 import { Notice } from "../components/Notice";
+import i18n from "../i18n";
+import { currentLanguage } from "../i18n/format";
 import { accessSignal } from "../lib/access";
-import { pick } from "../lib/serverSignal";
 import styles from "./Ledger.module.css";
 import { AddUserDialog } from "./user/AddUserDialog";
 
@@ -20,15 +22,16 @@ export function usersSummary(users: VPNUserListItem[], now: Date = new Date()): 
     else counts.none += 1;
   }
   const parts = [
-    counts.warn && `${counts.warn} кончается скоро`,
-    counts.live && `${counts.live} с доступом`,
-    counts.none && `${counts.none} без доступа`,
+    counts.warn && i18n.t("users.summary.expiring", { count: counts.warn }),
+    counts.live && i18n.t("users.summary.withAccess", { count: counts.live }),
+    counts.none && i18n.t("users.summary.withoutAccess", { count: counts.none }),
   ].filter(Boolean);
-  const total = `${users.length} ${pick(users.length, ["пользователь", "пользователя", "пользователей"])}`;
+  const total = i18n.t("users.summary.total", { count: users.length });
   return `${total} — ${parts.join(", ")}`;
 }
 
 export function UsersPage() {
+  const { t } = useTranslation();
   const { can } = useAuth();
   const users = useQuery({
     queryKey: ["vpn-users"],
@@ -39,7 +42,7 @@ export function UsersPage() {
     <section aria-labelledby="users-title">
       <header className={styles.header}>
         <h1 id="users-title" className={styles.title}>
-          Пользователи
+          {t("users.list.title")}
         </h1>
         {users.data && users.data.length > 0 && <p className={styles.summary}>{usersSummary(users.data)}</p>}
         {can("vpn_users:manage") && (
@@ -49,13 +52,13 @@ export function UsersPage() {
         )}
       </header>
 
-      {users.isPending && <p className={styles.quiet}>Загружаем пользователей…</p>}
+      {users.isPending && <p className={styles.quiet}>{t("users.list.loading")}</p>}
 
       {users.isError && (
         <Notice
           action={
             <Button variant="quiet" onClick={() => void users.refetch()}>
-              Повторить
+              {t("users.list.retry")}
             </Button>
           }
         >
@@ -63,12 +66,7 @@ export function UsersPage() {
         </Notice>
       )}
 
-      {users.data?.length === 0 && (
-        <p className={styles.quiet}>
-          Пользователей пока нет. Добавьте человека, которому нужен VPN, — доступ и конфиг выдаются на его
-          странице.
-        </p>
-      )}
+      {users.data?.length === 0 && <p className={styles.quiet}>{t("users.list.empty")}</p>}
 
       {users.data && users.data.length > 0 && <UserTable users={users.data} />}
     </section>
@@ -76,21 +74,24 @@ export function UsersPage() {
 }
 
 function UserTable({ users }: { users: VPNUserListItem[] }) {
+  const { t } = useTranslation();
   // Сначала те, у кого доступ скоро кончится, затем по имени — так список работает как напоминание о продлении.
   const order = { warn: 0, ok: 1, process: 2, down: 3, idle: 4 };
   const rows = users
     .map((user) => ({ user, ...accessSignal(user.access ?? null) }))
     .sort(
-      (a, b) => order[a.signal] - order[b.signal] || a.user.username.localeCompare(b.user.username, "ru"),
+      (a, b) =>
+        order[a.signal] - order[b.signal] ||
+        a.user.username.localeCompare(b.user.username, currentLanguage()),
     );
 
   return (
     <table className={styles.table}>
       <thead>
         <tr>
-          <th scope="col">Пользователь</th>
-          <th scope="col">Доступ</th>
-          <th scope="col">Заметка</th>
+          <th scope="col">{t("users.list.columns.user")}</th>
+          <th scope="col">{t("users.list.columns.access")}</th>
+          <th scope="col">{t("users.list.columns.note")}</th>
         </tr>
       </thead>
       <tbody>

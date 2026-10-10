@@ -1,0 +1,178 @@
+{
+  "list": {
+    "title": "Users",
+    "loading": "Loading users…",
+    "retry": "Retry",
+    "empty": "No users yet. Add a person who needs a VPN — access and the config are issued on their page.",
+    "columns": {
+      "user": "User",
+      "access": "Access",
+      "note": "Note"
+    }
+  },
+  "summary": {
+    "total_one": "{{count}} user",
+    "total_other": "{{count}} users",
+    "expiring": "{{count}} expiring soon",
+    "withAccess": "{{count}} with access",
+    "withoutAccess": "{{count}} without access"
+  },
+  "access": {
+    "none": "No access",
+    "revoked": "Revoked",
+    "expired": "Expired {{date}}",
+    "from": "From {{date}}",
+    "ending": "Ends {{date}}",
+    "until": "Until {{date}}"
+  },
+  "add": {
+    "trigger": "Add user",
+    "title": "New user",
+    "description": "Access to servers is issued afterwards, on the user's page.",
+    "name": "Name",
+    "email": "Email",
+    "note": "Note (optional)",
+    "submit": "Add",
+    "busy": "Adding…",
+    "errors": {
+      "conflict": "A user with this email already exists.",
+      "invalid": "Check the email — it must be complete, for example name@example.com."
+    }
+  },
+  "edit": {
+    "trigger": "Edit",
+    "title": "Edit user",
+    "description": "The name, email and note are visible only in the panel. Issued configs and access don't change.",
+    "submit": "Save",
+    "busy": "Saving…",
+    "errors": {
+      "conflict": "A user with this email already exists.",
+      "invalid": "Check the data: the email must be complete, for example name@example.com, and the name must not be empty."
+    }
+  },
+  "card": {
+    "loading": "Loading the user…",
+    "toList": "Back to the users list",
+    "allUsers": "All users",
+    "notFound": "User not found — they may have been deleted.",
+    "access": "Access",
+    "noAccessExpired": "No access right now — the last one expired on {{date}}.",
+    "noAccessRevoked": "No access right now — the last one was revoked on {{date}}.",
+    "noAccessYet": "There has been no access yet.",
+    "grantAccess": "Grant access",
+    "addServers": "Add servers",
+    "changePeriod": "Change term",
+    "noServers": "The term is set, but there are no servers in the access — add at least one.",
+    "history": "Past access",
+    "period": "{{from}} — {{to}}",
+    "historyExpired": "expired",
+    "historyRevoked": "revoked {{date}}",
+    "revoke": {
+      "trigger": "Revoke access",
+      "title": "Revoke all access?",
+      "consequences": "All of the user's configs will stop working: the clients will be removed from every server. The term resets — to restore access it has to be granted again.",
+      "action": "Revoke access",
+      "busy": "Revoking…"
+    },
+    "delete": {
+      "title": "Danger zone",
+      "trigger": "Delete user",
+      "confirmTitle": "Delete user “{{name}}”?",
+      "consequences": "The user will disappear from the panel along with the access history. While they have working configs they can't be deleted — revoke the access first.",
+      "action": "Delete user",
+      "busy": "Deleting…",
+      "conflict": "The user has working configs. Revoke the access first and wait until the clients are removed."
+    }
+  },
+  "grant": {
+    "serverDeleted": "Server deleted",
+    "removingClient": "Removing the client from the server…",
+    "expired": "Term expired",
+    "revoked": "Revoked",
+    "revokingConfig": "Revoking the config…",
+    "issuingConfig": "Issuing the config…",
+    "configIssued": "Config issued {{date}}",
+    "configNotIssued": "No config issued",
+    "showConfig": "Show config",
+    "issue": "Issue config",
+    "retry": "Retry issuing",
+    "queueBusy": "Queuing…",
+    "errors": {
+      "issueConflict": "The config is already being issued, or the access period hasn't started yet."
+    },
+    "revokeConfig": {
+      "trigger": "Revoke config",
+      "title": "Revoke the config?",
+      "consequences": "The client will be removed from server {{server}}: it won't be possible to connect with this config anymore. Access to the server stays — you can issue a new config.",
+      "action": "Revoke config",
+      "busy": "Revoking…"
+    },
+    "removeServer": {
+      "trigger": "Remove server",
+      "title": "Remove access to server {{server}}?",
+      "consequences": "The config for this server will stop working and the client will be removed from the server. Access to the other servers and the term don't change.",
+      "action": "Remove server",
+      "busy": "Removing…"
+    }
+  },
+  "grantDialog": {
+    "titleAdd": "Add servers",
+    "titleGrant": "Grant access",
+    "descriptionAdd": "The servers will be added to the current access; the term stays the same.",
+    "descriptionGrant": "The panel will create access for the chosen term and issue configs for the chosen servers.",
+    "term": "Term",
+    "presets": {
+      "30": "30 days",
+      "90": "3 months",
+      "365": "1 year"
+    },
+    "untilDate": "Until a date",
+    "lastDay": "Last day of access",
+    "servers": "Servers",
+    "checking": "Checking servers…",
+    "allGranted": "All ready servers have already been granted to this user.",
+    "noReady": "No ready servers with AmneziaWG. Set up a server in the “Servers” section.",
+    "submitAdd": "Add",
+    "submitGrant": "Grant access",
+    "busy": "Granting…",
+    "errors": {
+      "subscriptionConflict": "The user already has active access — refresh the page.",
+      "subscriptionInvalid": "Check the access term.",
+      "grantConflict": "Access to server {{server}} has already been granted.",
+      "credentialConflict": "The config for {{server}} is already being issued, or the access period hasn't started yet."
+    }
+  },
+  "period": {
+    "title": "Change the access term",
+    "description": "The access is valid until {{date}} for now.",
+    "newTerm": "New term",
+    "until": "until {{date}}",
+    "otherDate": "Another date",
+    "lastDay": "Last day of access",
+    "submit": "Save term",
+    "busy": "Saving…",
+    "errors": {
+      "invalid": "The end of access must be later than its start."
+    }
+  },
+  "config": {
+    "title": "Config for connecting",
+    "description": "The config contains the user's private key. Pass it only to them. Viewing it is recorded in the log.",
+    "show": "Show config",
+    "getting": "Getting the config…",
+    "hintLink": "In AmneziaVPN: “+” → “QR code”, and keep the camera on the screen — the app assembles the codes itself. Or paste the copied vpn:// key. The .conf file is for the AmneziaWG app and routers.",
+    "hintPlain": "Scan it in the AmneziaVPN or AmneziaWG app on a phone, or hand over the .conf file.",
+    "copied": "Copied",
+    "copyLink": "Copy the vpn:// key",
+    "copy": "Copy",
+    "download": "Download .conf",
+    "done": "Done",
+    "codeOf": "Code {{current}} of {{total}}",
+    "nextCode": "Next code",
+    "qrFailed": "Couldn't make the QR code — download the .conf file.",
+    "qrLabel": "Config QR code",
+    "errors": {
+      "revoked": "This config has already been revoked. Issue a new one."
+    }
+  }
+}

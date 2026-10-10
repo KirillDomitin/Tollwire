@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 
 import { api, unwrap, type Subscription } from "../../api/client";
 import { Button } from "../../components/Button";
@@ -22,6 +23,7 @@ export function ChangePeriodDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [choice, setChoice] = useState<number | "date">(30);
   const [untilDate, setUntilDate] = useState("");
@@ -34,7 +36,7 @@ export function ChangePeriodDialog({
           params: { path: { subscription_id: subscription.id } },
           body: { valid_until: validUntil },
         }),
-        { 422: "Конец доступа должен быть позже его начала." },
+        { 422: t("users.period.errors.invalid") },
       ),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["vpn-user"] });
@@ -61,16 +63,18 @@ export function ChangePeriodDialog({
     <Dialog
       open={open}
       onOpenChange={close}
-      title="Изменить срок доступа"
-      description={`Сейчас доступ действует до ${formatDay(subscription.valid_until)}.`}
+      title={t("users.period.title")}
+      description={t("users.period.description", { date: formatDay(subscription.valid_until) })}
     >
       <form className={styles.form} onSubmit={submit}>
         <fieldset className={styles.choice}>
-          <legend className={styles.label}>Новый срок</legend>
+          <legend className={styles.label}>{t("users.period.newTerm")}</legend>
           {EXTENSIONS.map((days) => (
             <label key={days}>
               <input type="radio" name="extend" checked={choice === days} onChange={() => setChoice(days)} />
-              до {formatDay(new Date(currentEnd.getTime() + days * DAY_MS).toISOString())}
+              {t("users.period.until", {
+                date: formatDay(new Date(currentEnd.getTime() + days * DAY_MS).toISOString()),
+              })}
             </label>
           ))}
           <label>
@@ -80,12 +84,12 @@ export function ChangePeriodDialog({
               checked={choice === "date"}
               onChange={() => setChoice("date")}
             />
-            Другая дата
+            {t("users.period.otherDate")}
           </label>
           {choice === "date" && (
             <input
               type="date"
-              aria-label="Последний день доступа"
+              aria-label={t("users.period.lastDay")}
               className={styles.date}
               required
               value={untilDate}
@@ -96,15 +100,15 @@ export function ChangePeriodDialog({
         {change.isError && <Notice>{change.error.message}</Notice>}
         <DialogActions>
           <Button variant="quiet" onClick={() => close(false)}>
-            Отмена
+            {t("common.cancel")}
           </Button>
           <Button
             type="submit"
             disabled={choice === "date" && untilDate === ""}
             busy={change.isPending}
-            busyLabel="Сохраняем…"
+            busyLabel={t("users.period.busy")}
           >
-            Сохранить срок
+            {t("users.period.submit")}
           </Button>
         </DialogActions>
       </form>

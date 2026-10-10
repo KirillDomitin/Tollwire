@@ -1,6 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 import QRCode from "qrcode";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { api, unwrap } from "../../api/client";
 import { Button } from "../../components/Button";
@@ -24,6 +25,7 @@ export function ConfigDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const reveal = useMutation({
     mutationFn: () =>
@@ -32,7 +34,7 @@ export function ConfigDialog({
           params: { path: { credential_id: credentialId } },
         }),
         {
-          409: "Этот конфиг уже отозван. Выдайте новый.",
+          409: t("users.config.errors.revoked"),
         },
       ),
     gcTime: 0,
@@ -72,18 +74,22 @@ export function ConfigDialog({
     <Dialog
       open={open}
       onOpenChange={close}
-      title="Конфиг для подключения"
-      description="В конфиге — личный ключ пользователя. Передавайте его только ему самому. Показ записывается в журнал."
+      title={t("users.config.title")}
+      description={t("users.config.description")}
     >
       {!config && (
         <>
           {reveal.isError && <Notice>{reveal.error.message}</Notice>}
           <DialogActions>
             <Button variant="quiet" onClick={() => close(false)}>
-              Отмена
+              {t("common.cancel")}
             </Button>
-            <Button busy={reveal.isPending} busyLabel="Получаем конфиг…" onClick={() => reveal.mutate()}>
-              Показать конфиг
+            <Button
+              busy={reveal.isPending}
+              busyLabel={t("users.config.getting")}
+              onClick={() => reveal.mutate()}
+            >
+              {t("users.config.show")}
             </Button>
           </DialogActions>
         </>
@@ -96,18 +102,20 @@ export function ConfigDialog({
             <QrCode text={shareLink ?? config} />
           )}
           <p className={styles.hint}>
-            {shareLink
-              ? "В AmneziaVPN: «+» → «QR-код» и держите камеру на экране — приложение соберёт коды само. Или вставьте скопированный ключ vpn://. Файл .conf — для приложения AmneziaWG и роутеров."
-              : "Отсканируйте в приложении AmneziaVPN или AmneziaWG на телефоне, либо передайте файл .conf."}
+            {shareLink ? t("users.config.hintLink") : t("users.config.hintPlain")}
           </p>
           <DialogActions>
             <Button variant="quiet" onClick={() => void copy()}>
-              {copied ? "Скопировано" : shareLink ? "Скопировать ключ vpn://" : "Скопировать"}
+              {copied
+                ? t("users.config.copied")
+                : shareLink
+                  ? t("users.config.copyLink")
+                  : t("users.config.copy")}
             </Button>
             <Button variant="quiet" onClick={download}>
-              Скачать .conf
+              {t("users.config.download")}
             </Button>
-            <Button onClick={() => close(false)}>Готово</Button>
+            <Button onClick={() => close(false)}>{t("users.config.done")}</Button>
           </DialogActions>
         </>
       )}
@@ -122,6 +130,7 @@ const SERIES_STEP_MS = 1000;
  * порядке. При «уменьшить движение» в системе коды не листаются сами — только кнопкой.
  */
 function QrSeries({ codes }: { codes: string[] }) {
+  const { t } = useTranslation();
   const [index, setIndex] = useState(0);
   const reducedMotion =
     typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -139,10 +148,10 @@ function QrSeries({ codes }: { codes: string[] }) {
       {codes.length > 1 && (
         <div className={styles.qrSeries}>
           <span className={styles.hint}>
-            Код {current + 1} из {codes.length}
+            {t("users.config.codeOf", { current: current + 1, total: codes.length })}
           </span>
           <Button variant="quiet" onClick={() => setIndex((value) => value + 1)}>
-            Следующий код
+            {t("users.config.nextCode")}
           </Button>
         </div>
       )}
@@ -152,6 +161,7 @@ function QrSeries({ codes }: { codes: string[] }) {
 
 /** QR рисуется прямо в браузере — текст конфига никуда не отправляется. */
 function QrCode({ text }: { text: string }) {
+  const { t } = useTranslation();
   const canvas = useRef<HTMLCanvasElement>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -163,6 +173,6 @@ function QrCode({ text }: { text: string }) {
       setFailed(true),
     );
   }, [text]);
-  if (failed) return <Notice>QR-код не получился — скачайте файл .conf.</Notice>;
-  return <canvas ref={canvas} className={styles.qr} role="img" aria-label="QR-код конфига" />;
+  if (failed) return <Notice>{t("users.config.qrFailed")}</Notice>;
+  return <canvas ref={canvas} className={styles.qr} role="img" aria-label={t("users.config.qrLabel")} />;
 }

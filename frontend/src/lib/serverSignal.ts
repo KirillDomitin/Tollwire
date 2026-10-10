@@ -32,14 +32,6 @@ export function serverSignal(server: Pick<Server, "status" | "health_status">): 
   }
 }
 
-const plural = new Intl.PluralRules("ru");
-
-/** Форма слова по числу: pick(5, ["сервер", "сервера", "серверов"]) → "серверов". */
-export function pick(count: number, [one, few, many]: [string, string, string]): string {
-  const category = plural.select(count);
-  return category === "one" ? one : category === "few" ? few : many;
-}
-
 const GROUP_ORDER: Signal[] = ["down", "warn", "process", "ok", "idle"]; // сначала то, что требует внимания
 
 /** Сводка одной фразой: «4 сервера — 1 недоступен, 3 в работе». */

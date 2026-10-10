@@ -1,4 +1,5 @@
 import type { AccessSummary } from "../api/client";
+import i18n from "../i18n";
 import { currentLanguage } from "../i18n/format";
 import type { ServerSignal } from "./serverSignal";
 
@@ -30,18 +31,27 @@ export function isLive(period: Pick<Period, "status">): boolean {
  * Зелёное — действует; янтарное — кончится в ближайшие дни; синее — ещё не началось; серое — доступа нет.
  */
 export function accessSignal(access: Period | null, now: Date = new Date()): ServerSignal {
-  if (!access) return { signal: "idle", label: "Нет доступа" };
-  if (access.status === "revoked") return { signal: "idle", label: "Отозван" };
+  if (!access) return { signal: "idle", label: i18n.t("users.access.none") };
+  if (access.status === "revoked") return { signal: "idle", label: i18n.t("users.access.revoked") };
   const until = new Date(access.valid_until);
   if (access.status === "expired" || until <= now) {
-    return { signal: "idle", label: `Истёк ${formatDay(access.valid_until, now)}` };
+    return {
+      signal: "idle",
+      label: i18n.t("users.access.expired", { date: formatDay(access.valid_until, now) }),
+    };
   }
   // pending с уже начавшимся периодом — планировщик просто ещё не перевёл его в active: для человека он «действует».
   if (access.status === "pending" && new Date(access.valid_from) > now) {
-    return { signal: "process", label: `С ${formatDay(access.valid_from, now)}` };
+    return {
+      signal: "process",
+      label: i18n.t("users.access.from", { date: formatDay(access.valid_from, now) }),
+    };
   }
   if (until.getTime() - now.getTime() <= EXPIRY_WARNING_DAYS * DAY_MS) {
-    return { signal: "warn", label: `Кончается ${formatDay(access.valid_until, now)}` };
+    return {
+      signal: "warn",
+      label: i18n.t("users.access.ending", { date: formatDay(access.valid_until, now) }),
+    };
   }
-  return { signal: "ok", label: `До ${formatDay(access.valid_until, now)}` };
+  return { signal: "ok", label: i18n.t("users.access.until", { date: formatDay(access.valid_until, now) }) };
 }

@@ -1,11 +1,13 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { api, unwrap, type Grant, type Job, type Server, type VPNCredential } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import { Button } from "../../components/Button";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Notice } from "../../components/Notice";
+import i18n from "../../i18n";
 import { formatDay, isLive } from "../../lib/access";
 import { isUnfinished } from "../../lib/jobs";
 import { ConfigDialog } from "./ConfigDialog";
@@ -17,16 +19,30 @@ type RowState = { tone: "ok" | "process" | "down" | "idle"; text: string };
 /** Что сейчас с доступом к одному серверу — одной фразой для человека. */
 export function grantState(grant: Grant, credential: VPNCredential | null, job: Job | undefined): RowState {
   if (!isLive(grant)) {
-    if (credential) return { tone: "process", text: "Убираем клиента с сервера…" };
-    return { tone: "idle", text: grant.status === "expired" ? "Срок истёк" : "Отозван" };
+    if (credential) return { tone: "process", text: i18n.t("users.grant.removingClient") };
+    return {
+      tone: "idle",
+      text: grant.status === "expired" ? i18n.t("users.grant.expired") : i18n.t("users.grant.revoked"),
+    };
   }
   if (job && isUnfinished(job)) {
-    return { tone: "process", text: job.type === "revoke_access" ? "Отзываем конфиг…" : "Выдаём конфиг…" };
+    return {
+      tone: "process",
+      text:
+        job.type === "revoke_access"
+          ? i18n.t("users.grant.revokingConfig")
+          : i18n.t("users.grant.issuingConfig"),
+    };
   }
-  if (credential) return { tone: "ok", text: `Конфиг выдан ${formatDay(credential.created_at)}` };
+  if (credential) {
+    return {
+      tone: "ok",
+      text: i18n.t("users.grant.configIssued", { date: formatDay(credential.created_at) }),
+    };
+  }
   if (job?.status === "failed" && job.type === "create_user")
-    return { tone: "down", text: "Конфиг не выдан" };
-  return { tone: "idle", text: "Конфиг не выдан" };
+    return { tone: "down", text: i18n.t("users.grant.configNotIssued") };
+  return { tone: "idle", text: i18n.t("users.grant.configNotIssued") };
 }
 
 export function GrantRow({
@@ -44,6 +60,7 @@ export function GrantRow({
   userName: string;
   onJob: (grantId: string, job: Job) => void;
 }) {
+  const { t } = useTranslation();
   const { can } = useAuth();
   const queryClient = useQueryClient();
   const [configOpen, setConfigOpen] = useState(false);
@@ -60,13 +77,13 @@ export function GrantRow({
           params: { path: { access_grant_id: grant.id } },
         }),
         {
-          409: "Конфиг уже выдаётся или период доступа ещё не начался.",
+          409: t("users.grant.errors.issueConflict"),
         },
       ),
     onSuccess: (created) => onJob(grant.id, created),
   });
 
-  const serverName = server?.name ?? "Сервер удалён";
+  const serverName = server?.name ?? t("users.grant.serverDeleted");
   const fileName = `${userName}-${serverName}`.toLowerCase().replace(/[^a-z0-9а-яё_-]+/gi, "-");
 
   return (
@@ -88,20 +105,24 @@ export function GrantRow({
       {live && !busy && (
         <div className={styles.row}>
           {credential && can("config:reveal") && (
-            <Button onClick={() => setConfigOpen(true)}>Показать конфиг</Button>
+            <Button onClick={() => setConfigOpen(true)}>{t("users.grant.showConfig")}</Button>
           )}
           {!credential && manage && (
-            <Button busy={issue.isPending} busyLabel="Ставим в очередь…" onClick={() => issue.mutate()}>
-              {job?.status === "failed" ? "Повторить выдачу" : "Выдать конфиг"}
+            <Button
+              busy={issue.isPending}
+              busyLabel={t("users.grant.queueBusy")}
+              onClick={() => issue.mutate()}
+            >
+              {job?.status === "failed" ? t("users.grant.retry") : t("users.grant.issue")}
             </Button>
           )}
           {credential && manage && (
             <ConfirmDialog
-              trigger={<Button variant="quiet">Отозвать конфиг</Button>}
-              title="Отозвать конфиг?"
-              consequences={`Клиент будет удалён с сервера ${serverName}: подключиться с этим конфигом больше не получится. Доступ к серверу останется — можно выдать новый конфиг.`}
-              actionLabel="Отозвать конфиг"
-              busyLabel="Отзываем…"
+              trigger={<Button variant="quiet">{t("users.grant.revokeConfig.trigger")}</Button>}
+              title={t("users.grant.revokeConfig.title")}
+              consequences={t("users.grant.revokeConfig.consequences", { server: serverName })}
+              actionLabel={t("users.grant.revokeConfig.action")}
+              busyLabel={t("users.grant.revokeConfig.busy")}
               onConfirm={async () => {
                 const result = await unwrap(
                   api.POST("/api/v1/credentials/{credential_id}/revoke", {
@@ -115,11 +136,11 @@ export function GrantRow({
           )}
           {manage && (
             <ConfirmDialog
-              trigger={<Button variant="quiet">Убрать сервер</Button>}
-              title={`Убрать доступ к серверу ${serverName}?`}
-              consequences="Конфиг для этого сервера перестанет работать, клиент будет удалён с сервера. Доступ к остальным серверам и срок не изменятся."
-              actionLabel="Убрать сервер"
-              busyLabel="Убираем…"
+              trigger={<Button variant="quiet">{t("users.grant.removeServer.trigger")}</Button>}
+              title={t("users.grant.removeServer.title", { server: serverName })}
+              consequences={t("users.grant.removeServer.consequences")}
+              actionLabel={t("users.grant.removeServer.action")}
+              busyLabel={t("users.grant.removeServer.busy")}
               onConfirm={async () => {
                 await unwrap(
                   api.POST("/api/v1/access/{access_grant_id}/revoke", {
