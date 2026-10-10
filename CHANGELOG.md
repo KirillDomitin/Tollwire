@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-10
+
 ### Added
 
 - English interface. A RU / EN switch in the sidebar and on the sign-in page; the language is remembered in the
@@ -52,5 +54,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - The key is installed only on a server with a pinned host key; if the server does not accept the key it is
   removed and the previous access stays.
 
-[Unreleased]: https://github.com/KirillDomitin/Tollwire/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/KirillDomitin/Tollwire/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/KirillDomitin/Tollwire/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/KirillDomitin/Tollwire/releases/tag/v0.1.0

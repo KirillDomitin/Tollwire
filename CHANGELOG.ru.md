@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-10
+
 ### Добавлено
 
 - Интерфейс на английском. Переключатель RU / EN в боковом меню и на странице входа; язык запоминается в браузере,
@@ -50,5 +52,6 @@
 - Ключ ставится только на сервер с закреплённым ключом хоста; если сервер не принял ключ, он снимается и прежний
   доступ остаётся.
 
-[Unreleased]: https://github.com/KirillDomitin/Tollwire/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/KirillDomitin/Tollwire/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/KirillDomitin/Tollwire/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/KirillDomitin/Tollwire/releases/tag/v0.1.0
