@@ -606,7 +606,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/servers/{server_id}/metrics": {
+    "/api/v1/servers/{server_id}/monitoring": {
         parameters: {
             query?: never;
             header?: never;
@@ -614,7 +614,7 @@ export interface paths {
             cookie?: never;
         };
         /** Server Metrics */
-        get: operations["server_metrics_api_v1_servers__server_id__metrics_get"];
+        get: operations["server_metrics_api_v1_servers__server_id__monitoring_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -623,7 +623,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/metrics/latest": {
+    "/api/v1/monitoring/latest": {
         parameters: {
             query?: never;
             header?: never;
@@ -631,7 +631,7 @@ export interface paths {
             cookie?: never;
         };
         /** Latest Metrics */
-        get: operations["latest_metrics_api_v1_metrics_latest_get"];
+        get: operations["latest_metrics_api_v1_monitoring_latest_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2914,7 +2914,7 @@ export interface operations {
             };
         };
     };
-    server_metrics_api_v1_servers__server_id__metrics_get: {
+    server_metrics_api_v1_servers__server_id__monitoring_get: {
         parameters: {
             query?: {
                 range?: components["schemas"]["MetricsRange"];
@@ -2947,7 +2947,7 @@ export interface operations {
             };
         };
     };
-    latest_metrics_api_v1_metrics_latest_get: {
+    latest_metrics_api_v1_monitoring_latest_get: {
         parameters: {
             query?: never;
             header?: never;

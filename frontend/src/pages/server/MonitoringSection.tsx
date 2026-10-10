@@ -57,7 +57,7 @@ export function MonitoringSection({ serverId }: { serverId: string }) {
     queryKey: ["server", serverId, "metrics", range],
     queryFn: () =>
       unwrap(
-        api.GET("/api/v1/servers/{server_id}/metrics", {
+        api.GET("/api/v1/servers/{server_id}/monitoring", {
           params: { path: { server_id: serverId }, query: { range } },
         }),
       ),

@@ -20,8 +20,8 @@
 
 ## API
 
-`GET /api/v1/servers/{id}/metrics?range=1h|24h|7d|30d` → `MetricsSeries` (`resolution` minute/hour, `points`),
-`GET /api/v1/metrics/latest` → `list[LatestMetrics]`. Право `servers:read`; неизвестный сервер → 404.
+`GET /api/v1/servers/{id}/monitoring?range=1h|24h|7d|30d` → `MetricsSeries` (`resolution` minute/hour, `points`),
+`GET /api/v1/monitoring/latest` → `list[LatestMetrics]`. Право `servers:read`; неизвестный сервер → 404.
 
 ## Фронтенд
 

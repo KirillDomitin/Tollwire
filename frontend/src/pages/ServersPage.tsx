@@ -26,7 +26,7 @@ export function ServersPage() {
   // Последние замеры мониторинга — для столбцов «Клиенты» и «CPU». Замеры раз в минуту — и подтягиваем так же.
   const metrics = useQuery({
     queryKey: ["metrics", "latest"],
-    queryFn: () => unwrap(api.GET("/api/v1/metrics/latest")),
+    queryFn: () => unwrap(api.GET("/api/v1/monitoring/latest")),
     refetchInterval: 60_000,
   });
   const latest = freshMetrics(metrics.data ?? [], metrics.dataUpdatedAt);

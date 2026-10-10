@@ -22,7 +22,7 @@ def get_metrics_service(session: Annotated[AsyncSession, Depends(get_session)]) 
     return MetricsService(session)
 
 
-@router.get("/servers/{server_id}/metrics", dependencies=READ, response_model=MetricsSeries)
+@router.get("/servers/{server_id}/monitoring", dependencies=READ, response_model=MetricsSeries)
 async def server_metrics(
     server_id: UUID,
     service: Annotated[MetricsService, Depends(get_metrics_service)],
@@ -34,6 +34,6 @@ async def server_metrics(
         raise HTTPException(404, detail="Server not found")
 
 
-@router.get("/metrics/latest", dependencies=READ, response_model=list[LatestMetrics])
+@router.get("/monitoring/latest", dependencies=READ, response_model=list[LatestMetrics])
 async def latest_metrics(service: Annotated[MetricsService, Depends(get_metrics_service)]) -> list[LatestMetrics]:
     return await service.latest()
