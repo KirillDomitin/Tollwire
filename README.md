@@ -5,6 +5,7 @@
 **A self-hosted control panel for AmneziaWG VPN servers.**
 Add servers, install the VPN over SSH, issue access to people with an expiry date, watch server health, and keep an audit trail of everything.
 
+[![CI](https://github.com/KirillDomitin/Tollwire/actions/workflows/ci.yml/badge.svg)](https://github.com/KirillDomitin/Tollwire/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2b6b4f.svg)](LICENSE)
 ![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776ab)
 ![Node 24](https://img.shields.io/badge/node-24-5fa04e)

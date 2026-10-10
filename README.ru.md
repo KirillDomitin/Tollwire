@@ -5,6 +5,7 @@
 **Панель управления VPN-серверами AmneziaWG на вашем сервере.**
 Добавляйте серверы, ставьте VPN по SSH, выдавайте людям доступ со сроком действия, следите за состоянием серверов и ведите журнал всех действий.
 
+[![CI](https://github.com/KirillDomitin/Tollwire/actions/workflows/ci.yml/badge.svg)](https://github.com/KirillDomitin/Tollwire/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2b6b4f.svg)](LICENSE)
 ![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776ab)
 ![Node 24](https://img.shields.io/badge/node-24-5fa04e)
