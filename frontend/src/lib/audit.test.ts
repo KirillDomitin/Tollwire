@@ -1,6 +1,10 @@
+import i18n from "../i18n";
 import schemaText from "../api/schema.d.ts?raw";
 import {
   AUDIT_ACTIONS,
+  AUDIT_GROUPS,
+  auditActionText,
+  auditGroupLabel,
   actionsOfGroup,
   auditActor,
   auditDetails,
@@ -45,25 +49,35 @@ describe("AUDIT_ACTIONS", () => {
     expect(Object.keys(AUDIT_ACTIONS).sort()).toEqual([...actions].sort());
   });
 
-  it("gives every action a human text and a group", () => {
-    for (const info of Object.values(AUDIT_ACTIONS)) {
-      expect(info.text.length).toBeGreaterThan(0);
-      expect(info.group.length).toBeGreaterThan(0);
+  it("gives every action a group and a human text in every language", async () => {
+    for (const [action, info] of Object.entries(AUDIT_ACTIONS) as [AuditAction, { group: string }][]) {
+      expect(AUDIT_GROUPS).toContain(info.group);
+      for (const language of ["ru", "en"]) {
+        await i18n.changeLanguage(language);
+        expect(auditActionText(action)).not.toBe(`audit.actions.${action}`); // перевод есть, а не сам ключ
+      }
     }
+  });
+
+  it("labels every group in every language", async () => {
+    await i18n.changeLanguage("ru");
+    expect(auditGroupLabel("servers")).toBe("Серверы");
+    await i18n.changeLanguage("en");
+    expect(auditGroupLabel("servers")).toBe("Servers");
   });
 });
 
 describe("actionsOfGroup", () => {
   it("lists the actions of one group", () => {
-    const servers = actionsOfGroup("Серверы");
+    const servers = actionsOfGroup("servers");
     expect(servers).toContain("server_created");
     expect(servers).toContain("protocol_install_failed");
     expect(servers).not.toContain("login");
-    expect(servers.every((action: AuditAction) => AUDIT_ACTIONS[action].group === "Серверы")).toBe(true);
+    expect(servers.every((action: AuditAction) => AUDIT_ACTIONS[action].group === "servers")).toBe(true);
   });
 
   it("is empty for an unknown group", () => {
-    expect(actionsOfGroup("Нет такой")).toEqual([]);
+    expect(actionsOfGroup("nope")).toEqual([]);
   });
 });
 

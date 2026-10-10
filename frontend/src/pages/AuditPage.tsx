@@ -1,4 +1,5 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { Link, useSearchParams } from "react-router";
 
 import { api, unwrap } from "../api/client";
@@ -8,9 +9,10 @@ import { Notice } from "../components/Notice";
 import {
   actionGroups,
   actionsOfGroup,
-  AUDIT_ACTIONS,
+  auditActionText,
   auditActor,
   auditDetails,
+  auditGroupLabel,
   auditSubject,
   auditTone,
   type AuditLog,
@@ -54,6 +56,7 @@ interface Cursor {
 }
 
 export function AuditPage() {
+  const { t } = useTranslation();
   const { can } = useAuth();
   const allowed = can("audit:read");
   const [params, setParams] = useSearchParams();
@@ -128,7 +131,7 @@ export function AuditPage() {
   });
 
   if (!allowed) {
-    return <Notice>Журнал аудита доступен только админам с правом чтения аудита.</Notice>;
+    return <Notice>{t("audit.notAllowed")}</Notice>;
   }
 
   const names: Names = {
@@ -143,19 +146,19 @@ export function AuditPage() {
     <section aria-labelledby="audit-title">
       <header className={ledger.header}>
         <h1 id="audit-title" className={ledger.title}>
-          Журнал аудита
+          {t("audit.title")}
         </h1>
       </header>
 
       <form className={styles.filters} onSubmit={(event) => event.preventDefault()}>
         <label className={styles.field}>
-          <span className={styles.label}>Админ</span>
+          <span className={styles.label}>{t("audit.filters.admin")}</span>
           <select
             className={styles.control}
             value={filters.adminId}
             onChange={(event) => setFilter("adminId", event.target.value)}
           >
-            <option value="">Все</option>
+            <option value="">{t("audit.filters.all")}</option>
             {(actors.data ?? []).map((actor) => (
               <option key={actor.id} value={actor.id}>
                 {actor.email}
@@ -164,22 +167,22 @@ export function AuditPage() {
           </select>
         </label>
         <label className={styles.field}>
-          <span className={styles.label}>Группа</span>
+          <span className={styles.label}>{t("audit.filters.group")}</span>
           <select
             className={styles.control}
             value={filters.group}
             onChange={(event) => setFilter("group", event.target.value)}
           >
-            <option value="">Все события</option>
+            <option value="">{t("audit.filters.allEvents")}</option>
             {actionGroups().map(([group]) => (
               <option key={group} value={group}>
-                {group}
+                {auditGroupLabel(group)}
               </option>
             ))}
           </select>
         </label>
         <label className={styles.field}>
-          <span className={styles.label}>С даты</span>
+          <span className={styles.label}>{t("audit.filters.from")}</span>
           <input
             type="date"
             className={styles.control}
@@ -189,7 +192,7 @@ export function AuditPage() {
           />
         </label>
         <label className={styles.field}>
-          <span className={styles.label}>По дату</span>
+          <span className={styles.label}>{t("audit.filters.to")}</span>
           <input
             type="date"
             className={styles.control}
@@ -200,18 +203,18 @@ export function AuditPage() {
         </label>
         {filtered && (
           <Button variant="quiet" onClick={() => setParams({}, { replace: true })}>
-            Сбросить
+            {t("audit.filters.reset")}
           </Button>
         )}
       </form>
 
-      {log.isPending && <p className={ledger.quiet}>Загружаем журнал…</p>}
+      {log.isPending && <p className={ledger.quiet}>{t("audit.loading")}</p>}
 
       {log.isError && (
         <Notice
           action={
             <Button variant="quiet" onClick={() => void log.refetch()}>
-              Повторить
+              {t("audit.retry")}
             </Button>
           }
         >
@@ -220,21 +223,21 @@ export function AuditPage() {
       )}
 
       {log.data && rows.length === 0 && (
-        <p className={ledger.quiet}>{filtered ? "Под фильтры ничего не попало" : "Событий пока нет"}</p>
+        <p className={ledger.quiet}>{filtered ? t("audit.emptyFiltered") : t("audit.empty")}</p>
       )}
 
       {rows.length > 0 && (
         <>
           <p className={styles.count} aria-live="polite">
-            Показано событий: {rows.length}
+            {t("audit.shown", { count: rows.length })}
           </p>
           <table className={ledger.table} aria-busy={log.isFetchingNextPage}>
             <thead>
               <tr>
-                <th scope="col">Событие</th>
-                <th scope="col">Кто</th>
-                <th scope="col">Объект</th>
-                <th scope="col">Когда</th>
+                <th scope="col">{t("audit.columns.event")}</th>
+                <th scope="col">{t("audit.columns.who")}</th>
+                <th scope="col">{t("audit.columns.object")}</th>
+                <th scope="col">{t("audit.columns.when")}</th>
               </tr>
             </thead>
             <tbody>
@@ -248,10 +251,10 @@ export function AuditPage() {
               <Button
                 variant="quiet"
                 busy={log.isFetchingNextPage}
-                busyLabel="Загружаем…"
+                busyLabel={t("audit.loadingMore")}
                 onClick={() => void log.fetchNextPage()}
               >
-                Показать ещё
+                {t("audit.more")}
               </Button>
             </div>
           )}
@@ -262,18 +265,19 @@ export function AuditPage() {
 }
 
 function Row({ entry, names, now }: { entry: AuditLog; names: Names; now: Date }) {
+  const { t } = useTranslation();
   const tone = auditTone(entry.action);
   const subject = auditSubject(entry, names);
   const details: Detail[] = auditDetails(entry);
-  if (entry.ip_address) details.push({ label: "Адрес", value: entry.ip_address });
+  if (entry.ip_address) details.push({ label: t("audit.details.address"), value: entry.ip_address });
 
   return (
     <tr className={ledger.row} data-signal={tone ?? "idle"}>
       <th scope="row" className={styles.event} data-tone={tone ?? undefined}>
-        <span className={styles.text}>{AUDIT_ACTIONS[entry.action].text}</span>
+        <span className={styles.text}>{auditActionText(entry.action)}</span>
         {details.length > 0 && (
           <details className={styles.details}>
-            <summary>Подробности</summary>
+            <summary>{t("audit.details_summary")}</summary>
             <dl className={styles.facts}>
               {details.map((detail, index) => (
                 <div key={index} className={styles.fact}>

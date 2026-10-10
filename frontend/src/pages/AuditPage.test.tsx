@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useLocation } from "react-router";
 
+import i18n from "../i18n";
 import { actionsOfGroup } from "../lib/audit";
 import { json, renderWithProviders } from "../test/render";
 import { AuditPage } from "./AuditPage";
@@ -168,7 +169,7 @@ describe("AuditPage filters", () => {
 
     await waitFor(() => expect(logCalls.at(-1)!.searchParams.getAll("action").length).toBeGreaterThan(1));
     expect([...logCalls.at(-1)!.searchParams.getAll("action")].sort()).toEqual(
-      [...actionsOfGroup("Серверы")].sort(),
+      [...actionsOfGroup("servers")].sort(),
     );
     expect(where()).not.toBe("/audit");
   });
@@ -241,5 +242,36 @@ describe("AuditPage paging", () => {
 
     await waitFor(() => expect(logCalls.length).toBeGreaterThan(2));
     expect(logCalls.at(-1)!.searchParams.has("before_id")).toBe(false);
+  });
+});
+
+describe("AuditPage in English", () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("en");
+  });
+
+  it("translates headings, filters, events and keeps the group id in the address", async () => {
+    const { logCalls } = mockApi({ pages: [[row(1)]] });
+    renderAudit();
+
+    expect(await screen.findByRole("heading", { name: "Audit log" })).toBeInTheDocument();
+    expect(await screen.findByText("Server added")).toBeInTheDocument();
+    expect(screen.getByText("Events shown: 1")).toBeInTheDocument();
+    for (const name of ["Event", "Who", "Object", "When"]) {
+      expect(screen.getByRole("columnheader", { name })).toBeInTheDocument();
+    }
+    expect(screen.getByRole("combobox", { name: "Admin" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "All events" })).toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Group" }), "Servers");
+
+    // В адресе — стабильный идентификатор группы, не подпись: ссылка живёт при смене языка.
+    await waitFor(() => expect(where()).toContain("group=servers"));
+    await waitFor(() =>
+      expect([...logCalls.at(-1)!.searchParams.getAll("action")].sort()).toEqual(
+        [...actionsOfGroup("servers")].sort(),
+      ),
+    );
+    expect(screen.getByRole("button", { name: "Reset" })).toBeInTheDocument();
   });
 });

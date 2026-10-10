@@ -1,82 +1,85 @@
 import type { Schemas } from "../api/client";
+import i18n from "../i18n";
 
 export type AuditAction = Schemas["AuditAction"];
 export type AuditLog = Schemas["AuditLogRead"];
 
 type Tone = "down" | "warn" | null;
 
+/** Группы событий — стабильные идентификаторы (они в адресе страницы: ?group=servers), подписи — в словаре. */
+export const AUDIT_GROUPS = ["signIn", "admins", "servers", "access", "configs"] as const;
+export type AuditGroup = (typeof AUDIT_GROUPS)[number];
+
 interface ActionInfo {
-  /** Безличная фраза: кто действовал, показывается отдельно. */
-  text: string;
-  group: string;
+  group: AuditGroup;
   /** Что требует внимания: ошибки и подозрительное — красным, чувствительное — янтарным. */
   tone?: Tone;
 }
 
-const SIGN_IN = "Вход";
-const ADMINS = "Админы";
-const SERVERS = "Серверы";
-const ACCESS = "Пользователи и доступ";
-const CONFIGS = "Конфиги";
-
+/** Группа и важность каждого события. Текст события — в словаре (`audit.actions.<action>`), по языку интерфейса. */
 export const AUDIT_ACTIONS: Record<AuditAction, ActionInfo> = {
-  login: { text: "Вход в панель", group: SIGN_IN },
-  login_failed: { text: "Неудачная попытка входа", group: SIGN_IN, tone: "warn" },
-  login_locked: { text: "Вход заблокирован после серии неудач", group: SIGN_IN, tone: "down" },
-  logout: { text: "Выход из панели", group: SIGN_IN },
-  admin_created: { text: "Добавлен админ", group: ADMINS },
-  admin_updated: { text: "Изменён админ", group: ADMINS },
-  server_created: { text: "Добавлен сервер", group: SERVERS },
-  server_updated: { text: "Изменён сервер", group: SERVERS },
-  server_deleted: { text: "Удалён сервер", group: SERVERS },
-  server_credentials_set: { text: "Задан SSH-доступ", group: SERVERS },
-  server_credentials_deleted: { text: "Удалён SSH-доступ", group: SERVERS },
-  server_host_key_pinned: { text: "Закреплён ключ сервера", group: SERVERS },
-  server_host_key_reset: { text: "Сброшен ключ сервера", group: SERVERS },
-  server_host_key_mismatch: {
-    text: "Ключ сервера не совпал — подключение отклонено",
-    group: SERVERS,
-    tone: "down",
-  },
-  server_install_started: { text: "Начата установка Amnezia", group: SERVERS },
-  server_install_completed: { text: "Amnezia установлена", group: SERVERS },
-  server_install_failed: { text: "Установка Amnezia не удалась", group: SERVERS, tone: "down" },
-  server_sync_started: { text: "Начата сверка с базой", group: SERVERS },
-  server_sync_completed: { text: "Сверка с базой завершена", group: SERVERS },
-  server_sync_failed: { text: "Сверка с базой не удалась", group: SERVERS, tone: "down" },
-  server_ssh_key_install_started: { text: "Начата установка ключа панели", group: SERVERS },
-  server_ssh_key_install_completed: { text: "Панель перешла на вход по своему ключу", group: SERVERS },
-  server_ssh_key_install_failed: { text: "Ключ панели не установлен", group: SERVERS, tone: "down" },
-  protocol_install_started: { text: "Начата установка AmneziaWG", group: SERVERS },
-  protocol_install_completed: { text: "AmneziaWG установлен", group: SERVERS },
-  protocol_install_failed: { text: "Установка AmneziaWG не удалась", group: SERVERS, tone: "down" },
-  protocol_remove_started: { text: "Начато снятие AmneziaWG", group: SERVERS },
-  protocol_remove_completed: { text: "AmneziaWG снят", group: SERVERS },
-  protocol_remove_failed: { text: "Снятие AmneziaWG не удалось", group: SERVERS, tone: "down" },
-  vpn_user_created: { text: "Добавлен пользователь", group: ACCESS },
-  vpn_user_updated: { text: "Изменён пользователь", group: ACCESS },
-  vpn_user_deleted: { text: "Удалён пользователь", group: ACCESS },
-  subscription_created: { text: "Выдан доступ", group: ACCESS },
-  subscription_updated: { text: "Изменён срок доступа", group: ACCESS },
-  subscription_activated: { text: "Доступ начал действовать", group: ACCESS },
-  subscription_revoked: { text: "Отозван весь доступ", group: ACCESS },
-  subscription_expired: { text: "Доступ истёк", group: ACCESS },
-  subscription_deleted: { text: "Удалена запись о доступе", group: ACCESS },
-  access_granted: { text: "Сервер добавлен в доступ", group: ACCESS },
-  access_updated: { text: "Изменён доступ к серверу", group: ACCESS },
-  access_revoked: { text: "Отозван доступ к серверу", group: ACCESS },
-  access_expired: { text: "Истёк доступ к серверу", group: ACCESS },
-  access_deleted: { text: "Удалён доступ к серверу", group: ACCESS },
-  credential_issued: { text: "Выдан конфиг", group: CONFIGS },
-  credential_issue_failed: { text: "Конфиг не выдан — ошибка", group: CONFIGS, tone: "down" },
-  credential_revoked: { text: "Отозван конфиг", group: CONFIGS },
-  credential_revoke_failed: { text: "Конфиг не отозван — ошибка", group: CONFIGS, tone: "down" },
-  config_viewed: { text: "Показан конфиг", group: CONFIGS, tone: "warn" },
+  login: { group: "signIn" },
+  login_failed: { group: "signIn", tone: "warn" },
+  login_locked: { group: "signIn", tone: "down" },
+  logout: { group: "signIn" },
+  admin_created: { group: "admins" },
+  admin_updated: { group: "admins" },
+  server_created: { group: "servers" },
+  server_updated: { group: "servers" },
+  server_deleted: { group: "servers" },
+  server_credentials_set: { group: "servers" },
+  server_credentials_deleted: { group: "servers" },
+  server_host_key_pinned: { group: "servers" },
+  server_host_key_reset: { group: "servers" },
+  server_host_key_mismatch: { group: "servers", tone: "down" },
+  server_install_started: { group: "servers" },
+  server_install_completed: { group: "servers" },
+  server_install_failed: { group: "servers", tone: "down" },
+  server_sync_started: { group: "servers" },
+  server_sync_completed: { group: "servers" },
+  server_sync_failed: { group: "servers", tone: "down" },
+  server_ssh_key_install_started: { group: "servers" },
+  server_ssh_key_install_completed: { group: "servers" },
+  server_ssh_key_install_failed: { group: "servers", tone: "down" },
+  protocol_install_started: { group: "servers" },
+  protocol_install_completed: { group: "servers" },
+  protocol_install_failed: { group: "servers", tone: "down" },
+  protocol_remove_started: { group: "servers" },
+  protocol_remove_completed: { group: "servers" },
+  protocol_remove_failed: { group: "servers", tone: "down" },
+  vpn_user_created: { group: "access" },
+  vpn_user_updated: { group: "access" },
+  vpn_user_deleted: { group: "access" },
+  subscription_created: { group: "access" },
+  subscription_updated: { group: "access" },
+  subscription_activated: { group: "access" },
+  subscription_revoked: { group: "access" },
+  subscription_expired: { group: "access" },
+  subscription_deleted: { group: "access" },
+  access_granted: { group: "access" },
+  access_updated: { group: "access" },
+  access_revoked: { group: "access" },
+  access_expired: { group: "access" },
+  access_deleted: { group: "access" },
+  credential_issued: { group: "configs" },
+  credential_issue_failed: { group: "configs", tone: "down" },
+  credential_revoked: { group: "configs" },
+  credential_revoke_failed: { group: "configs", tone: "down" },
+  config_viewed: { group: "configs", tone: "warn" },
 };
 
+/** Безличная фраза о событии на языке интерфейса: кто действовал, показывается отдельно. */
+export function auditActionText(action: AuditAction): string {
+  return i18n.t(`audit.actions.${action}`);
+}
+
+export function auditGroupLabel(group: AuditGroup): string {
+  return i18n.t(`audit.groups.${group}`);
+}
+
 /** Действия по группам — для выбора в фильтре (optgroup), в порядке словаря. */
-export function actionGroups(): [string, AuditAction[]][] {
-  const groups = new Map<string, AuditAction[]>();
+export function actionGroups(): [AuditGroup, AuditAction[]][] {
+  const groups = new Map<AuditGroup, AuditAction[]>();
   for (const [action, info] of Object.entries(AUDIT_ACTIONS) as [AuditAction, ActionInfo][]) {
     groups.set(info.group, [...(groups.get(info.group) ?? []), action]);
   }
@@ -140,10 +143,12 @@ export function auditSubject(log: AuditLog, names: Names): { label: string; to?:
 export function auditActor(log: AuditLog): string {
   if (log.admin_email) return log.admin_email;
   if (log.action === "login_failed" || log.action === "login_locked") {
-    return log.ip_address ? `Аноним (${log.ip_address})` : "Аноним";
+    return log.ip_address
+      ? i18n.t("audit.actor.anonymousFrom", { ip: log.ip_address })
+      : i18n.t("audit.actor.anonymous");
   }
-  if (!log.admin_id) return "Система";
-  return `Админ ${log.admin_id.slice(0, 8)}`; // админа уже удалили — остался только id
+  if (!log.admin_id) return i18n.t("audit.actor.system");
+  return i18n.t("audit.actor.adminDeleted", { id: log.admin_id.slice(0, 8) }); // админа уже удалили — остался только id
 }
 
 export interface Detail {
@@ -152,20 +157,20 @@ export interface Detail {
 }
 
 /** Ключи meta, которые показываем, и их подписи. Всё остальное не выводится: в журнал не должно просочиться лишнее. */
-const DETAIL_LABELS: [key: string, label: string][] = [
-  ["reason", "Причина"],
-  ["error", "Ошибка"],
-  ["fingerprint", "Ключ сервера"],
-  ["previous", "Прежний ключ"],
-  ["expected", "Ожидался ключ"],
-  ["presented", "Предъявлен ключ"],
-  ["valid_from", "Действует с"],
-  ["valid_until", "Действует до"],
-  ["scope", "Блокировка"],
-  ["lock_seconds", "Блокировка, секунд"],
-  ["panel_key_left_on_server", "Ключ панели остался на сервере"],
-  ["sessions_revoked", "Завершено сессий"],
-];
+const DETAIL_KEYS = [
+  "reason",
+  "error",
+  "fingerprint",
+  "previous",
+  "expected",
+  "presented",
+  "valid_from",
+  "valid_until",
+  "scope",
+  "lock_seconds",
+  "panel_key_left_on_server",
+  "sessions_revoked",
+] as const;
 
 const show = (value: unknown): string =>
   typeof value === "string" || typeof value === "number" || typeof value === "boolean"
@@ -182,12 +187,15 @@ export function auditDetails(log: AuditLog): Detail[] {
   if (changes && typeof changes === "object" && !Array.isArray(changes)) {
     for (const [field, pair] of Object.entries(changes)) {
       const [before, after] = Array.isArray(pair) ? pair : [undefined, pair];
-      details.push({ label: "Изменено", value: `${field}: ${show(before)} → ${show(after)}` });
+      details.push({
+        label: i18n.t("audit.details.changed"),
+        value: `${field}: ${show(before)} → ${show(after)}`,
+      });
     }
   }
-  for (const [key, label] of DETAIL_LABELS) {
+  for (const key of DETAIL_KEYS) {
     if (key in meta && meta[key] !== null && meta[key] !== undefined) {
-      details.push({ label, value: show(meta[key]) });
+      details.push({ label: i18n.t(`audit.details.${key}`), value: show(meta[key]) });
     }
   }
   return details;
