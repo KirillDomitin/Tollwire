@@ -99,7 +99,6 @@ jobs:
           SSH_COMMAND_TIMEOUT: "5"
         run: |
           uv run python -m scripts.export_openapi frontend/openapi.json
-          npm run gen:api
-        working-directory: .
+          cd frontend && npm run gen:api
       - name: Fail if generated files differ
         run: git diff --exit-code -- frontend/openapi.json frontend/src/api/schema.d.ts
