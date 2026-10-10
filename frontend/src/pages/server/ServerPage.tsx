@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router";
 
 import { api, unwrap, type Credential, type Job, type Server } from "../../api/client";
@@ -7,6 +8,7 @@ import { useAuth } from "../../auth/AuthContext";
 import { Button } from "../../components/Button";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Notice } from "../../components/Notice";
+import i18n from "../../i18n";
 import { isUnfinished } from "../../lib/jobs";
 import { serverSignal } from "../../lib/serverSignal";
 import { exactTime, timeAgo } from "../../lib/time";
@@ -22,13 +24,10 @@ const MonitoringSection = lazy(() =>
   import("./MonitoringSection").then((module) => ({ default: module.MonitoringSection })),
 );
 
-const AUTH_LABELS: Record<Credential["auth_type"], string> = {
-  password: "по паролю",
-  ssh_key: "по SSH-ключу",
-};
-
 function authLabel(credential: Credential): string {
-  return credential.managed_key ? "по ключу панели" : AUTH_LABELS[credential.auth_type];
+  return credential.managed_key
+    ? i18n.t("servers.card.auth.panelKey")
+    : i18n.t(`servers.card.auth.${credential.auth_type}`);
 }
 
 interface Setup {
@@ -40,16 +39,17 @@ interface Setup {
 
 export function ServerPage() {
   const { serverId = "" } = useParams();
+  const { t } = useTranslation();
   const { can } = useAuth();
   const { server, credential, protocols, jobs } = useServerData(serverId);
 
-  if (server.isPending) return <p className={styles.hint}>Загружаем сервер…</p>;
+  if (server.isPending) return <p className={styles.hint}>{t("servers.card.loading")}</p>;
   if (server.isError) {
     return (
       <Notice
         action={
           <Link to="/servers" className={styles.back}>
-            К списку серверов
+            {t("servers.card.toList")}
           </Link>
         }
       >
@@ -76,7 +76,7 @@ export function ServerPage() {
   return (
     <article className={styles.page} aria-labelledby="server-title">
       <Link to="/servers" className={styles.back}>
-        Все серверы
+        {t("servers.card.allServers")}
       </Link>
 
       <header className={styles.header} data-signal={signal}>
@@ -92,7 +92,7 @@ export function ServerPage() {
             {manage && <EditServerDialog server={data} />}
             {can("audit:read") && (
               <Link to={`/audit?entity_type=server&entity_id=${data.id}`} className={styles.back}>
-                События сервера
+                {t("servers.card.events")}
               </Link>
             )}
           </div>
@@ -104,22 +104,20 @@ export function ServerPage() {
           <span className={styles.hint}>
             {data.last_health_at ? (
               <>
-                проверен{" "}
+                {t("servers.card.checked")}{" "}
                 <time dateTime={data.last_health_at} title={exactTime(data.last_health_at)}>
                   {timeAgo(data.last_health_at)}
                 </time>
               </>
             ) : (
-              "ещё не проверялся"
+              t("servers.card.neverChecked")
             )}
           </span>
         </div>
       </header>
 
       {!ready && manage && <SetupChecklist server={data} setup={setup} jobs={jobList} />}
-      {!ready && !manage && (
-        <p className={styles.hint}>Сервер ещё не подготовлен к работе. Подготовить его может суперадмин.</p>
-      )}
+      {!ready && !manage && <p className={styles.hint}>{t("servers.card.notPrepared")}</p>}
       {ready && (
         <Maintenance
           server={data}
@@ -131,14 +129,14 @@ export function ServerPage() {
 
       {/* Замеры снимаются только с серверов, куда панель может зайти по SSH. */}
       {setup.credential && (
-        <Suspense fallback={<p className={styles.hint}>Загружаем графики…</p>}>
+        <Suspense fallback={<p className={styles.hint}>{t("servers.card.loadingCharts")}</p>}>
           <MonitoringSection serverId={data.id} />
         </Suspense>
       )}
 
       <section className={styles.section} aria-labelledby="jobs-title">
         <h2 id="jobs-title" className={styles.sectionTitle}>
-          Задачи
+          {t("servers.card.jobs")}
         </h2>
         {jobs.isError ? <Notice>{jobs.error.message}</Notice> : jobs.data && <JobsLog jobs={jobList} />}
       </section>
@@ -154,19 +152,13 @@ function hasRunning(jobs: Job[], type: Job["type"]): boolean {
 
 type StepState = "done" | "next" | "running" | "locked";
 
-const STEP_MARKS: Record<StepState, string> = {
-  done: "готово",
-  next: "следующий шаг",
-  running: "выполняется",
-  locked: "пока недоступно",
-};
-
 function Step({ state, title, children }: { state: StepState; title: string; children: ReactNode }) {
+  const { t } = useTranslation();
   return (
     <li className={styles.step} data-state={state} aria-current={state === "next" ? "step" : undefined}>
       <div className={styles.stepHead}>
         <span className={styles.stepTitle}>{title}</span>
-        <span className={styles.stepMark}>{STEP_MARKS[state]}</span>
+        <span className={styles.stepMark}>{t(`servers.card.stepMarks.${state}`)}</span>
       </div>
       {state !== "done" && <div className={styles.stepBody}>{children}</div>}
     </li>
@@ -181,6 +173,7 @@ function stepState(done: boolean, available: boolean, running = false): StepStat
 
 /** Проверка входа по SSH: панель выполняет на сервере безобидную команду и показывает итог. */
 function ConnectionTest({ serverId }: { serverId: string }) {
+  const { t } = useTranslation();
   const test = useMutation({
     mutationFn: () =>
       unwrap(
@@ -191,15 +184,20 @@ function ConnectionTest({ serverId }: { serverId: string }) {
   });
   return (
     <>
-      <Button variant="quiet" busy={test.isPending} busyLabel="Подключаемся…" onClick={() => test.mutate()}>
-        Проверить соединение
+      <Button
+        variant="quiet"
+        busy={test.isPending}
+        busyLabel={t("servers.card.connection.busy")}
+        onClick={() => test.mutate()}
+      >
+        {t("servers.card.connection.button")}
       </Button>
       {test.isError && <Notice>{test.error.message}</Notice>}
       {test.data && (
         <p className={styles.result} data-ok={test.data.success} role="status">
           {test.data.success
-            ? "Панель вошла на сервер по SSH."
-            : `Не удалось войти: ${test.data.message.replace(/^ERROR: /, "")}`}
+            ? t("servers.card.connection.ok")
+            : t("servers.card.connection.failed", { message: test.data.message.replace(/^ERROR: /, "") })}
         </p>
       )}
     </>
@@ -208,6 +206,7 @@ function ConnectionTest({ serverId }: { serverId: string }) {
 
 /** Подготовка сервера по шагам. Порядок — тот, что требует бэкенд: пароль уходит только на закреплённый ключ. */
 function SetupChecklist({ server, setup, jobs }: { server: Server; setup: Setup; jobs: Job[] }) {
+  const { t } = useTranslation();
   const [keyOpen, setKeyOpen] = useState(false);
   const [credOpen, setCredOpen] = useState(false);
   const start = useStartJob(server.id);
@@ -218,70 +217,70 @@ function SetupChecklist({ server, setup, jobs }: { server: Server; setup: Setup;
   return (
     <section className={styles.section} aria-labelledby="setup-title">
       <h2 id="setup-title" className={styles.sectionTitle}>
-        Подготовка сервера
+        {t("servers.setup.title")}
       </h2>
       <ol className={styles.steps}>
-        <Step state={stepState(setup.key, true)} title="Закрепить ключ сервера">
-          <p className={styles.hint}>
-            Панель запомнит ключ, который вы сверите с консолью хостинга, и будет подключаться только к этому
-            серверу.
-          </p>
-          <Button onClick={() => setKeyOpen(true)}>Получить и сверить ключ</Button>
+        <Step state={stepState(setup.key, true)} title={t("servers.setup.pinKey.title")}>
+          <p className={styles.hint}>{t("servers.setup.pinKey.hint")}</p>
+          <Button onClick={() => setKeyOpen(true)}>{t("servers.setup.pinKey.button")}</Button>
         </Step>
 
-        <Step state={stepState(setup.credential, setup.key)} title="Задать SSH-доступ">
+        <Step state={stepState(setup.credential, setup.key)} title={t("servers.setup.credential.title")}>
           {setup.key ? (
-            <Button onClick={() => setCredOpen(true)}>Задать доступ</Button>
+            <Button onClick={() => setCredOpen(true)}>{t("servers.setup.credential.button")}</Button>
           ) : (
-            <p className={styles.hint}>Сначала закрепите ключ сервера — без него пароль отправлять нельзя.</p>
+            <p className={styles.hint}>{t("servers.setup.credential.needKey")}</p>
           )}
         </Step>
 
-        <Step state={stepState(setup.installed, canInstall, installing)} title="Установить Docker и Amnezia">
+        <Step
+          state={stepState(setup.installed, canInstall, installing)}
+          title={t("servers.setup.install.title")}
+        >
           {installing ? (
-            <p className={styles.hint}>
-              Идёт установка, обычно несколько минут. Страницу можно закрыть — задача продолжится.
-            </p>
+            <p className={styles.hint}>{t("servers.setup.install.running")}</p>
           ) : canInstall ? (
             <>
               {server.status === "error" && (
-                <p className={styles.hint}>Прошлая установка не удалась — причина в журнале задач ниже.</p>
+                <p className={styles.hint}>{t("servers.setup.install.previousFailed")}</p>
               )}
               <div className={styles.row}>
                 <Button
                   busy={start.isPending}
-                  busyLabel="Ставим в очередь…"
+                  busyLabel={t("servers.card.queueBusy")}
                   onClick={() => start.mutate("install")}
                 >
-                  {server.status === "error" ? "Повторить установку" : "Установить"}
+                  {server.status === "error"
+                    ? t("servers.setup.install.retry")
+                    : t("servers.setup.install.button")}
                 </Button>
                 <ConnectionTest serverId={server.id} />
               </div>
             </>
           ) : (
-            <p className={styles.hint}>Станет доступно, когда ключ закреплён и SSH-доступ задан.</p>
+            <p className={styles.hint}>{t("servers.setup.install.locked")}</p>
           )}
         </Step>
 
         <Step
           state={stepState(setup.protocol, setup.installed && canInstall, addingProtocol)}
-          title="Установить AmneziaWG"
+          title={t("servers.setup.protocol.title")}
         >
           {addingProtocol ? (
-            <p className={styles.hint}>Устанавливаем протокол…</p>
+            <p className={styles.hint}>{t("servers.setup.protocol.running")}</p>
           ) : setup.installed && canInstall ? (
             <Button
               busy={start.isPending}
-              busyLabel="Ставим в очередь…"
+              busyLabel={t("servers.card.queueBusy")}
               onClick={() => start.mutate("protocol")}
             >
-              Установить протокол
+              {t("servers.setup.protocol.button")}
             </Button>
           ) : (
             <p className={styles.hint}>
               {setup.installed
-                ? "Станет доступно, когда ключ закреплён и SSH-доступ задан — протокол ставится по SSH."
-                : "Станет доступно после установки Amnezia."}
+                ? t("servers.setup.protocol.lockedNoAccess")
+                : t("servers.setup.protocol.lockedNoInstall")}
             </p>
           )}
         </Step>
@@ -305,6 +304,7 @@ function Maintenance({
   port: number | null;
   jobs: Job[];
 }) {
+  const { t } = useTranslation();
   const { can } = useAuth();
   const manage = can("servers:manage");
   const start = useStartJob(server.id);
@@ -317,24 +317,24 @@ function Maintenance({
   return (
     <section className={styles.section} aria-labelledby="service-title">
       <h2 id="service-title" className={styles.sectionTitle}>
-        Обслуживание
+        {t("servers.maintenance.title")}
       </h2>
       {can("servers:check") && (
         <div className={styles.row}>
           <Button
             busy={checking || (start.isPending && start.variables === "health")}
-            busyLabel="Проверяем…"
+            busyLabel={t("servers.maintenance.checking")}
             onClick={() => start.mutate("health")}
           >
-            Проверить состояние
+            {t("servers.maintenance.checkHealth")}
           </Button>
           <Button
             variant="quiet"
             busy={syncing || (start.isPending && start.variables === "sync")}
-            busyLabel="Сверяем…"
+            busyLabel={t("servers.maintenance.syncing")}
             onClick={() => start.mutate("sync")}
           >
-            Сверить клиентов с базой
+            {t("servers.maintenance.sync")}
           </Button>
           {manage && <ConnectionTest serverId={server.id} />}
         </div>
@@ -342,45 +342,61 @@ function Maintenance({
       {start.isError && <Notice>{start.error.message}</Notice>}
 
       <dl className={styles.facts}>
-        <dt>AmneziaWG</dt>
-        <dd>{port ? `порт ${port}, UDP` : "порт неизвестен — запустите сверку"}</dd>
+        <dt>{t("servers.maintenance.amnezia")}</dt>
+        <dd>{port ? t("servers.maintenance.port", { port }) : t("servers.maintenance.portUnknown")}</dd>
 
-        <dt>Ключ сервера</dt>
+        <dt>{t("servers.maintenance.hostKey")}</dt>
         <dd>
           <code className={styles.keyValue}>{server.ssh_host_key_fingerprint}</code>
           {manage && (
             <Button variant="quiet" onClick={() => setKeyOpen(true)}>
-              Сверить заново
+              {t("servers.maintenance.recheck")}
             </Button>
           )}
         </dd>
 
-        <dt>SSH-доступ</dt>
+        <dt>{t("servers.maintenance.ssh")}</dt>
         <dd>
-          {credential ? `${credential.username}, ${authLabel(credential)}` : "задан"}
+          {credential
+            ? t("servers.maintenance.sshAs", { user: credential.username, auth: authLabel(credential) })
+            : t("servers.maintenance.sshSet")}
           {credential?.key_fingerprint && (
             <code className={styles.keyValue}>{credential.key_fingerprint}</code>
           )}
           {manage && (
             <Button variant="quiet" onClick={() => setCredOpen(true)}>
-              Заменить
+              {t("servers.maintenance.replace")}
             </Button>
           )}
           {manage && credential && (
             <ConfirmDialog
               trigger={
-                <Button variant="quiet" busy={installingKey} busyLabel="Ставим ключ…">
-                  {credential.managed_key ? "Обновить ключ" : "Перейти на ключ панели"}
+                <Button
+                  variant="quiet"
+                  busy={installingKey}
+                  busyLabel={t("servers.maintenance.panelKey.busy")}
+                >
+                  {credential.managed_key
+                    ? t("servers.maintenance.panelKey.renew")
+                    : t("servers.maintenance.panelKey.switch")}
                 </Button>
               }
-              title={credential.managed_key ? "Обновить ключ панели?" : "Перейти на вход по ключу панели?"}
+              title={
+                credential.managed_key
+                  ? t("servers.maintenance.panelKey.renewTitle")
+                  : t("servers.maintenance.panelKey.switchTitle")
+              }
               consequences={
                 credential.managed_key
-                  ? "Панель создаст новый ключ, проверит вход по нему и снимет с сервера прежний. Если сервер не примет новый ключ, останется прежний."
-                  : "Панель войдёт по текущему доступу, поставит на сервер свой ключ и после проверки входа будет пользоваться только им. Сохранённый пароль или ключ в панели будет заменён. Ваши собственные ключи в authorized_keys не меняются."
+                  ? t("servers.maintenance.panelKey.renewConsequences")
+                  : t("servers.maintenance.panelKey.switchConsequences")
               }
-              actionLabel={credential.managed_key ? "Обновить ключ" : "Поставить ключ"}
-              busyLabel="Ставим в очередь…"
+              actionLabel={
+                credential.managed_key
+                  ? t("servers.maintenance.panelKey.renewAction")
+                  : t("servers.maintenance.panelKey.switchAction")
+              }
+              busyLabel={t("servers.card.queueBusy")}
               onConfirm={() => start.mutateAsync("ssh-key")}
             />
           )}
@@ -398,6 +414,7 @@ function Maintenance({
 
 /** Разрушительные действия — отдельно, и в каждом диалоге сказано, что именно сломается. */
 function DangerZone({ server, setup }: { server: Server; setup: Setup }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const start = useStartJob(server.id);
@@ -406,17 +423,17 @@ function DangerZone({ server, setup }: { server: Server; setup: Setup }) {
   return (
     <section className={`${styles.section} ${styles.danger}`} aria-labelledby="danger-title">
       <h2 id="danger-title" className={styles.sectionTitle}>
-        Опасные действия
+        {t("servers.danger.title")}
       </h2>
       <ul className={styles.dangerList}>
         {setup.protocol && (
           <li>
             <ConfirmDialog
-              trigger={<Button variant="quiet">Снять AmneziaWG</Button>}
-              title="Снять AmneziaWG с сервера?"
-              consequences="Контейнер протокола и его настройки будут удалены с сервера, порт закроется. Пока на сервере есть живые клиенты, снять протокол нельзя — сначала отзовите их доступы."
-              actionLabel="Снять протокол"
-              busyLabel="Ставим в очередь…"
+              trigger={<Button variant="quiet">{t("servers.danger.removeProtocol.trigger")}</Button>}
+              title={t("servers.danger.removeProtocol.title")}
+              consequences={t("servers.danger.removeProtocol.consequences")}
+              actionLabel={t("servers.danger.removeProtocol.action")}
+              busyLabel={t("servers.card.queueBusy")}
               onConfirm={() => start.mutateAsync("remove-protocol")}
             />
           </li>
@@ -424,11 +441,11 @@ function DangerZone({ server, setup }: { server: Server; setup: Setup }) {
         {setup.credential && (
           <li>
             <ConfirmDialog
-              trigger={<Button variant="quiet">Удалить SSH-доступ</Button>}
-              title="Удалить SSH-доступ к серверу?"
-              consequences="Панель перестанет подключаться к серверу: проверки, сверка, выдача и отзыв клиентов остановятся, пока доступ не задан заново. Сам сервер и его клиенты продолжат работать."
-              actionLabel="Удалить доступ"
-              busyLabel="Удаляем…"
+              trigger={<Button variant="quiet">{t("servers.danger.deleteAccess.trigger")}</Button>}
+              title={t("servers.danger.deleteAccess.title")}
+              consequences={t("servers.danger.deleteAccess.consequences")}
+              actionLabel={t("servers.danger.deleteAccess.action")}
+              busyLabel={t("servers.danger.deleteAccess.busy")}
               onConfirm={async () => {
                 await unwrap(api.DELETE("/api/v1/servers/{server_id}/credentials", path));
                 await queryClient.invalidateQueries({ queryKey: keys.credential(server.id) });
@@ -439,11 +456,11 @@ function DangerZone({ server, setup }: { server: Server; setup: Setup }) {
         {setup.key && (
           <li>
             <ConfirmDialog
-              trigger={<Button variant="quiet">Сбросить ключ сервера</Button>}
-              title="Сбросить закреплённый ключ?"
-              consequences="Панель забудет ключ сервера, вход по паролю станет невозможен, пока ключ не сверят и не закрепят снова. Нужно, только если сервер переустановили и ключ сменился."
-              actionLabel="Сбросить ключ"
-              busyLabel="Сбрасываем…"
+              trigger={<Button variant="quiet">{t("servers.danger.resetKey.trigger")}</Button>}
+              title={t("servers.danger.resetKey.title")}
+              consequences={t("servers.danger.resetKey.consequences")}
+              actionLabel={t("servers.danger.resetKey.action")}
+              busyLabel={t("servers.danger.resetKey.busy")}
               onConfirm={async () => {
                 await unwrap(api.DELETE("/api/v1/servers/{server_id}/host-key", path));
                 await queryClient.invalidateQueries({ queryKey: keys.server(server.id), exact: true });
@@ -454,15 +471,15 @@ function DangerZone({ server, setup }: { server: Server; setup: Setup }) {
         )}
         <li>
           <ConfirmDialog
-            trigger={<Button variant="quiet">Удалить сервер</Button>}
-            title={`Удалить сервер «${server.name}»?`}
-            consequences="Сервер пропадёт из панели вместе с SSH-доступом и закреплённым ключом. На самом сервере ничего не изменится. Пока на нём есть живые клиенты, удалить нельзя."
-            actionLabel="Удалить сервер"
-            busyLabel="Удаляем…"
+            trigger={<Button variant="quiet">{t("servers.danger.deleteServer.trigger")}</Button>}
+            title={t("servers.danger.deleteServer.title", { name: server.name })}
+            consequences={t("servers.danger.deleteServer.consequences")}
+            actionLabel={t("servers.danger.deleteServer.action")}
+            busyLabel={t("servers.danger.deleteServer.busy")}
             confirmText={server.name}
             onConfirm={async () => {
               await unwrap(api.DELETE("/api/v1/servers/{server_id}", path), {
-                409: "На сервере есть живые клиенты. Сначала отзовите их доступы.",
+                409: t("servers.card.errors.hasClients"),
               });
               queryClient.removeQueries({ queryKey: ["server", server.id] });
               await queryClient.invalidateQueries({ queryKey: ["servers"] });

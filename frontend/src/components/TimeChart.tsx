@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 
+import i18n from "../i18n";
+import { currentLanguage, memoByLanguage } from "../i18n/format";
 import styles from "./TimeChart.module.css";
 
 export type SeriesTone = "primary" | "secondary" | "peak";
@@ -56,8 +58,10 @@ function useThemeVersion(): number {
   return version;
 }
 
-const hourFormat = new Intl.DateTimeFormat("ru", { hour: "2-digit", minute: "2-digit" });
-const dayFormat = new Intl.DateTimeFormat("ru", { day: "numeric", month: "short" });
+const hourFormat = memoByLanguage(
+  (lng) => new Intl.DateTimeFormat(lng, { hour: "2-digit", minute: "2-digit" }),
+);
+const dayFormat = memoByLanguage((lng) => new Intl.DateTimeFormat(lng, { day: "numeric", month: "short" }));
 
 /** График временного ряда на uPlot: лёгкий (~50 КБ) и быстрый на тысячах точек. */
 export function TimeChart({
@@ -79,7 +83,7 @@ export function TimeChart({
     if (!target) return;
     const axisColor = token("--pine-faint");
     const gridColor = token("--rule");
-    const timeLabel = timeScale === "hours" ? hourFormat : dayFormat;
+    const timeLabel = timeScale === "hours" ? hourFormat() : dayFormat();
     const options: uPlot.Options = {
       width: target.clientWidth || 600,
       height,
@@ -104,8 +108,8 @@ export function TimeChart({
       ],
       series: [
         {
-          label: "Время",
-          value: (_, seconds) => (seconds ? new Date(seconds * 1000).toLocaleString("ru") : "—"),
+          label: i18n.t("servers.monitoring.series.time"),
+          value: (_, seconds) => (seconds ? new Date(seconds * 1000).toLocaleString(currentLanguage()) : "—"),
         },
         ...series.map((item) => ({
           label: item.label,

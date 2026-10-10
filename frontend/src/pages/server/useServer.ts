@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 
 import { api, ApiError, unwrap, type Credential, type Job } from "../../api/client";
+import i18n from "../../i18n";
 import { isUnfinished } from "../../lib/jobs";
 
 const JOB_POLL_MS = 2_000;
@@ -22,7 +23,7 @@ export function useServerData(serverId: string) {
     queryKey: keys.server(serverId),
     queryFn: () =>
       unwrap(api.GET("/api/v1/servers/{server_id}", path), {
-        404: "Сервер не найден — возможно, его удалили.",
+        404: i18n.t("servers.card.errors.notFound"),
       }),
   });
   const credential = useQuery({
@@ -73,13 +74,13 @@ export function useStartJob(serverId: string) {
     mutationFn: (action: ServerAction): Promise<Job> =>
       action === "remove-protocol"
         ? unwrap(api.DELETE("/api/v1/servers/{server_id}/protocol", path), {
-            409: "Снять протокол нельзя: на сервере есть живые клиенты (сначала отзовите доступы) или не задан SSH-доступ.",
+            409: i18n.t("servers.card.errors.removeProtocol"),
           })
         : unwrap(api.POST(`/api/v1/servers/{server_id}/${action}`, path), {
             409:
               action === "ssh-key"
-                ? "Ключ не поставить: установка уже идёт, ключ сервера не закреплён или SSH-доступ не задан."
-                : "Сначала задайте SSH-доступ к серверу.",
+                ? i18n.t("servers.card.errors.installKey")
+                : i18n.t("servers.card.errors.needAccess"),
           }),
     onSuccess: (job) => {
       queryClient.setQueryData<Job[]>(keys.jobs(serverId), (jobs = []) => [job, ...jobs]);

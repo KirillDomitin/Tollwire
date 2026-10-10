@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 
 import { api, unwrap, type Schemas, type Server } from "../api/client";
@@ -17,6 +18,7 @@ type LatestMetrics = Schemas["LatestMetrics"];
 const REFRESH_MS = 30_000;
 
 export function ServersPage() {
+  const { t } = useTranslation();
   const { can } = useAuth();
   const servers = useQuery({
     queryKey: ["servers"],
@@ -35,7 +37,7 @@ export function ServersPage() {
     <section aria-labelledby="servers-title">
       <header className={styles.header}>
         <h1 id="servers-title" className={styles.title}>
-          Серверы
+          {t("servers.list.title")}
         </h1>
         {servers.data && servers.data.length > 0 && (
           <p className={styles.summary}>{fleetSummary(servers.data)}</p>
@@ -47,13 +49,13 @@ export function ServersPage() {
         )}
       </header>
 
-      {servers.isPending && <p className={styles.quiet}>Загружаем серверы…</p>}
+      {servers.isPending && <p className={styles.quiet}>{t("servers.list.loading")}</p>}
 
       {servers.isError && (
         <Notice
           action={
             <Button variant="quiet" onClick={() => void servers.refetch()}>
-              Повторить
+              {t("servers.list.retry")}
             </Button>
           }
         >
@@ -61,12 +63,7 @@ export function ServersPage() {
         </Notice>
       )}
 
-      {servers.data?.length === 0 && (
-        <p className={styles.quiet}>
-          Серверов пока нет. Добавленный сервер появится здесь вместе со статусом, а подготовить его можно по
-          шагам на его странице.
-        </p>
-      )}
+      {servers.data?.length === 0 && <p className={styles.quiet}>{t("servers.list.empty")}</p>}
 
       {servers.data && servers.data.length > 0 && <ServerTable servers={servers.data} metrics={latest} />}
     </section>
@@ -85,16 +82,17 @@ export function freshMetrics(items: LatestMetrics[], receivedAt: number): Map<st
 }
 
 function ServerTable({ servers, metrics }: { servers: Server[]; metrics: Map<string, LatestMetrics> }) {
+  const { t } = useTranslation();
   return (
     <table className={styles.table}>
       <thead>
         <tr>
-          <th scope="col">Сервер</th>
-          <th scope="col">Состояние</th>
-          <th scope="col">Клиенты</th>
-          <th scope="col">CPU</th>
-          <th scope="col">Проверка</th>
-          <th scope="col">Ключ хоста</th>
+          <th scope="col">{t("servers.list.columns.server")}</th>
+          <th scope="col">{t("servers.list.columns.state")}</th>
+          <th scope="col">{t("servers.list.columns.clients")}</th>
+          <th scope="col">{t("servers.list.columns.cpu")}</th>
+          <th scope="col">{t("servers.list.columns.check")}</th>
+          <th scope="col">{t("servers.list.columns.hostKey")}</th>
         </tr>
       </thead>
       <tbody>
@@ -117,10 +115,13 @@ function ServerTable({ servers, metrics }: { servers: Server[]; metrics: Map<str
                   {label}
                 </span>
               </td>
-              <td className={styles.meta} title="Онлайн из всех клиентов на сервере">
+              <td className={styles.meta} title={t("servers.list.clientsTitle")}>
                 {metric?.clients_online === null || metric?.clients_online === undefined
                   ? "—"
-                  : `${metric.clients_online} из ${metric.clients_total ?? 0}`}
+                  : t("servers.list.clientsOf", {
+                      online: metric.clients_online,
+                      total: metric.clients_total ?? 0,
+                    })}
               </td>
               <td className={styles.meta}>{formatPercent(metric?.cpu_percent)}</td>
               <td className={styles.meta}>
@@ -129,7 +130,7 @@ function ServerTable({ servers, metrics }: { servers: Server[]; metrics: Map<str
                     {timeAgo(server.last_health_at)}
                   </time>
                 ) : (
-                  "ещё не проверялся"
+                  t("servers.list.neverChecked")
                 )}
               </td>
               <td className={styles.meta}>
@@ -138,7 +139,7 @@ function ServerTable({ servers, metrics }: { servers: Server[]; metrics: Map<str
                     {server.ssh_host_key_fingerprint.slice(0, 18)}…
                   </code>
                 ) : (
-                  <span className={styles.unpinned}>не закреплён</span>
+                  <span className={styles.unpinned}>{t("servers.list.hostKeyUnpinned")}</span>
                 )}
               </td>
             </tr>

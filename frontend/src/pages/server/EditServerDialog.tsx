@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 
 import { api, unwrap, type Server } from "../../api/client";
 import { Button } from "../../components/Button";
@@ -13,6 +14,7 @@ import { keys } from "./useServer";
 
 /** Имя и заметка сервера. Адрес здесь не меняется: другой адрес — другая машина, ему нужны новый ключ и доступ. */
 export function EditServerDialog({ server }: { server: Server }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const current = splitFlag(server.name);
@@ -20,8 +22,8 @@ export function EditServerDialog({ server }: { server: Server }) {
   const save = useMutation({
     mutationFn: (body: { name: string; description: string | null }) =>
       unwrap(api.PATCH("/api/v1/servers/{server_id}", { params: { path: { server_id: server.id } }, body }), {
-        409: "Сервер с таким именем уже есть. Выберите другое имя.",
-        422: "Проверьте имя: от 1 до 100 символов.",
+        409: t("servers.add.errors.conflict"),
+        422: t("servers.edit.errors.invalid"),
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: keys.server(server.id), exact: true });
@@ -48,25 +50,25 @@ export function EditServerDialog({ server }: { server: Server }) {
   return (
     <>
       <Button variant="quiet" onClick={() => setOpen(true)}>
-        Изменить
+        {t("servers.edit.trigger")}
       </Button>
       <Dialog
         open={open}
         onOpenChange={close}
-        title="Изменить сервер"
-        description="Имя и заметка видны только в панели, на самом сервере ничего не меняется."
+        title={t("servers.edit.title")}
+        description={t("servers.edit.description")}
       >
         <form className={styles.form} onSubmit={submit}>
           <CountrySelect name="flag" defaultValue={current.flag} />
           <TextField
-            label="Имя в панели"
+            label={t("servers.add.name")}
             name="name"
             defaultValue={current.rest}
             required
             maxLength={NAME_MAX_WITH_FLAG}
           />
           <TextField
-            label="Заметка (необязательно)"
+            label={t("servers.add.note")}
             name="description"
             defaultValue={server.description ?? ""}
             maxLength={300}
@@ -74,10 +76,10 @@ export function EditServerDialog({ server }: { server: Server }) {
           {save.isError && <Notice>{save.error.message}</Notice>}
           <DialogActions>
             <Button variant="quiet" onClick={() => close(false)}>
-              Отмена
+              {t("common.cancel")}
             </Button>
-            <Button type="submit" busy={save.isPending} busyLabel="Сохраняем…">
-              Сохранить
+            <Button type="submit" busy={save.isPending} busyLabel={t("servers.edit.busy")}>
+              {t("servers.edit.submit")}
             </Button>
           </DialogActions>
         </form>

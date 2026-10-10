@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useId, useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 
 import { api, unwrap, type Job } from "../../api/client";
 import { Button } from "../../components/Button";
@@ -28,6 +29,7 @@ export function CredentialsDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [authType, setAuthType] = useState<AuthType>("password");
   const [panelKey, setPanelKey] = useState(true);
@@ -38,12 +40,12 @@ export function CredentialsDialog({
     mutationFn: async (submitted: Submitted): Promise<Job | null> => {
       if (submitted.kind === "panel-key") {
         return unwrap(api.POST("/api/v1/servers/{server_id}/ssh-key", { ...path, body: submitted.body }), {
-          409: "Ключ не поставить: сначала закрепите ключ сервера, или установка ключа уже идёт.",
-          422: "Проверьте данные: пользователь — латиница без пробелов.",
+          409: t("servers.credentials.errors.panelKeyConflict"),
+          422: t("servers.credentials.errors.panelKeyInvalid"),
         });
       }
       await unwrap(api.PUT("/api/v1/servers/{server_id}/credentials", { ...path, body: submitted.body }), {
-        422: "Проверьте данные: пользователь — латиница без пробелов, ключ — целиком, без пароля (passphrase).",
+        422: t("servers.credentials.errors.credentialInvalid"),
       });
       return null;
     },
@@ -74,12 +76,12 @@ export function CredentialsDialog({
         if (!next) save.reset();
         onOpenChange(next);
       }}
-      title="SSH-доступ к серверу"
-      description="Панель хранит секрет зашифрованным и использует его только для подключения к этому серверу."
+      title={t("servers.credentials.title")}
+      description={t("servers.credentials.description")}
     >
       <form className={styles.form} onSubmit={submit}>
         <fieldset className={styles.choice}>
-          <legend className={styles.keyLabel}>Вход</legend>
+          <legend className={styles.keyLabel}>{t("servers.credentials.login")}</legend>
           {(["password", "ssh_key"] as const).map((value) => (
             <label key={value}>
               <input
@@ -88,14 +90,26 @@ export function CredentialsDialog({
                 checked={authType === value}
                 onChange={() => setAuthType(value)}
               />{" "}
-              {value === "password" ? "по паролю" : "по SSH-ключу"}
+              {value === "password" ? t("servers.credentials.byPassword") : t("servers.credentials.byKey")}
             </label>
           ))}
         </fieldset>
-        <TextField label="Пользователь" name="username" defaultValue="root" required autoComplete="off" />
+        <TextField
+          label={t("servers.credentials.user")}
+          name="username"
+          defaultValue="root"
+          required
+          autoComplete="off"
+        />
         {authType === "password" ? (
           <>
-            <TextField label="Пароль" name="secret" type="password" required autoComplete="new-password" />
+            <TextField
+              label={t("servers.credentials.password")}
+              name="secret"
+              type="password"
+              required
+              autoComplete="new-password"
+            />
             <div className={styles.check}>
               <label>
                 <input
@@ -104,27 +118,26 @@ export function CredentialsDialog({
                   onChange={(event) => setPanelKey(event.target.checked)}
                   aria-describedby={panelKeyHint}
                 />{" "}
-                Заменить пароль ключом панели
+                {t("servers.credentials.replacePassword")}
               </label>
               <p id={panelKeyHint} className={styles.hint}>
-                Панель войдёт по паролю один раз, поставит на сервер свой ключ и дальше будет входить по нему.
-                Пароль в панели не останется.
+                {t("servers.credentials.replaceHint")}
               </p>
             </div>
           </>
         ) : (
           <label className={styles.textarea}>
-            <span className={styles.keyLabel}>Приватный ключ (OpenSSH или PEM, без пароля)</span>
+            <span className={styles.keyLabel}>{t("servers.credentials.privateKey")}</span>
             <textarea name="secret" required rows={6} spellCheck={false} autoComplete="off" />
           </label>
         )}
         {save.isError && <Notice>{save.error.message}</Notice>}
         <DialogActions>
           <Button variant="quiet" onClick={() => onOpenChange(false)}>
-            Отмена
+            {t("common.cancel")}
           </Button>
-          <Button type="submit" busy={save.isPending} busyLabel="Сохраняем…">
-            Сохранить доступ
+          <Button type="submit" busy={save.isPending} busyLabel={t("servers.credentials.busy")}>
+            {t("servers.credentials.submit")}
           </Button>
         </DialogActions>
       </form>

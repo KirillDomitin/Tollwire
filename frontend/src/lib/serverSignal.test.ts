@@ -1,3 +1,4 @@
+import i18n from "../i18n";
 import { fleetSummary, pick, serverSignal } from "./serverSignal";
 
 describe("serverSignal", () => {
@@ -46,5 +47,30 @@ describe("fleetSummary", () => {
       "сервера",
       "серверов",
     ]);
+  });
+});
+
+describe("in English", () => {
+  const ok = { status: "ready", health_status: "ok" } as const;
+  const down = { status: "offline", health_status: null } as const;
+  const fresh = { status: "new", health_status: null } as const;
+
+  beforeEach(async () => {
+    await i18n.changeLanguage("en");
+  });
+
+  it("labels the states", () => {
+    expect(serverSignal(ok).label).toBe("Running");
+    expect(serverSignal(down).label).toBe("Unreachable");
+    expect(serverSignal({ status: "ready", health_status: null }).label).toBe("Awaiting check");
+  });
+
+  it("summarises the fleet with English plurals", () => {
+    expect(fleetSummary([])).toBe("No servers yet");
+    expect(fleetSummary([down])).toBe("1 server — unreachable");
+    expect(fleetSummary([ok, ok, ok])).toBe("3 servers — all running");
+    expect(fleetSummary([ok, ok, down, fresh, fresh])).toBe(
+      "5 servers — 1 unreachable, 2 running, 2 not set up",
+    );
   });
 });

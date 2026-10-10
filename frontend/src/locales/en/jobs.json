@@ -1,0 +1,21 @@
+{
+  "types": {
+    "install_server": "Amnezia installation",
+    "uninstall_server": "Amnezia removal",
+    "install_protocol": "AmneziaWG installation",
+    "install_ssh_key": "Panel key installation",
+    "remove_protocol": "Protocol removal",
+    "sync_server": "Sync with the database",
+    "health_check": "Health check",
+    "create_user": "Client issue",
+    "revoke_access": "Client revoke",
+    "delete_user": "User deletion"
+  },
+  "statuses": {
+    "pending": "Queued",
+    "running": "Running",
+    "success": "Done",
+    "failed": "Failed",
+    "cancelled": "Cancelled"
+  }
+}

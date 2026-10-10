@@ -1,6 +1,7 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
+import i18n from "../../i18n";
 import { json, renderWithProviders } from "../../test/render";
 import { ServerPage } from "./ServerPage";
 
@@ -294,5 +295,44 @@ describe("ServerPage audit link", () => {
 
     await screen.findByRole("heading", { name: "lab-1" });
     expect(screen.queryByRole("link", { name: "События сервера" })).not.toBeInTheDocument();
+  });
+});
+
+describe("ServerPage in English", () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("en");
+  });
+
+  it("walks through the setup steps and the danger zone in English", async () => {
+    mockApi({ server: { ssh_host_key_fingerprint: "SHA256:abc" }, credential });
+    renderCard();
+
+    expect(await screen.findByRole("link", { name: "All servers" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Server setup" })).toBeInTheDocument();
+    expect(step("Pin the server key").mark).toBe("done");
+    expect(step("Install Docker and Amnezia").item).toHaveTextContent("next step");
+    expect(step("Install AmneziaWG").item).toHaveTextContent("not available yet");
+    expect(screen.getByText("not checked yet")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Delete server" }));
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).getByText("Delete server “lab-1”?")).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("Type “lab-1” to confirm")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+  });
+
+  it("shows the maintenance facts in English for a ready server", async () => {
+    mockApi({
+      server: { status: "ready", health_status: "ok", ssh_host_key_fingerprint: "SHA256:abc" },
+      credential: { ...credential, managed_key: true, key_fingerprint: "SHA256:key" },
+      protocols: [protocol],
+    });
+    renderCard();
+
+    expect(await screen.findByRole("heading", { name: "Maintenance" })).toBeInTheDocument();
+    expect(screen.getByText("port 51820, UDP")).toBeInTheDocument();
+    expect(screen.getByText("root, by panel key")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Check health" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Renew key" })).toBeInTheDocument();
   });
 });

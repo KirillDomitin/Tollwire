@@ -1,9 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 
 import { api, unwrap, type Schemas } from "../../api/client";
 import { Notice } from "../../components/Notice";
 import { TimeChart, type ChartSeries } from "../../components/TimeChart";
+import { currentLanguage } from "../../i18n/format";
 import { exactTime, timeAgo } from "../../lib/time";
 import { formatBitRate, formatBytes, formatByteRate, formatPercent, share } from "../../lib/units";
 import styles from "./ServerPage.module.css";
@@ -11,19 +13,14 @@ import styles from "./ServerPage.module.css";
 type MetricsRange = Schemas["MetricsRange"];
 type MetricPoint = Schemas["MetricPoint"];
 
-const RANGES: { value: MetricsRange; label: string }[] = [
-  { value: "1h", label: "Час" },
-  { value: "24h", label: "Сутки" },
-  { value: "7d", label: "Неделя" },
-  { value: "30d", label: "Месяц" },
-];
+const RANGES: MetricsRange[] = ["1h", "24h", "7d", "30d"];
 const SHORT_RANGES: MetricsRange[] = ["1h", "24h"];
 
 // Целые — как есть, средние за час (0,5 клиента) — с одним знаком, а не округлением до целого.
 const count = (value: number) =>
   Number.isInteger(value)
     ? String(value)
-    : new Intl.NumberFormat("ru", { maximumFractionDigits: 1 }).format(value);
+    : new Intl.NumberFormat(currentLanguage(), { maximumFractionDigits: 1 }).format(value);
 // Константа, а не литерал в JSX: новый массив на каждой отрисовке пересоздавал бы график.
 const PERCENT_RANGE: [number, number] = [0, 100];
 const percent = (value: number) => formatPercent(value);
@@ -52,6 +49,7 @@ export function breakGaps(points: MetricPoint[], maxGapMs: number): MetricPoint[
 
 /** Мониторинг сервера: сводка последнего замера и графики за выбранный период. */
 export function MonitoringSection({ serverId }: { serverId: string }) {
+  const { t } = useTranslation();
   const [range, setRange] = useState<MetricsRange>("24h");
   const metrics = useQuery({
     queryKey: ["server", serverId, "metrics", range],
@@ -72,36 +70,72 @@ export function MonitoringSection({ serverId }: { serverId: string }) {
     const pick = (key: keyof MetricPoint) =>
       points.map((point) => (point[key] as number | null | undefined) ?? null);
     const cpu: ChartSeries[] = [
-      { label: hourly ? "CPU, среднее" : "CPU", values: pick("cpu_percent"), tone: "primary" },
+      {
+        label: hourly ? t("servers.monitoring.series.cpuAverage") : t("servers.monitoring.series.cpu"),
+        values: pick("cpu_percent"),
+        tone: "primary",
+      },
     ];
-    if (hourly) cpu.push({ label: "CPU, пик", values: pick("cpu_percent_max"), tone: "peak" });
+    if (hourly) {
+      cpu.push({
+        label: t("servers.monitoring.series.cpuPeak"),
+        values: pick("cpu_percent_max"),
+        tone: "peak",
+      });
+    }
     const online: ChartSeries[] = [
-      { label: hourly ? "Онлайн, среднее" : "Онлайн", values: pick("clients_online"), tone: "primary" },
+      {
+        label: hourly ? t("servers.monitoring.series.onlineAverage") : t("servers.monitoring.series.online"),
+        values: pick("clients_online"),
+        tone: "primary",
+      },
     ];
-    if (hourly) online.push({ label: "Онлайн, пик", values: pick("clients_online_max"), tone: "peak" });
+    if (hourly) {
+      online.push({
+        label: t("servers.monitoring.series.onlinePeak"),
+        values: pick("clients_online_max"),
+        tone: "peak",
+      });
+    }
     return {
       times,
       cpu,
       online,
       network: [
-        { label: "Входящий", values: pick("net_rx_bytes_per_s"), tone: "secondary" },
-        { label: "Исходящий", values: pick("net_tx_bytes_per_s"), tone: "primary" },
+        {
+          label: t("servers.monitoring.series.incoming"),
+          values: pick("net_rx_bytes_per_s"),
+          tone: "secondary",
+        },
+        {
+          label: t("servers.monitoring.series.outgoing"),
+          values: pick("net_tx_bytes_per_s"),
+          tone: "primary",
+        },
       ] satisfies ChartSeries[],
       memory: [
         {
-          label: "Память",
+          label: t("servers.monitoring.series.memory"),
           values: points.map((point) => share(point.mem_used_bytes, point.mem_total_bytes)),
           tone: "primary",
         },
       ] satisfies ChartSeries[],
       disk: [
-        { label: "Чтение", values: pick("disk_read_bytes_per_s"), tone: "secondary" },
-        { label: "Запись", values: pick("disk_write_bytes_per_s"), tone: "primary" },
+        {
+          label: t("servers.monitoring.series.read"),
+          values: pick("disk_read_bytes_per_s"),
+          tone: "secondary",
+        },
+        {
+          label: t("servers.monitoring.series.write"),
+          values: pick("disk_write_bytes_per_s"),
+          tone: "primary",
+        },
       ] satisfies ChartSeries[],
       latest: latestPoint(points),
       timeScale: SHORT_RANGES.includes(range) ? ("hours" as const) : ("days" as const),
     };
-  }, [metrics.data, range]);
+  }, [metrics.data, range, t]);
 
   const latest = charts.latest;
 
@@ -109,18 +143,18 @@ export function MonitoringSection({ serverId }: { serverId: string }) {
     <section className={styles.section} aria-labelledby="monitoring-title">
       <div className={styles.sectionHead}>
         <h2 id="monitoring-title" className={styles.sectionTitle}>
-          Мониторинг
+          {t("servers.monitoring.title")}
         </h2>
-        <div className={styles.ranges} role="group" aria-label="Период графиков">
-          {RANGES.map((item) => (
+        <div className={styles.ranges} role="group" aria-label={t("servers.monitoring.rangeLabel")}>
+          {RANGES.map((value) => (
             <button
-              key={item.value}
+              key={value}
               type="button"
               className={styles.rangeButton}
-              aria-pressed={range === item.value}
-              onClick={() => setRange(item.value)}
+              aria-pressed={range === value}
+              onClick={() => setRange(value)}
             >
-              {item.label}
+              {t(`servers.monitoring.ranges.${value}`)}
             </button>
           ))}
         </div>
@@ -128,10 +162,7 @@ export function MonitoringSection({ serverId }: { serverId: string }) {
 
       {metrics.isError && <Notice>{metrics.error.message}</Notice>}
       {metrics.data && metrics.data.points.length === 0 && (
-        <p className={styles.hint}>
-          Замеров за этот период нет. Панель снимает их раз в минуту по SSH — первые появятся вскоре после
-          запуска воркера; недоступный сервер даёт пропуски.
-        </p>
+        <p className={styles.hint}>{t("servers.monitoring.empty")}</p>
       )}
 
       {latest && (
@@ -142,40 +173,49 @@ export function MonitoringSection({ serverId }: { serverId: string }) {
               <dd>{formatPercent(latest.cpu_percent)}</dd>
             </div>
             <div>
-              <dt>Память</dt>
+              <dt>{t("servers.monitoring.summary.memory")}</dt>
               <dd>
-                {formatBytes(latest.mem_used_bytes)} из {formatBytes(latest.mem_total_bytes)}
+                {t("servers.monitoring.summary.of", {
+                  used: formatBytes(latest.mem_used_bytes),
+                  total: formatBytes(latest.mem_total_bytes),
+                })}
               </dd>
             </div>
             <div>
-              <dt>Диск</dt>
+              <dt>{t("servers.monitoring.summary.disk")}</dt>
               <dd>
-                {formatBytes(latest.disk_used_bytes)} из {formatBytes(latest.disk_total_bytes)}
+                {t("servers.monitoring.summary.of", {
+                  used: formatBytes(latest.disk_used_bytes),
+                  total: formatBytes(latest.disk_total_bytes),
+                })}
               </dd>
             </div>
             <div>
-              <dt>Сеть ↓ / ↑</dt>
+              <dt>{t("servers.monitoring.summary.network")}</dt>
               <dd>
                 <span className={styles.nowrap}>{formatBitRate(latest.net_rx_bytes_per_s)}</span> /{" "}
                 <span className={styles.nowrap}>{formatBitRate(latest.net_tx_bytes_per_s)}</span>
               </dd>
             </div>
             <div>
-              <dt>Клиенты онлайн</dt>
+              <dt>{t("servers.monitoring.summary.clientsOnline")}</dt>
               <dd>
                 {latest.clients_online === null || latest.clients_online === undefined
                   ? "—"
-                  : `${count(latest.clients_online)} из ${count(latest.clients_total ?? 0)}`}
+                  : t("servers.monitoring.summary.of", {
+                      used: count(latest.clients_online),
+                      total: count(latest.clients_total ?? 0),
+                    })}
               </dd>
             </div>
           </dl>
           <p className={styles.hint}>
-            {metrics.data?.resolution === "hour" ? "Средние за час, сводка — по последнему часу. " : ""}
-            Последний замер{" "}
-            <time dateTime={latest.ts} title={exactTime(latest.ts)}>
-              {timeAgo(latest.ts)}
-            </time>
-            .
+            {metrics.data?.resolution === "hour" ? `${t("servers.monitoring.hourlyNote")} ` : ""}
+            <Trans
+              i18nKey="servers.monitoring.lastSample"
+              values={{ when: timeAgo(latest.ts) }}
+              components={{ time: <time dateTime={latest.ts} title={exactTime(latest.ts)} /> }}
+            />
           </p>
           <div className={styles.charts}>
             <TimeChart
@@ -187,14 +227,14 @@ export function MonitoringSection({ serverId }: { serverId: string }) {
               range={PERCENT_RANGE}
             />
             <TimeChart
-              title="Сеть"
+              title={t("servers.monitoring.charts.network")}
               times={charts.times}
               series={charts.network}
               format={formatBitRate}
               timeScale={charts.timeScale}
             />
             <TimeChart
-              title="Память"
+              title={t("servers.monitoring.charts.memory")}
               times={charts.times}
               series={charts.memory}
               format={percent}
@@ -202,7 +242,7 @@ export function MonitoringSection({ serverId }: { serverId: string }) {
               range={PERCENT_RANGE}
             />
             <TimeChart
-              title="Клиенты онлайн"
+              title={t("servers.monitoring.charts.clients")}
               times={charts.times}
               series={charts.online}
               format={count}
@@ -210,7 +250,7 @@ export function MonitoringSection({ serverId }: { serverId: string }) {
               integer
             />
             <TimeChart
-              title="Диск: чтение и запись"
+              title={t("servers.monitoring.charts.disk")}
               times={charts.times}
               series={charts.disk}
               format={formatByteRate}

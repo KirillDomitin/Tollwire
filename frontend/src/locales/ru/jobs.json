@@ -1,0 +1,21 @@
+{
+  "types": {
+    "install_server": "Установка Amnezia",
+    "uninstall_server": "Удаление Amnezia",
+    "install_protocol": "Установка AmneziaWG",
+    "install_ssh_key": "Установка ключа панели",
+    "remove_protocol": "Снятие протокола",
+    "sync_server": "Сверка с базой",
+    "health_check": "Проверка состояния",
+    "create_user": "Выдача клиента",
+    "revoke_access": "Отзыв клиента",
+    "delete_user": "Удаление пользователя"
+  },
+  "statuses": {
+    "pending": "В очереди",
+    "running": "Выполняется",
+    "success": "Готово",
+    "failed": "Ошибка",
+    "cancelled": "Отменена"
+  }
+}

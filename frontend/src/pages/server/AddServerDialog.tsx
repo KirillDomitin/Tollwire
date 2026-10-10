@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 
 import { api, unwrap } from "../../api/client";
@@ -13,6 +14,7 @@ import styles from "./ServerPage.module.css";
 
 /** Новый сервер: только адрес и имя. Дальше — карточка сервера с шагами подготовки. */
 export function AddServerDialog() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -20,8 +22,8 @@ export function AddServerDialog() {
   const create = useMutation({
     mutationFn: (body: { name: string; host: string; ssh_port: number; description: string | null }) =>
       unwrap(api.POST("/api/v1/servers", { body }), {
-        409: "Сервер с таким именем уже есть. Выберите другое имя.",
-        422: "Проверьте адрес: только латиница, цифры, точки, дефисы и двоеточия, без пробелов и «ssh://».",
+        409: t("servers.add.errors.conflict"),
+        422: t("servers.add.errors.invalid"),
       }),
     onSuccess: (server) => {
       void queryClient.invalidateQueries({ queryKey: ["servers"] });
@@ -44,37 +46,37 @@ export function AddServerDialog() {
 
   return (
     <>
-      <Button onClick={() => setOpen(true)}>Добавить сервер</Button>
+      <Button onClick={() => setOpen(true)}>{t("servers.add.trigger")}</Button>
       <Dialog
         open={open}
         onOpenChange={(next) => {
           if (!next) create.reset();
           setOpen(next);
         }}
-        title="Новый сервер"
-        description="Панель пока ничего не делает с сервером — только запоминает адрес. Подготовка — по шагам на его карточке."
+        title={t("servers.add.title")}
+        description={t("servers.add.description")}
       >
         <form className={styles.form} onSubmit={submit}>
           <CountrySelect name="flag" />
           <TextField
-            label="Имя в панели"
+            label={t("servers.add.name")}
             name="name"
             required
             maxLength={NAME_MAX_WITH_FLAG}
-            placeholder="Например, frankfurt-1"
+            placeholder={t("servers.add.namePlaceholder")}
           />
           <TextField
-            label="Адрес (IP или домен)"
+            label={t("servers.add.host")}
             name="host"
             required
             maxLength={100}
             pattern="[A-Za-z0-9.:\-]+"
-            title="IP-адрес или домен, без пробелов и протокола"
+            title={t("servers.add.hostTitle")}
             spellCheck={false}
             autoComplete="off"
           />
           <TextField
-            label="SSH-порт"
+            label={t("servers.add.port")}
             name="ssh_port"
             type="number"
             required
@@ -82,14 +84,14 @@ export function AddServerDialog() {
             max={65535}
             defaultValue={22}
           />
-          <TextField label="Заметка (необязательно)" name="description" maxLength={300} />
+          <TextField label={t("servers.add.note")} name="description" maxLength={300} />
           {create.isError && <Notice>{create.error.message}</Notice>}
           <DialogActions>
             <Button variant="quiet" onClick={() => setOpen(false)}>
-              Отмена
+              {t("common.cancel")}
             </Button>
-            <Button type="submit" busy={create.isPending} busyLabel="Добавляем…">
-              Добавить
+            <Button type="submit" busy={create.isPending} busyLabel={t("servers.add.busy")}>
+              {t("servers.add.submit")}
             </Button>
           </DialogActions>
         </form>

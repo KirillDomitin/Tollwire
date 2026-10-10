@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 
 import { api, unwrap, type HostKeyScan } from "../../api/client";
 import { Button } from "../../components/Button";
@@ -22,6 +23,7 @@ export function HostKeyDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const path = { params: { path: { server_id: serverId } } };
   const [scan, setScan] = useState<HostKeyScan | null>(null);
@@ -29,7 +31,7 @@ export function HostKeyDialog({
   const scanKey = useMutation({
     mutationFn: () =>
       unwrap(api.POST("/api/v1/servers/{server_id}/host-key/scan", path), {
-        502: "Сервер не ответил на SSH-порту. Проверьте адрес, порт и что сервер включён.",
+        502: t("servers.hostKey.errors.noAnswer"),
       }),
     onSuccess: setScan,
   });
@@ -56,18 +58,22 @@ export function HostKeyDialog({
     <Dialog
       open={open}
       onOpenChange={close}
-      title="Закрепить ключ сервера"
-      description="Панель запомнит ключ сервера и дальше будет подключаться только к нему. Так пароль не уйдёт подменённому серверу."
+      title={t("servers.hostKey.title")}
+      description={t("servers.hostKey.description")}
     >
       {!scan && (
         <>
           {scanKey.isError && <Notice>{scanKey.error.message}</Notice>}
           <DialogActions>
             <Button variant="quiet" onClick={() => close(false)}>
-              Отмена
+              {t("common.cancel")}
             </Button>
-            <Button busy={scanKey.isPending} busyLabel="Получаем ключ…" onClick={() => scanKey.mutate()}>
-              Получить ключ
+            <Button
+              busy={scanKey.isPending}
+              busyLabel={t("servers.hostKey.getting")}
+              onClick={() => scanKey.mutate()}
+            >
+              {t("servers.hostKey.get")}
             </Button>
           </DialogActions>
         </>
@@ -76,27 +82,26 @@ export function HostKeyDialog({
       {scan && (
         <>
           <div className={styles.keyBlock}>
-            <p className={styles.keyLabel}>Отпечаток ключа, который предъявил сервер</p>
+            <p className={styles.keyLabel}>{t("servers.hostKey.fingerprint")}</p>
             <code className={styles.keyValue}>{scan.fingerprint}</code>
           </div>
           {scan.matches_pinned === false && (
-            <Notice>
-              Ключ отличается от закреплённого ({scan.pinned_fingerprint}). Закрепляйте новый, только если
-              знаете, что сервер переустанавливали.
-            </Notice>
+            <Notice>{t("servers.hostKey.mismatch", { fingerprint: scan.pinned_fingerprint })}</Notice>
           )}
           <p className={styles.hint}>
-            Сверьте его с консолью хостинга. На сервере выполните{" "}
-            <code>ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code> — отпечаток должен совпасть до
-            символа.
+            <Trans i18nKey="servers.hostKey.verify" components={{ code: <code /> }} />
           </p>
           {pin.isError && <Notice>{pin.error.message}</Notice>}
           <DialogActions>
             <Button variant="quiet" onClick={() => close(false)}>
-              Не совпадает — отменить
+              {t("servers.hostKey.notMatching")}
             </Button>
-            <Button busy={pin.isPending} busyLabel="Закрепляем…" onClick={() => pin.mutate(scan.public_key)}>
-              Совпадает — закрепить
+            <Button
+              busy={pin.isPending}
+              busyLabel={t("servers.hostKey.pinning")}
+              onClick={() => pin.mutate(scan.public_key)}
+            >
+              {t("servers.hostKey.matching")}
             </Button>
           </DialogActions>
         </>

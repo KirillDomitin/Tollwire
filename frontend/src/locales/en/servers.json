@@ -1,0 +1,283 @@
+{
+  "list": {
+    "title": "Servers",
+    "loading": "Loading servers…",
+    "retry": "Retry",
+    "empty": "No servers yet. A server you add will show up here with its status, and you can set it up step by step on its page.",
+    "columns": {
+      "server": "Server",
+      "state": "Status",
+      "clients": "Clients",
+      "cpu": "CPU",
+      "check": "Last check",
+      "hostKey": "Host key"
+    },
+    "clientsTitle": "Online out of all clients on the server",
+    "clientsOf": "{{online}} of {{total}}",
+    "neverChecked": "not checked yet",
+    "hostKeyUnpinned": "not pinned"
+  },
+  "signal": {
+    "error": "Error",
+    "offline": "Unreachable",
+    "installing": "Installing",
+    "new": "Not set up",
+    "down": "Not responding",
+    "degraded": "Has issues",
+    "ok": "Running",
+    "waiting": "Awaiting check"
+  },
+  "fleet": {
+    "none": "No servers yet",
+    "all": "all {{state}}",
+    "total_one": "{{count}} server",
+    "total_other": "{{count}} servers",
+    "ok_one": "running",
+    "ok_other": "running",
+    "warn_one": "with issues",
+    "warn_other": "with issues",
+    "down_one": "unreachable",
+    "down_other": "unreachable",
+    "process_one": "installing",
+    "process_other": "installing",
+    "idle_one": "not set up",
+    "idle_other": "not set up"
+  },
+  "add": {
+    "trigger": "Add server",
+    "title": "New server",
+    "description": "The panel doesn't touch the server yet — it only remembers the address. Set it up step by step on its page.",
+    "name": "Name in the panel",
+    "namePlaceholder": "For example, frankfurt-1",
+    "host": "Address (IP or domain)",
+    "hostTitle": "An IP address or a domain, no spaces and no protocol",
+    "port": "SSH port",
+    "note": "Note (optional)",
+    "submit": "Add",
+    "busy": "Adding…",
+    "errors": {
+      "conflict": "A server with this name already exists. Choose another name.",
+      "invalid": "Check the address: only Latin letters, digits, dots, hyphens and colons, no spaces or “ssh://”."
+    }
+  },
+  "edit": {
+    "trigger": "Edit",
+    "title": "Edit server",
+    "description": "The name and the note are visible only in the panel; nothing changes on the server itself.",
+    "submit": "Save",
+    "busy": "Saving…",
+    "errors": {
+      "conflict": "A server with this name already exists. Choose another name.",
+      "invalid": "Check the name: 1 to 100 characters."
+    }
+  },
+  "card": {
+    "loading": "Loading the server…",
+    "toList": "Back to the servers list",
+    "allServers": "All servers",
+    "events": "Server events",
+    "checked": "checked",
+    "neverChecked": "not checked yet",
+    "notPrepared": "The server isn't set up yet. A superadmin can set it up.",
+    "loadingCharts": "Loading charts…",
+    "jobs": "Jobs",
+    "auth": {
+      "password": "by password",
+      "ssh_key": "by SSH key",
+      "panelKey": "by panel key"
+    },
+    "stepMarks": {
+      "done": "done",
+      "next": "next step",
+      "running": "in progress",
+      "locked": "not available yet"
+    },
+    "connection": {
+      "button": "Test connection",
+      "busy": "Connecting…",
+      "ok": "The panel signed in to the server over SSH.",
+      "failed": "Couldn't sign in: {{message}}"
+    },
+    "errors": {
+      "notFound": "Server not found — it may have been deleted.",
+      "removeProtocol": "Can't remove the protocol: the server has live clients (revoke their access first) or SSH access isn't set.",
+      "installKey": "Can't install the key: an installation is already running, the server key isn't pinned or SSH access isn't set.",
+      "needAccess": "Set SSH access to the server first.",
+      "hasClients": "The server has live clients. Revoke their access first."
+    },
+    "queueBusy": "Queuing…"
+  },
+  "setup": {
+    "title": "Server setup",
+    "pinKey": {
+      "title": "Pin the server key",
+      "hint": "The panel will remember the key you check against the hosting console and will connect only to this server.",
+      "button": "Get and check the key"
+    },
+    "credential": {
+      "title": "Set SSH access",
+      "button": "Set access",
+      "needKey": "Pin the server key first — a password must not be sent without it."
+    },
+    "install": {
+      "title": "Install Docker and Amnezia",
+      "running": "Installing, usually takes a few minutes. You can close the page — the job will continue.",
+      "previousFailed": "The previous installation failed — the reason is in the jobs log below.",
+      "retry": "Retry installation",
+      "button": "Install",
+      "locked": "Available once the key is pinned and SSH access is set."
+    },
+    "protocol": {
+      "title": "Install AmneziaWG",
+      "running": "Installing the protocol…",
+      "button": "Install the protocol",
+      "lockedNoAccess": "Available once the key is pinned and SSH access is set — the protocol is installed over SSH.",
+      "lockedNoInstall": "Available after Amnezia is installed."
+    }
+  },
+  "maintenance": {
+    "title": "Maintenance",
+    "checkHealth": "Check health",
+    "checking": "Checking…",
+    "sync": "Sync clients with the database",
+    "syncing": "Syncing…",
+    "amnezia": "AmneziaWG",
+    "port": "port {{port}}, UDP",
+    "portUnknown": "port unknown — run a sync",
+    "hostKey": "Server key",
+    "recheck": "Check again",
+    "ssh": "SSH access",
+    "sshSet": "set",
+    "sshAs": "{{user}}, {{auth}}",
+    "replace": "Replace",
+    "panelKey": {
+      "renew": "Renew key",
+      "switch": "Switch to the panel key",
+      "busy": "Installing the key…",
+      "renewTitle": "Renew the panel key?",
+      "switchTitle": "Switch to signing in with the panel key?",
+      "renewConsequences": "The panel will create a new key, check that signing in with it works and then remove the old one from the server. If the server doesn't accept the new key, the old one stays.",
+      "switchConsequences": "The panel will sign in with the current access, install its own key on the server and, once the login is verified, use only that key. The saved password or key in the panel will be replaced. Your own keys in authorized_keys are not changed.",
+      "renewAction": "Renew key",
+      "switchAction": "Install key"
+    }
+  },
+  "danger": {
+    "title": "Danger zone",
+    "removeProtocol": {
+      "trigger": "Remove AmneziaWG",
+      "title": "Remove AmneziaWG from the server?",
+      "consequences": "The protocol container and its settings will be deleted from the server and the port will close. While the server has live clients, the protocol can't be removed — revoke their access first.",
+      "action": "Remove protocol"
+    },
+    "deleteAccess": {
+      "trigger": "Delete SSH access",
+      "title": "Delete SSH access to the server?",
+      "consequences": "The panel will stop connecting to the server: checks, sync, and issuing and revoking clients will stop until access is set again. The server itself and its clients keep working.",
+      "action": "Delete access",
+      "busy": "Deleting…"
+    },
+    "resetKey": {
+      "trigger": "Reset the server key",
+      "title": "Reset the pinned key?",
+      "consequences": "The panel will forget the server key, and password sign-in will be impossible until the key is checked and pinned again. Needed only if the server was reinstalled and its key changed.",
+      "action": "Reset key",
+      "busy": "Resetting…"
+    },
+    "deleteServer": {
+      "trigger": "Delete server",
+      "title": "Delete server “{{name}}”?",
+      "consequences": "The server will disappear from the panel along with its SSH access and pinned key. Nothing changes on the server itself. It can't be deleted while it has live clients.",
+      "action": "Delete server",
+      "busy": "Deleting…"
+    }
+  },
+  "hostKey": {
+    "title": "Pin the server key",
+    "description": "The panel will remember the server key and connect only to it from now on. This keeps the password from going to a spoofed server.",
+    "get": "Get the key",
+    "getting": "Getting the key…",
+    "fingerprint": "Fingerprint of the key the server presented",
+    "mismatch": "The key differs from the pinned one ({{fingerprint}}). Pin the new one only if you know the server was reinstalled.",
+    "verify": "Check it against the hosting console. On the server run <code>ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code> — the fingerprint must match exactly.",
+    "notMatching": "Doesn't match — cancel",
+    "matching": "Matches — pin it",
+    "pinning": "Pinning…",
+    "errors": {
+      "noAnswer": "The server didn't answer on the SSH port. Check the address, the port and that the server is on."
+    }
+  },
+  "credentials": {
+    "title": "SSH access to the server",
+    "description": "The panel stores the secret encrypted and uses it only to connect to this server.",
+    "login": "Sign-in",
+    "byPassword": "by password",
+    "byKey": "by SSH key",
+    "user": "User",
+    "password": "Password",
+    "replacePassword": "Replace the password with the panel key",
+    "replaceHint": "The panel will sign in with the password once, install its own key on the server and use that key from then on. The password won't stay in the panel.",
+    "privateKey": "Private key (OpenSSH or PEM, no passphrase)",
+    "submit": "Save access",
+    "busy": "Saving…",
+    "errors": {
+      "panelKeyConflict": "Can't install the key: pin the server key first, or a key installation is already running.",
+      "panelKeyInvalid": "Check the data: the user must be Latin letters without spaces.",
+      "credentialInvalid": "Check the data: the user must be Latin letters without spaces, and the key must be complete and without a passphrase."
+    }
+  },
+  "jobsLog": {
+    "empty": "There have been no jobs for this server yet.",
+    "report": "Check report",
+    "ok": "OK",
+    "problem": "problem",
+    "checks": {
+      "ssh": "SSH",
+      "docker": "Docker",
+      "internet": "Internet",
+      "docker_daemon": "Docker service"
+    }
+  },
+  "monitoring": {
+    "title": "Monitoring",
+    "rangeLabel": "Chart period",
+    "ranges": {
+      "1h": "Hour",
+      "24h": "Day",
+      "7d": "Week",
+      "30d": "Month"
+    },
+    "empty": "No samples for this period. The panel takes them once a minute over SSH — the first ones appear soon after the worker starts; an unreachable server leaves gaps.",
+    "summary": {
+      "cpu": "CPU",
+      "memory": "Memory",
+      "disk": "Disk",
+      "network": "Network ↓ / ↑",
+      "clientsOnline": "Clients online",
+      "of": "{{used}} of {{total}}"
+    },
+    "hourlyNote": "Hourly averages; the summary is for the last hour.",
+    "lastSample": "Last sample <time>{{when}}</time>.",
+    "series": {
+      "cpu": "CPU",
+      "cpuAverage": "CPU, average",
+      "cpuPeak": "CPU, peak",
+      "online": "Online",
+      "onlineAverage": "Online, average",
+      "onlinePeak": "Online, peak",
+      "incoming": "Incoming",
+      "outgoing": "Outgoing",
+      "memory": "Memory",
+      "read": "Read",
+      "write": "Write",
+      "time": "Time"
+    },
+    "charts": {
+      "cpu": "CPU",
+      "network": "Network",
+      "memory": "Memory",
+      "clients": "Clients online",
+      "disk": "Disk: read and write"
+    }
+  }
+}
