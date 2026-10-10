@@ -55,15 +55,24 @@ function mockApi({
   subscriptions = [subscription],
   credentials = [credential] as unknown[],
   grants = [grant] as unknown[],
+  patchStatus = 200,
 } = {}) {
   const calls: string[] = [];
+  let currentUser: Record<string, unknown> = { ...user };
   vi.stubGlobal(
     "fetch",
     vi.fn(async (request: Request) => {
       const path = new URL(request.url).pathname;
       calls.push(`${request.method} ${path}`);
+      if (request.method === "PATCH" && path === `/api/v1/vpn-users/${USER}`) {
+        const body = (await request.json()) as Record<string, unknown>;
+        calls.push(`PATCH body ${JSON.stringify(body)}`);
+        if (patchStatus !== 200) return json({ detail: "conflict" }, patchStatus);
+        currentUser = { ...currentUser, ...body };
+        return json(currentUser);
+      }
       if (path === "/api/v1/vpn-users") return json([{ ...user, access: subscriptions[0] ?? null }]);
-      if (path === `/api/v1/vpn-users/${USER}`) return json(user);
+      if (path === `/api/v1/vpn-users/${USER}`) return json(currentUser);
       if (path === `/api/v1/vpn-users/${USER}/subscriptions`) return json(subscriptions);
       if (path === `/api/v1/subscriptions/${SUB}/grants`) return json(grants);
       if (path === `/api/v1/access/${GRANT}/credentials`) return json(credentials);
@@ -116,6 +125,40 @@ describe("UserPage", () => {
     expect(within(row).getByRole("button", { name: "Отозвать конфиг" })).toBeInTheDocument();
   });
 
+  it("edits the user's name, email and note", async () => {
+    const calls = mockApi();
+    renderCard();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Изменить" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByLabelText("Email")).toHaveValue("alice@example.com");
+    const name = within(dialog).getByLabelText("Имя");
+    await userEvent.clear(name);
+    await userEvent.type(name, "  Alice B  ");
+    await userEvent.type(within(dialog).getByLabelText("Заметка (необязательно)"), "из бухгалтерии");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Сохранить" }));
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Alice B" })).toBeInTheDocument();
+    expect(calls).toContain(
+      'PATCH body {"username":"Alice B","email":"alice@example.com","description":"из бухгалтерии"}',
+    );
+  });
+
+  it("keeps the dialog open on a taken email and drops the error after cancel", async () => {
+    mockApi({ patchStatus: 409 });
+    renderCard();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Изменить" }));
+    let dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Сохранить" }));
+    expect(await within(dialog).findByText("Пользователь с таким email уже есть.")).toBeInTheDocument();
+
+    await userEvent.click(within(dialog).getByRole("button", { name: "Отмена" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Изменить" }));
+    dialog = await screen.findByRole("dialog");
+    expect(within(dialog).queryByText("Пользователь с таким email уже есть.")).not.toBeInTheDocument();
+  });
+
   it("hides the config from a viewer and all changes too", async () => {
     mockApi();
     renderCard(["vpn_users:read", "access:read", "servers:read"]);
@@ -123,6 +166,7 @@ describe("UserPage", () => {
     expect(await screen.findByText(/Конфиг выдан/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Показать конфиг" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Изменить срок" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Изменить" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Опасные действия" })).not.toBeInTheDocument();
   });
 

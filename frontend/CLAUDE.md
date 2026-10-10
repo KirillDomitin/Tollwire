@@ -20,7 +20,7 @@ npm run typecheck && npm run lint && npm test && npm run build
 | `src/auth/AuthContext.tsx` | Состояния checking/signed-out/signed-in, `can(permission)` — по `permissions` из `/auth/me`. |
 | `src/App.tsx` | Маршруты: `/login`, `/servers`, `/servers/:serverId`, `/users`, `/users/:userId`, `/audit` (`lazy`, отдельный чанк). |
 | `src/pages/server/` | Карточка сервера: правка имени и заметки (`EditServerDialog`; адрес не меняется — его смена сбрасывает ключ и доступ), чек-лист подготовки (ключ хоста, учётка, установка, протокол), обслуживание (учётка, ключ панели), мониторинг (ленивый чанк), журнал задач, опасные действия; ссылка «События сервера» (при `audit:read`) открывает журнал по серверу. |
-| `src/pages/user/` | Карточка пользователя: подписка, «Выдать доступ» (подписка → гранты → задачи выдачи), срок, отзыв, конфиг (vpn:// + серия QR + .conf). |
+| `src/pages/user/` | Карточка пользователя: правка имени, email и заметки (`EditUserDialog`), подписка, «Выдать доступ» (подписка → гранты → задачи выдачи), срок, отзыв, конфиг (vpn:// + серия QR + .conf). |
 | `src/pages/AuditPage.tsx` | Журнал `/audit`: фильтры в URL (`admin_id`, `group`, `entity_type`, `entity_id`, `from`, `to`); подгрузка `useInfiniteQuery` по 100, курсор — `before_created_at`/`before_id` последней строки. Имена объектов — из уже загруженных списков серверов и пользователей (без права на список объект не называется). |
 | `src/pages/Ledger.module.css` | Общие стили таблиц-журналов. |
 | `src/components/` | Button, Dialog, ConfirmDialog (с последствиями), TextField, Notice, AppShell, ThemeSwitch, TimeChart (uPlot). |

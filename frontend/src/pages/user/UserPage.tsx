@@ -9,6 +9,7 @@ import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Notice } from "../../components/Notice";
 import { accessSignal, formatDay, isLive } from "../../lib/access";
 import { ChangePeriodDialog } from "./ChangePeriodDialog";
+import { EditUserDialog } from "./EditUserDialog";
 import { GrantAccessDialog } from "./GrantAccessDialog";
 import { GrantRow } from "./GrantRow";
 import styles from "./UserPage.module.css";
@@ -67,6 +68,7 @@ export function UserPage() {
           </h1>
           <p className={styles.address}>{user.email}</p>
           {user.description && <p className={styles.description}>{user.description}</p>}
+          {can("vpn_users:manage") && <EditUserDialog user={user} />}
         </div>
         <div className={styles.state}>
           <span className={styles.stateLabel} data-signal={signal}>
