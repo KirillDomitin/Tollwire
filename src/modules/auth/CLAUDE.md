@@ -58,5 +58,6 @@
 `login`, `login_failed`, `login_locked`, `logout`, `password_changed`, `password_change_failed`, `admin_created`, `admin_updated`. Для анонимных действий
 (вход) актор — `get_anonymous_actor` (только IP).
 
-Создать админа из консоли: `PYTHONPATH=src uv run python -m scripts.create_admin email` (getpass на Windows не
-читает pipe — в скриптах создавать кодом).
+Создать админа из консоли: `PYTHONPATH=src uv run python -m scripts.create_admin` (меню; случайный пароль
+временный — `must_change_password`; подробности в `src/scripts/CLAUDE.md`). `admin_created` от консоли пишется без
+админа-актора (`admin_id` пуст, `meta.source = cli`).
