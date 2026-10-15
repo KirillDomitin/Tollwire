@@ -46,6 +46,30 @@ async def test_reinstall_patches_nat_into_old_config(server: FakeServer) -> None
     assert NAT_POST_UP in server.files[CONFIG_FILE] and server.nat_rule
 
 
+async def test_new_container_restarts_after_server_reboot(server: FakeServer) -> None:
+    assert server.restart_policy == "unless-stopped"  # без политики VPN не поднимется после перезагрузки сервера
+
+
+async def test_reinstall_sets_restart_policy_on_old_container(server: FakeServer) -> None:
+    server.restart_policy = "no"  # контейнер, созданный старой версией панели
+    await call(server, "install")
+    assert server.restart_policy == "unless-stopped"
+    assert server.running and any("docker update" in c for c in server.commands)
+    assert not any(c.startswith(("docker stop", "docker restart")) for c in server.commands)  # клиентов не рвём
+
+
+async def test_reinstall_leaves_other_restart_policy_alone(server: FakeServer) -> None:
+    server.restart_policy = "always"  # выбрано вручную — это тоже перезапуск, не трогаем
+    await call(server, "install")
+    assert server.restart_policy == "always"
+
+
+async def test_health_flags_missing_restart_policy(server: FakeServer) -> None:
+    server.restart_policy = "no"
+    checks = {c.name: c.ok for c in (await call(server, "health_check")).checks}  # type: ignore[attr-defined]
+    assert checks["restart_policy"] is False
+
+
 async def test_foreign_container_with_similar_name_is_not_ours() -> None:
     fake = FakeServer(containers={f"{CONTAINER_NAME}2": "running"})  # как amnezia-awg2 на my-real
     status = await call(fake, "get_status")
@@ -126,6 +150,7 @@ async def test_health_all_ok(server: FakeServer) -> None:
         "listen_port",
         "port_published",
         "nat",
+        "restart_policy",
     }
     assert all(check.ok for check in health.checks)  # type: ignore[attr-defined]
     assert (health.clients_total, health.clients_active) == (1, 1)  # type: ignore[attr-defined]
@@ -142,7 +167,8 @@ async def test_health_stopped_container(server: FakeServer) -> None:
     server.containers[CONTAINER_NAME] = "exited"
     health = await call(server, "health_check")
     names = {check.name: check.ok for check in health.checks}  # type: ignore[attr-defined]
-    assert names == {"container": False, "config": True}  # дальше без живого контейнера не проверить
+    # дальше без живого контейнера не проверить; политика перезапуска читается и у остановленного
+    assert names == {"container": False, "config": True, "restart_policy": True}
     assert health.installed  # type: ignore[attr-defined]
 
 

@@ -2,6 +2,9 @@
 # -*- coding: utf-8 -*-
 
 CONTAINER_NAME = "amnezia-awg"
+# Политика перезапуска контейнера: без неё после перезагрузки сервера VPN остаётся выключенным.
+RESTART_POLICY = "unless-stopped"
+RESTARTING_POLICIES = frozenset({"unless-stopped", "always"})  # обе поднимают контейнер после перезагрузки
 # Образ закреплён по дайджесту, а не :latest: контейнер работает на VPN-сервере с NET_ADMIN, и подменённый в
 # registry «latest» попал бы на все серверы при следующей установке. Обновление — осознанно: сменить дайджест
 # (docker image inspect amneziavpn/amneziawg-go:<tag> --format '{{index .RepoDigests 0}}').

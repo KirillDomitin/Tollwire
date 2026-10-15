@@ -16,7 +16,7 @@
 
 - Один контейнер на протокол: `amnezia-awg` (фильтр `name=^/?amnezia-awg$` — точное имя, иначе зацепит чужой
   `amnezia-awg2`), образ `amneziavpn/amneziawg-go@sha256:…`, `--cap-add=NET_ADMIN --device=/dev/net/tun`,
-  UDP-порт наружу, папка `/opt/vpn-admin/awg` смонтирована в `/etc/amnezia/awg`.
+  `--restart unless-stopped`, UDP-порт наружу, папка `/opt/vpn-admin/awg` смонтирована в `/etc/amnezia/awg`.
 - Внутри: `awg-quick up awg0.conf && tail -f /dev/null` — упал awg-quick → контейнер сразу выходит.
 - Подсеть клиентов `10.8.1.0/24` (сервер .1), NAT — `PostUp/PostDown` с MASQUERADE (PostUp идемпотентен `-C || -A`).
 - Чужие контейнеры на сервере не трогаем: всё своё — по своим именам и папкам.
@@ -24,12 +24,14 @@
 ## Операции провайдера
 
 - `install()` — идемпотентен: если `awg0.conf` уже есть, ключи и порт **не** перегенерируются; старые установки
-  дочиниваются (NAT-хуки). После `docker run` — пауза перед проверкой «running» (контейнер может упасть позже).
+  дочиниваются: NAT-хуки и политика перезапуска (`docker update --restart unless-stopped`, без перезапуска
+  контейнера; `always` и `unless-stopped`, выбранные вручную, не трогаем). После `docker run` — пауза перед
+  проверкой «running» (контейнер может упасть позже).
 - `create_client(name)` — SFTP-чтение `awg0.conf` → свободный адрес → ключи → `[Peer]` с комментарием
   `# client:<name>` → запись → `awg-quick strip` + `awg syncconf` (без перезапуска). Конфиг клиента: обфускация
   копируется из серверного `[Interface]` по allowlist (`_CLIENT_INTERFACE_KEYS`), PostUp/PostDown не копируются.
 - `revoke_client(public_key)`, `restore_client(name, config)` — идемпотентны.
-- `list_clients()`, `sync()` (снимок без изменений), `health_check()`, `get_status()`, `uninstall()`.
+- `list_clients()`, `sync()` (снимок без изменений), `health_check()` (в том числе `restart_policy`: без неё VPN не поднимется после перезагрузки сервера), `get_status()`, `uninstall()`.
 - Имя клиента — белый список `[a-zA-Z0-9_-]{1,32}` (`validate_name`, `re.fullmatch` — `$` пропускает `\n`).
 
 ## Формат vpn:// и QR
@@ -49,7 +51,3 @@
   (`DOCKER_INSTALL_TIMEOUT`), `docker run` — 300 с. Таймаут обрывает ожидание, а не команду: apt на сервере
   продолжает работу. Сумма должна оставаться меньше `STALE_JOB_TIMEOUT_SECONDS` (1800 с).
 - Логика AmneziaWG проверяется только на реальном сервере — фейк в тестах отвечает лишь на известные команды.
-
-## Известные проблемы
-
-- Контейнер `amnezia-awg` запускается без `--restart` — после перезагрузки сервера VPN сам не поднимется.

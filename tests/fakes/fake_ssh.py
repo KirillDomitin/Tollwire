@@ -60,6 +60,7 @@ class FakeServer:
     reachable: bool = True
     nat_rule: bool = False
     port_published: bool = True
+    restart_policy: str = "no"  # RestartPolicy.Name контейнера: no / unless-stopped / always / on-failure
     interface_peers: set[str] = field(default_factory=set)  # ключи, применённые к живому интерфейсу
     handshakes: dict[str, int] = field(default_factory=dict)  # ключ → unix-время последнего рукопожатия
     commands: list[str] = field(default_factory=list)
@@ -159,7 +160,17 @@ class FakeServer:
             if CONTAINER_NAME not in self.containers:
                 return _fail("No such object", 1)
             return _ok("true\n" if self.running else "false\n")
+        if cmd == f"docker inspect -f '{{{{.HostConfig.RestartPolicy.Name}}}}' {CONTAINER_NAME}":
+            if CONTAINER_NAME not in self.containers:
+                return _fail("No such object", 1)
+            return _ok(f"{self.restart_policy}\n")
+        if cmd == f"docker update --restart unless-stopped {CONTAINER_NAME}":
+            if CONTAINER_NAME not in self.containers:
+                return _fail("No such container", 1)
+            self.restart_policy = "unless-stopped"
+            return _ok(f"{CONTAINER_NAME}\n")
         if cmd.startswith(f"docker run -d --name {CONTAINER_NAME} "):
+            self.restart_policy = "unless-stopped" if " --restart unless-stopped " in cmd else "no"
             self._start()
             return _ok("container-id\n")
         if cmd == f"docker start {CONTAINER_NAME}":

@@ -37,6 +37,8 @@ from infrastructure.vpn.config import (
     INTERNET_PROBE_COMMAND,
     NAT_POST_UP,
     NAT_RULE,
+    RESTART_POLICY,
+    RESTARTING_POLICIES,
 )
 from infrastructure.vpn.provider import (
     HealthCheck,
@@ -155,6 +157,7 @@ class AmneziaWGProvider(VPNProvider):
         if test.exit_status == 0:
             # Повторная установка чинит серверы, поставленные до появления NAT-хуков.
             await self._ensure_nat()
+            await self._ensure_restart_policy()
             return await self.get_status()
         port = pick_udp_port()
         keys = generate_secret_keys()
@@ -275,6 +278,24 @@ class AmneziaWGProvider(VPNProvider):
         if result.exit_status != 0:
             raise CommandExecutionError(f"Failed to apply NAT rule: {result.stderr.strip()}")
 
+    async def _restart_policy(self) -> str | None:
+        """Политика перезапуска нашего контейнера или None, если контейнера нет."""
+        result = await self.ssh_client.execute(
+            f"docker inspect -f '{{{{.HostConfig.RestartPolicy.Name}}}}' {CONTAINER_NAME}"
+        )
+        return result.stdout.strip() if result.exit_status == 0 else None
+
+    async def _ensure_restart_policy(self) -> None:
+        """Без политики перезапуска VPN не поднимется после перезагрузки сервера: контейнер так и останется
+        остановленным. `docker update` меняет настройку на месте — контейнер не перезапускается, клиенты не рвутся.
+        Политику, которая уже перезапускает контейнер (в том числе выбранную вручную), не трогаем."""
+        policy = await self._restart_policy()
+        if policy is None or policy in RESTARTING_POLICIES:
+            return
+        result = await self.ssh_client.execute(f"docker update --restart {RESTART_POLICY} {CONTAINER_NAME}")
+        if result.exit_status != 0:
+            raise CommandExecutionError(f"Failed to set restart policy: {result.stderr.strip()}")
+
     async def _server_public_key(self) -> str:
         # Берём публичный ключ у живого интерфейса — приватный ключ сервера не покидает сервер.
         result = await self.ssh_client.execute(f"docker exec {CONTAINER_NAME} awg show {INTERFACE_NAME} public-key")
@@ -343,7 +364,7 @@ class AmneziaWGProvider(VPNProvider):
         return SyncResult(provider_status=status, client_list=await self.list_clients())
 
     async def health_check(self) -> ProviderHealth:
-        """Проверки протокола на сервере: контейнер, конфиг, интерфейс, порт, NAT, клиенты. Ничего не меняет."""
+        """Проверки протокола на сервере: контейнер, перезапуск, конфиг, интерфейс, порт, NAT, клиенты. Не меняет."""
         checks: list[HealthCheck] = []
         state = await self.ssh_client.execute(
             "docker ps -a --filter " + CONTAINER_NAME_FILTER + " --format '{{.State}}'"
@@ -351,6 +372,7 @@ class AmneziaWGProvider(VPNProvider):
         raw_state = state.stdout.strip()
         running = raw_state == "running"
         checks.append(HealthCheck("container", running, raw_state or "container not found"))
+        policy = await self._restart_policy() if raw_state else None
 
         port: int | None = None
         config_exists = await self._config_exists()
@@ -363,6 +385,15 @@ class AmneziaWGProvider(VPNProvider):
                 checks.append(HealthCheck("config", False, "ListenPort is missing or invalid"))
         else:
             checks.append(HealthCheck("config", False, f"{HOST_CONFIG_FILE} not found"))
+
+        if policy is not None:
+            checks.append(
+                HealthCheck(
+                    "restart_policy",
+                    policy in RESTARTING_POLICIES,
+                    policy if policy in RESTARTING_POLICIES else f"{policy or 'no'}: not restarted after reboot",
+                )
+            )
 
         if not running:
             return ProviderHealth(installed=installed, checks=checks, port=port, clients_total=0, clients_active=0)
@@ -410,7 +441,7 @@ class AmneziaWGProvider(VPNProvider):
 
         if not container_state.stdout:
             container_run = await self.ssh_client.execute(
-                f"docker run -d --name {CONTAINER_NAME} \
+                f"docker run -d --name {CONTAINER_NAME} --restart {RESTART_POLICY} \
                   --cap-add=NET_ADMIN --device=/dev/net/tun \
                   -p {port}:{port}/udp \
                   -v {CONFIG_PATH}:/etc/amnezia/awg \
