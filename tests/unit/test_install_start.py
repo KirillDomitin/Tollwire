@@ -201,3 +201,11 @@ def test_success_message_says_how_to_stop_and_read_logs(app: Path) -> None:
 
     assert "logs" in result.stdout and "down" in result.stdout
     assert "самоподписанн" in result.stdout  # про предупреждение браузера напомнили и в конце
+
+
+def test_no_admin_skips_the_admin_step_entirely(app: Path) -> None:
+    result = start(app, "--domain", "panel.example.com", "--no-admin")
+
+    assert result.returncode == 0, result.stderr
+    assert "create_admin" not in result.stdout and not any("create_admin" in line for line in calls(app))
+    assert "Панель запущена" in result.stdout

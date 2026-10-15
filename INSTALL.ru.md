@@ -270,6 +270,12 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm api pyth
 ### Обновление
 
 ```bash
+./panel update
+```
+
+Делает бэкап базы, `git pull --ff-only`, пересобирает и запускает панель (та же логика, что в `./install.sh`, поэтому дожидается готовности). Если папка — не git-репозиторий или в отслеживаемых файлах есть локальные правки, остановится, ничего не сделав: обновите код сами и используйте `--no-pull`; `--no-backup` пропускает бэкап. Если запуск не удался, сообщение назовёт бэкап и путь назад (`./panel restore`). Вручную:
+
+```bash
 git pull
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 ```
@@ -281,7 +287,7 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 Логи — в JSON, по строке на событие; запрос в nginx и его обработку в api связывает общий `request_id`:
 
 ```bash
-docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f api worker
+./panel logs api worker                  # последние 100 строк и слежение; --tail N, --no-follow
 docker compose --env-file .env.prod -f docker-compose.prod.yml logs --no-log-prefix api | jq .
 ```
 
@@ -290,16 +296,29 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml logs --no-log-pre
 ### Резервная копия
 
 ```bash
-# бэкап базы
+./panel backup                           # backups/tollwire-ГГГГММДД-ЧЧММСС.dump (права 600), хранятся последние 14
+./panel backup --keep 30 --dir /mnt/backups
+./panel restore backups/tollwire-20261016-030000.dump
+```
+
+`backup` снимает дамп базы в формате `pg_dump -Fc`, проверяет файл и только потом кладёт его на место; старые бэкапы сверх `--keep` удаляются (страховочные копии и чужие файлы в папке не трогаются). Безопасно запускать из cron:
+
+```
+0 3 * * * cd /opt/tollwire && ./panel backup >> /var/log/tollwire-backup.log 2>&1
+```
+
+`restore` **заменяет** все данные панели дампом. Просит ввести `restore` (без терминала нужен `--yes`), сначала делает страховочный бэкап текущих данных (`tollwire-pre-restore-….dump`; `--no-safety-backup` отключает), останавливает `api` и `worker`, загружает дамп одной транзакцией (при ошибке база остаётся как была, сервисы запускаются снова), применяет миграции на случай, если дамп старше кода, и запускает панель.
+
+**`.env.prod` в бэкап не входит — так задумано.** Дамп без `ENCRYPTION_KEY` из вашего `.env.prod` бесполезен; и наоборот, тот, кто унесёт только дамп, не прочитает SSH-учётки и VPN-конфиги в нём. Храните копию `.env.prod` в менеджере паролей или сейфе — отдельно от этого сервера и от бэкапов.
+
+Вручную:
+
+```bash
 docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres \
   sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > backup-$(date +%F).dump
-
-# восстановление (в пустую базу)
 docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres \
   sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists' < backup-YYYY-MM-DD.dump
 ```
-
-Бэкап без `ENCRYPTION_KEY` из того же `.env.prod` бесполезен — храните их вместе (но не на том же сервере).
 
 ### Остановка
 

@@ -49,3 +49,6 @@ uv run alembic upgrade head / downgrade -1       # миграции
 ```
 
 Фронтенд (`frontend/`): `npm run dev`, проверки — `npm run typecheck && npm run lint && npm test`.
+
+Прод: `./install.sh` (установка одной командой), `./panel backup|restore|update|logs` (обслуживание); общий код
+скриптов — `deploy/common.sh`. Тесты — `tests/unit/test_install_*.py` и `test_panel.py` (подробности в `tests/CLAUDE.md`).

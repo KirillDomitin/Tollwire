@@ -16,6 +16,7 @@ theory
 deploy
 frontend
 certs
+backups
 .env
 .env.*
 !.env.example

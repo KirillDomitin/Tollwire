@@ -1,0 +1,394 @@
+#!/usr/bin/env bash
+# Обслуживание Tollwire (прод, Docker): резервные копии, восстановление, обновление, логи.
+#
+#   ./panel backup  [--keep N] [--dir DIR]
+#   ./panel restore FILE [--yes] [--no-safety-backup]
+#   ./panel update  [--no-backup] [--no-pull]
+#   ./panel logs    [SERVICE...] [--tail N] [--no-follow]
+#
+# В бэкап попадает только дамп базы: ключ шифрования (ENCRYPTION_KEY из .env.prod) нарочно не кладётся рядом с
+# данными — иначе тот, кто унесёт файл, получит и данные, и ключ к ним. Храните копию .env.prod отдельно.
+
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")"
+
+ENV_FILE=.env.prod
+COMPOSE_FILE=docker-compose.prod.yml
+DEFAULT_BACKUP_DIR=backups
+DEFAULT_KEEP=14
+DEFAULT_TAIL=100
+SERVICES="nginx api worker postgres redis migrate"
+
+# Язык сообщений, t, say и die — общее с ./install.sh.
+# shellcheck source=deploy/common.sh
+source deploy/common.sh
+
+part_file=""
+cleanup() {
+    [ -z "$part_file" ] || rm -f "$part_file"
+}
+trap cleanup EXIT
+
+# Сообщения: ключ → строка для printf (подстановки %s — по порядку, одинаковому в обоих языках).
+msg_ru() {
+    case $1 in
+        unknown_command) printf '%s' "неизвестная команда: %s" ;;
+        unknown_option) printf '%s' "неизвестный параметр: %s" ;;
+        need_value) printf '%s' "после %s нужно значение." ;;
+        no_docker) printf '%s' "Docker не найден." ;;
+        docker_unreachable) printf '%s' "нет связи с Docker: демон не запущен или нет прав." ;;
+        no_compose) printf '%s' "не найден плагин Docker Compose (команда 'docker compose')." ;;
+        no_env) printf '%s' "не найден %s: сначала установите панель командой ./install.sh." ;;
+        no_compose_file) printf '%s' "не найден %s: запускайте ./panel из корня репозитория." ;;
+        postgres_down) printf '%s' "контейнер базы не запущен. Сначала запустите панель: ./install.sh" ;;
+        bad_keep) printf '%s' "--keep — целое число не меньше 1." ;;
+        bad_tail) printf '%s' "--tail — целое число не меньше 0." ;;
+        backup_failed) printf '%s' "pg_dump завершился с ошибкой — бэкап не создан." ;;
+        backup_invalid) printf '%s' "дамп пустой или повреждён — бэкап не создан." ;;
+        backup_done) printf '%s' "Бэкап создан: %s (%s)." ;;
+        backup_pruned) printf '%s' "Старые бэкапы удалены: %s (хранятся последние %s)." ;;
+        backup_key_reminder) printf '%s' "Дамп бесполезен без ENCRYPTION_KEY из %s: храните копию %s отдельно от этого сервера." ;;
+        restore_need_file) printf '%s' "укажите файл бэкапа: ./panel restore ФАЙЛ" ;;
+        restore_no_file) printf '%s' "файл бэкапа не найден: %s" ;;
+        restore_not_dump) printf '%s' "%s — не дамп PostgreSQL (pg_dump -Fc), восстановление отменено." ;;
+        restore_need_terminal) printf '%s' "замена данных требует подтверждения: запустите в терминале или добавьте --yes." ;;
+        restore_warning) printf '%s' "Это ЗАМЕНИТ все данные панели (серверы, пользователи, доступы, журнал) содержимым %s." ;;
+        restore_prompt) printf '%s' "Введите restore, чтобы продолжить: " ;;
+        restore_aborted) printf '%s' "Отменено, ничего не изменено." ;;
+        safety_backup) printf '%s' "Страховочный бэкап текущих данных: %s" ;;
+        restore_stopping) printf '%s' "Останавливаю api и worker…" ;;
+        restore_failed) printf '%s' "восстановление не удалось — база осталась как была (одна транзакция), api и worker запущены снова. Страховочный бэкап: %s" ;;
+        restore_migrating) printf '%s' "Применяю миграции (на случай, если дамп старше кода)…" ;;
+        restore_done) printf '%s' "Данные восстановлены из %s." ;;
+        update_not_git) printf '%s' "эта папка не git-репозиторий: обновите код сами и запустите ./panel update --no-pull." ;;
+        update_dirty) printf '%s' "в отслеживаемых файлах есть локальные изменения: закоммитьте или отмените их, либо используйте --no-pull." ;;
+        update_pulling) printf '%s' "Обновляю код (git pull --ff-only)…" ;;
+        update_pull_failed) printf '%s' "git pull --ff-only не удался: разберитесь вручную или используйте --no-pull." ;;
+        update_failed) printf '%s' "обновление не удалось. Бэкап перед обновлением: %s. Вернуть данные: ./panel restore %s ; логи: ./panel logs" ;;
+        update_failed_nobackup) printf '%s' "обновление не удалось (бэкап не делался). Логи: ./panel logs" ;;
+        update_done) printf '%s' "Обновление завершено." ;;
+        bad_service) printf '%s' "неизвестный сервис: %s (доступны: %s)" ;;
+    esac
+}
+
+msg_en() {
+    case $1 in
+        unknown_command) printf '%s' "unknown command: %s" ;;
+        unknown_option) printf '%s' "unknown option: %s" ;;
+        need_value) printf '%s' "%s needs a value." ;;
+        no_docker) printf '%s' "Docker not found." ;;
+        docker_unreachable) printf '%s' "cannot talk to Docker: the daemon is not running or you lack permission." ;;
+        no_compose) printf '%s' "the Docker Compose plugin ('docker compose') was not found." ;;
+        no_env) printf '%s' "%s not found: install the panel with ./install.sh first." ;;
+        no_compose_file) printf '%s' "%s not found: run ./panel from the repository root." ;;
+        postgres_down) printf '%s' "the database container is not running. Start the panel first: ./install.sh" ;;
+        bad_keep) printf '%s' "--keep must be a whole number of at least 1." ;;
+        bad_tail) printf '%s' "--tail must be a whole number of at least 0." ;;
+        backup_failed) printf '%s' "pg_dump failed - no backup was created." ;;
+        backup_invalid) printf '%s' "the dump is empty or damaged - no backup was created." ;;
+        backup_done) printf '%s' "Backup created: %s (%s)." ;;
+        backup_pruned) printf '%s' "Removed old backups: %s (the latest %s are kept)." ;;
+        backup_key_reminder) printf '%s' "The dump is useless without ENCRYPTION_KEY from %s: keep a copy of %s away from this server." ;;
+        restore_need_file) printf '%s' "give the backup file: ./panel restore FILE" ;;
+        restore_no_file) printf '%s' "backup file not found: %s" ;;
+        restore_not_dump) printf '%s' "%s is not a PostgreSQL dump (pg_dump -Fc); restore cancelled." ;;
+        restore_need_terminal) printf '%s' "replacing the data needs confirmation: run in a terminal or add --yes." ;;
+        restore_warning) printf '%s' "This will REPLACE all panel data (servers, users, access, audit log) with the contents of %s." ;;
+        restore_prompt) printf '%s' "Type restore to continue: " ;;
+        restore_aborted) printf '%s' "Cancelled, nothing was changed." ;;
+        safety_backup) printf '%s' "Safety backup of the current data: %s" ;;
+        restore_stopping) printf '%s' "Stopping api and worker..." ;;
+        restore_failed) printf '%s' "restore failed - the database was left as it was (single transaction), api and worker were started again. Safety backup: %s" ;;
+        restore_migrating) printf '%s' "Applying migrations (in case the dump is older than the code)..." ;;
+        restore_done) printf '%s' "Data restored from %s." ;;
+        update_not_git) printf '%s' "this folder is not a git repository: update the code yourself and run ./panel update --no-pull." ;;
+        update_dirty) printf '%s' "tracked files have local changes: commit or discard them, or use --no-pull." ;;
+        update_pulling) printf '%s' "Updating the code (git pull --ff-only)..." ;;
+        update_pull_failed) printf '%s' "git pull --ff-only failed: sort it out by hand or use --no-pull." ;;
+        update_failed) printf '%s' "the update failed. Backup taken before it: %s. Get the data back with: ./panel restore %s ; logs: ./panel logs" ;;
+        update_failed_nobackup) printf '%s' "the update failed (no backup was taken). Logs: ./panel logs" ;;
+        update_done) printf '%s' "Update finished." ;;
+        bad_service) printf '%s' "unknown service: %s (available: %s)" ;;
+    esac
+}
+
+usage() {
+    if [ "$lang" = ru ]; then
+        cat <<'EOF'
+Использование: ./panel КОМАНДА [параметры]
+
+  backup  [--keep N] [--dir ПАПКА]
+          Резервная копия базы в backups/ (права 600). Хранятся последние N (по умолчанию 14), старые удаляются.
+  restore ФАЙЛ [--yes] [--no-safety-backup]
+          Заменить данные панели содержимым бэкапа. Просит подтверждение (без терминала нужен --yes) и перед
+          заменой делает страховочный бэкап текущих данных.
+  update  [--no-backup] [--no-pull]
+          Бэкап, затем git pull --ff-only, затем пересборка и запуск (./install.sh) с ожиданием готовности.
+  logs    [СЕРВИС...] [--tail N] [--no-follow]
+          Логи сервисов (nginx api worker postgres redis migrate); по умолчанию последние 100 строк и слежение.
+
+В бэкап не входит .env.prod: ключ шифрования хранится отдельно от данных. Язык сообщений: PANEL_LANG=ru|en,
+иначе по локали системы, по умолчанию английский.
+EOF
+    else
+        cat <<'EOF'
+Usage: ./panel COMMAND [options]
+
+  backup  [--keep N] [--dir DIR]
+          Back up the database into backups/ (mode 600). The latest N are kept (14 by default), older ones deleted.
+  restore FILE [--yes] [--no-safety-backup]
+          Replace the panel data with the backup. Asks for confirmation (--yes without a terminal) and takes a
+          safety backup of the current data first.
+  update  [--no-backup] [--no-pull]
+          Backup, then git pull --ff-only, then rebuild and start (./install.sh) and wait until ready.
+  logs    [SERVICE...] [--tail N] [--no-follow]
+          Service logs (nginx api worker postgres redis migrate); the last 100 lines and follow by default.
+
+.env.prod is not part of the backup: the encryption key is kept apart from the data. Message language:
+PANEL_LANG=ru|en, otherwise the system locale, English by default.
+EOF
+    fi
+}
+
+compose=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
+
+preflight() {
+    command -v docker > /dev/null 2>&1 || die "$(t no_docker)"
+    docker info > /dev/null 2>&1 || die "$(t docker_unreachable)"
+    docker compose version > /dev/null 2>&1 || die "$(t no_compose)"
+    [ -f "$ENV_FILE" ] || die "$(t no_env "$ENV_FILE")"
+    [ -f "$COMPOSE_FILE" ] || die "$(t no_compose_file "$COMPOSE_FILE")"
+}
+
+require_postgres() {
+    [ -n "$("${compose[@]}" ps -q postgres 2> /dev/null)" ] || die "$(t postgres_down)"
+}
+
+# Дамп формата pg_dump -Fc начинается с сигнатуры PGDMP: так отличаем его от пустого файла и от мусора.
+is_dump() { [ "$(head -c 5 "$1" 2> /dev/null)" = PGDMP ]; }
+
+# Создаёт бэкап и кладёт путь в backup_path. Файл появляется под своим именем только целым и проверенным.
+backup_path=""
+make_backup() {
+    local prefix=$1 dir=$2 stamp target n=1
+    stamp=$(date +%Y%m%d-%H%M%S)
+    (umask 077 && mkdir -p "$dir")
+    chmod 700 "$dir" 2> /dev/null || true
+    target="$dir/$prefix-$stamp.dump"
+    while [ -e "$target" ]; do
+        target="$dir/$prefix-$stamp-$n.dump"
+        n=$((n + 1))
+    done
+    part_file=$(umask 077 && mktemp "$dir/.part.XXXXXX")
+    # Учётные данные берутся из окружения контейнера базы: пароль не появляется ни в аргументах, ни на экране.
+    "${compose[@]}" exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$part_file" \
+        || die "$(t backup_failed)"
+    is_dump "$part_file" || die "$(t backup_invalid)"
+    chmod 600 "$part_file"
+    mv "$part_file" "$target"
+    part_file=""
+    backup_path=$target
+}
+
+# Оставляет $2 последних обычных бэкапов в $1; страховочные (tollwire-pre-restore-…) и чужие файлы не трогает.
+prune_backups() {
+    local dir=$1 keep=$2 old removed=0
+    old=$(ls -1t "$dir"/tollwire-[0-9]*.dump 2> /dev/null | tail -n +$((keep + 1)) || true)
+    [ -n "$old" ] || return 0
+    while IFS= read -r file; do
+        rm -f -- "$file"
+        removed=$((removed + 1))
+    done <<< "$old"
+    say "$(t backup_pruned "$removed" "$keep")"
+}
+
+is_number() { [[ $1 =~ ^[0-9]+$ ]]; }
+
+cmd_backup() {
+    local keep=$DEFAULT_KEEP dir=$DEFAULT_BACKUP_DIR
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --keep)
+                [ $# -ge 2 ] || die "$(t need_value --keep)"
+                keep=$2
+                shift 2
+                ;;
+            --dir)
+                [ $# -ge 2 ] || die "$(t need_value --dir)"
+                dir=$2
+                shift 2
+                ;;
+            *) die "$(t unknown_option "$1")" ;;
+        esac
+    done
+    { is_number "$keep" && [ "$keep" -ge 1 ]; } || die "$(t bad_keep)"
+    preflight
+    require_postgres
+    make_backup tollwire "$dir"
+    say "$(t backup_done "$backup_path" "$(du -h "$backup_path" | cut -f1)")"
+    prune_backups "$dir" "$keep"
+    say "$(t backup_key_reminder "$ENV_FILE" "$ENV_FILE")"
+}
+
+cmd_restore() {
+    local file="" assume_yes=0 safety=1 answer safety_path="-"
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --yes)
+                assume_yes=1
+                shift
+                ;;
+            --no-safety-backup)
+                safety=0
+                shift
+                ;;
+            -*) die "$(t unknown_option "$1")" ;;
+            *)
+                file=$1
+                shift
+                ;;
+        esac
+    done
+    [ -n "$file" ] || die "$(t restore_need_file)"
+    [ -f "$file" ] || die "$(t restore_no_file "$file")"
+    is_dump "$file" || die "$(t restore_not_dump "$file")"
+    preflight
+    require_postgres
+
+    if [ "$assume_yes" -eq 0 ]; then
+        { [ -t 0 ] && [ -t 1 ]; } || die "$(t restore_need_terminal)"
+        say "$(t restore_warning "$file")"
+        read -r -p "$(t restore_prompt)" answer || answer=""
+        if [ "$answer" != restore ]; then
+            say "$(t restore_aborted)"
+            return 1
+        fi
+    fi
+
+    if [ "$safety" -eq 1 ]; then
+        make_backup tollwire-pre-restore "$DEFAULT_BACKUP_DIR"
+        safety_path=$backup_path
+        say "$(t safety_backup "$safety_path")"
+    fi
+
+    say "$(t restore_stopping)"
+    "${compose[@]}" stop api worker
+    # Одна транзакция: если дамп окажется негодным, база останется ровно такой, какой была.
+    if ! "${compose[@]}" exec -T postgres sh -c \
+        'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner --single-transaction' < "$file"; then
+        "${compose[@]}" start api worker || true
+        die "$(t restore_failed "$safety_path")"
+    fi
+
+    # Дамп мог быть снят на более старой версии: схема догоняет код до запуска api и worker.
+    say "$(t restore_migrating)"
+    "${compose[@]}" run --rm migrate
+    PANEL_LANG=$lang ./install.sh --no-admin
+    say "$(t restore_done "$file")"
+}
+
+cmd_update() {
+    local do_backup=1 do_pull=1 taken="" status
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --no-backup)
+                do_backup=0
+                shift
+                ;;
+            --no-pull)
+                do_pull=0
+                shift
+                ;;
+            *) die "$(t unknown_option "$1")" ;;
+        esac
+    done
+    preflight
+
+    # Условия для git проверяем ДО бэкапа: отказ после него был бы лишней работой.
+    if [ "$do_pull" -eq 1 ]; then
+        command -v git > /dev/null 2>&1 && git rev-parse --is-inside-work-tree > /dev/null 2>&1 || die "$(t update_not_git)"
+        [ -z "$(git status --porcelain --untracked-files=no)" ] || die "$(t update_dirty)"
+    fi
+
+    if [ "$do_backup" -eq 1 ]; then
+        require_postgres
+        make_backup tollwire "$DEFAULT_BACKUP_DIR"
+        taken=$backup_path
+        say "$(t backup_done "$taken" "$(du -h "$taken" | cut -f1)")"
+        prune_backups "$DEFAULT_BACKUP_DIR" "$DEFAULT_KEEP"
+    fi
+
+    if [ "$do_pull" -eq 1 ]; then
+        say "$(t update_pulling)"
+        git pull --ff-only || die "$(t update_pull_failed)"
+    fi
+
+    # После git pull ./install.sh — уже новая версия: пересборка, миграции и ожидание готовности делает он.
+    status=0
+    PANEL_LANG=$lang ./install.sh --no-admin || status=$?
+    if [ "$status" -ne 0 ]; then
+        if [ -n "$taken" ]; then
+            printf '%s\n' "$(t update_failed "$taken" "$taken")" >&2
+        else
+            printf '%s\n' "$(t update_failed_nobackup)" >&2
+        fi
+        return "$status"
+    fi
+    say "$(t update_done)"
+}
+
+cmd_logs() {
+    local tail_lines=$DEFAULT_TAIL follow=1 services=() service known
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --tail)
+                [ $# -ge 2 ] || die "$(t need_value --tail)"
+                tail_lines=$2
+                shift 2
+                ;;
+            --no-follow)
+                follow=0
+                shift
+                ;;
+            -*) die "$(t unknown_option "$1")" ;;
+            *)
+                services+=("$1")
+                shift
+                ;;
+        esac
+    done
+    is_number "$tail_lines" || die "$(t bad_tail)"
+    for service in ${services[@]+"${services[@]}"}; do
+        known=0
+        for candidate in $SERVICES; do
+            [ "$candidate" != "$service" ] || known=1
+        done
+        [ "$known" -eq 1 ] || die "$(t bad_service "$service" "$SERVICES")"
+    done
+    preflight
+    local args=(logs --tail "$tail_lines")
+    [ "$follow" -eq 0 ] || args+=(-f)
+    "${compose[@]}" "${args[@]}" ${services[@]+"${services[@]}"}
+}
+
+main() {
+    local command=${1:-}
+    case $command in
+        backup | restore | update | logs)
+            shift
+            "cmd_$command" "$@"
+            ;;
+        "" | -h | --help | help)
+            usage
+            ;;
+        *)
+            usage >&2
+            die "$(t unknown_command "$command")"
+            ;;
+    esac
+}
+
+# Вызов и exit — в одной строке: bash читает скрипт по мере выполнения, а `update` делает git pull, который может
+# подменить этот файл. Всё нужное уже прочитано (тело — в функциях), следующую строку из нового файла bash не возьмёт.
+main "$@"; exit $?

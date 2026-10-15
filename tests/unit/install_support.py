@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 BASH = shutil.which("bash")
 requires_bash = pytest.mark.skipif(not BASH or not shutil.which("openssl"), reason="нужны bash и openssl")
 # Что лежит в каталоге установки до запуска; всё остальное создал установщик.
-BASE_FILES = {"install.sh", ".env.prod.example", "docker-compose.prod.yml"}
+BASE_FILES = {"install.sh", "panel", ".env.prod.example", "docker-compose.prod.yml", "deploy", ".gitignore"}
 
 FAKE_DOCKER = """#!/usr/bin/env bash
 echo "docker $*" >> "$FAKE_DOCKER_LOG"
@@ -44,8 +44,26 @@ case "$1" in
           case "$3" in
             nginx) [ -z "${FAKE_RUNNING:-}" ] || echo nginx-id ;;
             api) echo api-id ;;
+            postgres) [ -n "${FAKE_PG_DOWN:-}" ] || echo postgres-id ;;
           esac
         fi
+        ;;
+      exec)
+        # exec -T postgres sh -c '<команда>': различаем pg_dump и pg_restore по тексту команды
+        shift
+        while [ "$1" = "-T" ]; do shift; done
+        shift # имя сервиса
+        script=$3
+        case "$script" in
+          pg_dump*)
+            [ -z "${FAKE_DUMP_FAIL:-}" ] || { echo "pg_dump: error" >&2; exit 1; }
+            [ -n "${FAKE_DUMP_EMPTY:-}" ] || printf 'PGDMP-fake-dump:%s\n' "${FAKE_DUMP_BODY:-database}"
+            ;;
+          pg_restore*)
+            cat > "${FAKE_RESTORE_SINK:-/dev/null}"
+            [ -z "${FAKE_RESTORE_FAIL:-}" ] || { echo "pg_restore: error" >&2; exit 1; }
+            ;;
+        esac
         ;;
       logs) echo "log line" ;;
     esac
@@ -70,8 +88,10 @@ def prepare_app(tmp_path: Path) -> Path:
     """Копия того, что нужно установщику: сам скрипт и шаблон. Заглушка docker — в соседнем bin/."""
     target = tmp_path / "app"
     target.mkdir()
-    for name in ("install.sh", ".env.prod.example", "docker-compose.prod.yml"):
+    for name in ("install.sh", "panel", ".env.prod.example", "docker-compose.prod.yml", ".gitignore"):
         shutil.copy(ROOT / name, target / name)
+    (target / "deploy").mkdir()
+    shutil.copy(ROOT / "deploy" / "common.sh", target / "deploy" / "common.sh")
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     for name, body in (("docker", FAKE_DOCKER), ("curl", FAKE_CURL)):
@@ -106,3 +126,37 @@ def run(app: Path, *args: str, start: bool = False, **env: str) -> subprocess.Co
 
 def env_values(app: Path) -> dict[str, str | None]:
     return dotenv_values(app / ".env.prod")
+
+
+def run_panel(app: Path, *args: str, **env: str) -> subprocess.CompletedProcess[str]:
+    """./panel в копии каталога. Язык русский, как у run(); порты — заведомо свободные: panel запускает install.sh."""
+    environment = {
+        **os.environ,
+        "PATH": f"{app.parent / 'bin'}{os.pathsep}{os.environ['PATH']}",
+        "FAKE_DOCKER_LOG": str(app.parent / "docker.log"),
+        "PANEL_LANG": "ru",
+        "HTTP_PORT": str(free_port()),
+        "HTTPS_PORT": str(free_port()),
+        **env,
+    }
+    return subprocess.run(
+        [str(BASH), "panel", *args],
+        cwd=app,
+        env=environment,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        stdin=subprocess.DEVNULL,
+        timeout=120,
+    )
+
+
+def installed(app: Path) -> Path:
+    """Каталог «уже установленной» панели: есть .env.prod (остальное установщик догонит сам)."""
+    (app / ".env.prod").write_text("PANEL_DOMAIN=localhost\n", encoding="utf-8")
+    return app
+
+
+def docker_calls(app: Path) -> list[str]:
+    log = app.parent / "docker.log"
+    return log.read_text(encoding="utf-8").splitlines() if log.exists() else []

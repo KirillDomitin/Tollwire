@@ -11,3 +11,4 @@ htmlcov/
 .env.prod
 certs/
 *.stackdump
+backups/

@@ -270,6 +270,12 @@ It asks for the email and offers a password: a **random** one (the default — s
 ### Updating
 
 ```bash
+./panel update
+```
+
+It takes a database backup, runs `git pull --ff-only`, rebuilds and starts the panel (the same `./install.sh` logic, so it waits until the panel is ready). If the folder is not a git repository or tracked files have local changes, it stops before doing anything — update the code yourself and use `--no-pull`; `--no-backup` skips the backup. If the start fails, the message names the backup and the way back (`./panel restore`). By hand:
+
+```bash
 git pull
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 ```
@@ -281,7 +287,7 @@ New migrations are applied automatically (the `migrate` service). On shutdown th
 Logs are JSON, one line per event; a shared `request_id` ties a request in nginx to its handling in the API:
 
 ```bash
-docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f api worker
+./panel logs api worker                  # the last 100 lines and follow; --tail N, --no-follow
 docker compose --env-file .env.prod -f docker-compose.prod.yml logs --no-log-prefix api | jq .
 ```
 
@@ -290,16 +296,29 @@ Passwords, keys, tokens and VPN configs are never written to logs. `LOG_LEVEL=de
 ### Backup
 
 ```bash
-# back up the database
+./panel backup                           # backups/tollwire-YYYYMMDD-HHMMSS.dump (mode 600), the latest 14 are kept
+./panel backup --keep 30 --dir /mnt/backups
+./panel restore backups/tollwire-20261016-030000.dump
+```
+
+`backup` dumps the database in the custom `pg_dump -Fc` format, checks the file and only then puts it in place; older backups beyond `--keep` are removed (safety copies and foreign files in the folder are never touched). It is safe to run from cron:
+
+```
+0 3 * * * cd /opt/tollwire && ./panel backup >> /var/log/tollwire-backup.log 2>&1
+```
+
+`restore` **replaces** all panel data with the dump. It asks you to type `restore` (without a terminal use `--yes`), first takes a safety backup of the current data (`tollwire-pre-restore-….dump`; `--no-safety-backup` skips it), stops `api` and `worker`, loads the dump in a single transaction (if it fails, the database stays as it was and the services are started again), applies migrations in case the dump is older than the code, and starts the panel.
+
+**The backup does not contain `.env.prod`, on purpose.** A dump without the `ENCRYPTION_KEY` from your `.env.prod` is useless — and the other way round: someone who steals only the dump cannot read the SSH credentials and VPN configs in it. Keep a copy of `.env.prod` in a password manager or a safe, away from this server and from the backups.
+
+By hand:
+
+```bash
 docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres \
   sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > backup-$(date +%F).dump
-
-# restore (into an empty database)
 docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres \
   sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists' < backup-YYYY-MM-DD.dump
 ```
-
-A backup without the `ENCRYPTION_KEY` from the same `.env.prod` is useless — keep them together (but not on the same server).
 
 ### Stop
 

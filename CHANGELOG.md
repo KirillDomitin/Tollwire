@@ -22,6 +22,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   certificate (self-signed, or your own with `--cert`/`--key`), starts the panel, waits until it answers over HTTPS
   and offers to create the first administrator. Safe to re-run; an existing `.env.prod` or certificate is never
   replaced. Messages in English or Russian (`PANEL_LANG`, or the system locale).
+- `./panel` — maintenance in one command: `backup` (a checked, private database dump in `backups/`, the latest 14
+  kept), `restore` (replaces the data after a confirmation and a safety backup, in one transaction), `update`
+  (backup, `git pull --ff-only`, rebuild and start, wait until ready) and `logs`. The encryption key is deliberately
+  not part of a backup. `install.sh --no-admin` skips the administrator step (`update` uses it).
 - The VPN container is created with `--restart unless-stopped`, so the VPN comes back after a server reboot.
   Installing the protocol again sets the policy on servers installed earlier (without restarting the container),
   and the health check shows `restart_policy`.

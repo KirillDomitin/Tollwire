@@ -37,21 +37,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Язык сообщений: PANEL_LANG (ru | en), иначе по локали системы (LC_ALL, LC_MESSAGES, LANG), иначе английский.
-# Тот же PANEL_LANG передаётся в контейнер при создании администратора — скрипт говорит на языке установщика.
-lang=${PANEL_LANG:-}
-if [ -z "$lang" ]; then
-    for locale_value in "${LC_ALL:-}" "${LC_MESSAGES:-}" "${LANG:-}"; do
-        if [ -n "$locale_value" ]; then
-            lang=$locale_value
-            break
-        fi
-    done
-fi
-case $lang in
-    ru*) lang=ru ;;
-    *) lang=en ;;
-esac
+# Язык сообщений, t, say и die — общее с ./panel.
+# shellcheck source=deploy/common.sh
+source deploy/common.sh
 
 # Сообщения: ключ → строка для printf (подстановки %s — по порядку, одинаковому в обоих языках).
 msg_ru() {
@@ -184,24 +172,10 @@ msg_en() {
     esac
 }
 
-t() {
-    local key=$1 fmt
-    shift
-    if [ "$lang" = ru ]; then fmt=$(msg_ru "$key"); else fmt=$(msg_en "$key"); fi
-    # shellcheck disable=SC2059  # формат — наша собственная таблица выше
-    printf -- "$fmt" "$@"
-}
-
-say() { printf '%s\n' "$*"; }
-die() {
-    if [ "$lang" = ru ]; then printf 'Ошибка: %s\n' "$*" >&2; else printf 'Error: %s\n' "$*" >&2; fi
-    exit 1
-}
-
 usage() {
     if [ "$lang" = ru ]; then
         cat <<'EOF'
-Использование: ./install.sh [--domain ДОМЕН_ИЛИ_IP] [--cert ФАЙЛ --key ФАЙЛ] [--admin-email EMAIL] [--no-start]
+Использование: ./install.sh [--domain ДОМЕН_ИЛИ_IP] [--cert ФАЙЛ --key ФАЙЛ] [--admin-email EMAIL] [--no-start] [--no-admin]
 
   --domain   адрес, по которому будет открываться панель (по умолчанию localhost);
              по нему выпускается сертификат. Без параметра в терминале спросит.
@@ -210,6 +184,7 @@ usage() {
              Без них выпускается самоподписанный сертификат (браузер предупредит, что ему не доверяет).
   --admin-email  email первого администратора (иначе спросит в терминале);
   --no-start     только подготовить .env.prod и сертификат, панель не запускать;
+  --no-admin     не предлагать создать администратора (так вызывает ./panel update);
   -h, --help эта справка
 
 Переменная INSTALL_WAIT_SECONDS (по умолчанию 300) — сколько ждать готовности панели после запуска.
@@ -219,7 +194,7 @@ usage() {
 EOF
     else
         cat <<'EOF'
-Usage: ./install.sh [--domain DOMAIN_OR_IP] [--cert FILE --key FILE] [--admin-email EMAIL] [--no-start]
+Usage: ./install.sh [--domain DOMAIN_OR_IP] [--cert FILE --key FILE] [--admin-email EMAIL] [--no-start] [--no-admin]
 
   --domain   address the panel will be opened at (default localhost);
              the certificate is issued for it. Asked in a terminal if omitted.
@@ -228,6 +203,7 @@ Usage: ./install.sh [--domain DOMAIN_OR_IP] [--cert FILE --key FILE] [--admin-em
              Without them a self-signed certificate is issued (the browser will warn that it does not trust it).
   --admin-email  email of the first administrator (asked in a terminal otherwise);
   --no-start     only prepare .env.prod and the certificate, do not start the panel;
+  --no-admin     do not offer to create an administrator (./panel update uses this);
   -h, --help     this help
 
 INSTALL_WAIT_SECONDS (default 300) is how long to wait for the panel to become ready after the start.
@@ -244,6 +220,7 @@ cert_src=""
 key_src=""
 admin_email=""
 start=1
+ask_admin=1
 while [ $# -gt 0 ]; do
     case "$1" in
         --domain)
@@ -269,6 +246,10 @@ while [ $# -gt 0 ]; do
             ;;
         --no-start)
             start=0
+            shift
+            ;;
+        --no-admin)
+            ask_admin=0
             shift
             ;;
         -h | --help)
@@ -586,18 +567,20 @@ fi
 
 # --- первый администратор ------------------------------------------------------------------------------------------
 
-admin_cmd=("${compose[@]}" run --rm -e "PANEL_LANG=$lang" api python -m scripts.create_admin --only-if-empty)
-[ -z "$admin_email" ] || admin_cmd+=("$admin_email")
-admin_text=$(printf '%q ' "${admin_cmd[@]}")
-admin_text=${admin_text% }
+if [ "$ask_admin" -eq 1 ]; then
+    admin_cmd=("${compose[@]}" run --rm -e "PANEL_LANG=$lang" api python -m scripts.create_admin --only-if-empty)
+    [ -z "$admin_email" ] || admin_cmd+=("$admin_email")
+    admin_text=$(printf '%q ' "${admin_cmd[@]}")
+    admin_text=${admin_text% }
 
-say ""
-if [ -t 0 ] && [ -t 1 ]; then
-    say "$(t admin_header)"
-    "${admin_cmd[@]}" || die "$(t admin_failed "$admin_text")"
-else
-    say "$(t admin_skipped)"
-    say "  $admin_text"
+    say ""
+    if [ -t 0 ] && [ -t 1 ]; then
+        say "$(t admin_header)"
+        "${admin_cmd[@]}" || die "$(t admin_failed "$admin_text")"
+    else
+        say "$(t admin_skipped)"
+        say "  $admin_text"
+    fi
 fi
 
 # --- итог ----------------------------------------------------------------------------------------------------------
