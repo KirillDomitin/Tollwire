@@ -19,11 +19,15 @@ logger = logging.getLogger("auth")
 
 security = HTTPBearer()
 
+PASSWORD_CHANGE_REQUIRED = "Password change required"
 
-async def get_current_admin(
+
+async def get_admin_with_temporary_password(
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> Admin:
+    """Админ по access-токену БЕЗ проверки must_change_password. Только для /auth/me и смены пароля: остальное
+    должно идти через get_current_admin, иначе временный пароль открывал бы всю панель."""
     access_token = credentials.credentials
     payload = decode_access_token(access_token)
     # Подпись верна, но токен не access (или без sub / sub не UUID) — 401, а не 500.
@@ -41,6 +45,14 @@ async def get_current_admin(
     # iat в JWT целый, а токен, выданный в ту же секунду после смены (ответ change-password), должен проходить.
     if admin.password_changed_at and int(payload.get("iat", 0)) < int(admin.password_changed_at.timestamp()):
         raise HTTPException(401)
+    return admin
+
+
+async def get_current_admin(admin: Annotated[Admin, Depends(get_admin_with_temporary_password)]) -> Admin:
+    # Пароль временный (его знает создатель учётки): до собственного пароля работать в панели нельзя.
+    # Флаг читается из БД на каждом запросе — действует сразу, и на уже выданные токены тоже.
+    if admin.must_change_password:
+        raise HTTPException(403, detail=PASSWORD_CHANGE_REQUIRED)
     return admin
 
 

@@ -10,7 +10,7 @@ from core.database.postgres import get_session
 from core.exceptions import InvalidCredentialsError
 from modules.audit.actor import AuditActor
 from modules.audit.dependencies import get_anonymous_actor
-from modules.auth.dependencies import get_current_admin
+from modules.auth.dependencies import get_admin_with_temporary_password
 from modules.auth.models.admin import Admin
 from modules.auth.rate_limits import LOGIN_BY_IP, REFRESH_BY_IP, limit_by_ip
 from modules.auth.schemas import AdminRead, ChangePasswordRequest, LoginRequest, TokenResponse
@@ -82,7 +82,7 @@ async def logout(
 async def change_password(
     body: ChangePasswordRequest,
     response: Response,
-    current_admin: Annotated[Admin, Depends(get_current_admin)],
+    current_admin: Annotated[Admin, Depends(get_admin_with_temporary_password)],
     service: Annotated[AuthService, Depends(get_auth_service)],
 ) -> TokenResponse:
     try:
@@ -95,5 +95,5 @@ async def change_password(
 
 
 @router.get("/me", response_model=AdminRead)
-async def me(current_admin: Annotated[Admin, Depends(get_current_admin)]) -> Admin:
+async def me(current_admin: Annotated[Admin, Depends(get_admin_with_temporary_password)]) -> Admin:
     return current_admin

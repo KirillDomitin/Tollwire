@@ -2904,6 +2904,11 @@
           "role": {
             "$ref": "#/components/schemas/AdminRole",
             "default": "viewer"
+          },
+          "must_change_password": {
+            "type": "boolean",
+            "title": "Must Change Password",
+            "default": true
           }
         },
         "type": "object",

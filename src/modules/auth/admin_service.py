@@ -41,10 +41,17 @@ class AdminService:
         if await self.admins.get_by_email(email):
             raise AlreadyExistsError
         password_hash = await asyncio.to_thread(hash_password, data.password)  # Argon2 — не в event loop
-        admin = Admin(email=email, password_hash=password_hash, role=data.role)
+        admin = Admin(
+            email=email, password_hash=password_hash, role=data.role, must_change_password=data.must_change_password
+        )
         self.admins.add(admin)
         await self.session.flush()
-        self.audit.record(AuditAction.ADMIN_CREATED, AuditEntity.ADMIN, admin.id, {"email": email, "role": data.role})
+        self.audit.record(
+            AuditAction.ADMIN_CREATED,
+            AuditEntity.ADMIN,
+            admin.id,
+            {"email": email, "role": data.role, "must_change_password": data.must_change_password},
+        )
         await self.session.commit()
         return admin
 

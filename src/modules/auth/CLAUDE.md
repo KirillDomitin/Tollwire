@@ -5,8 +5,7 @@
 ## Модели
 
 - `admins`: email (unique), `password_hash` (Argon2id), `is_active`, `role` (`AdminRole`: superadmin/operator/viewer),
-  `last_login_at`, `must_change_password` (пароль временный — админ обязан задать свой; запрет работы до смены вводится
-  в этапе 20.2), `password_changed_at` (access-токены, выданные раньше, не принимаются).
+  `last_login_at`, `must_change_password` (пароль временный — админ обязан задать свой), `password_changed_at` (access-токены, выданные раньше, не принимаются).
 - `admin_sessions`: `admin_id`, `token_hash` (хеш refresh-токена — сам токен в БД не хранится), `expires_at`.
 
 ## Вход и токены
@@ -24,6 +23,16 @@
 - Защита от перебора (`rate_limits.py`): вход по IP (10/мин), refresh по IP (30/мин), неудачи по паре email+IP
   (5 за 15 мин) и по email со всех IP (50) — проверка **до** пароля, одинаково для несуществующих email;
   тайминг-атака закрыта `DUMMY_PASSWORD_HASH`. Блокировка → аудит `login_locked`.
+
+## Временный пароль (`must_change_password`)
+
+Пока флаг стоит, `get_current_admin` отвечает **403 `Password change required`** на каждый эндпоинт (а он стоит под
+`require` и в роутерах). Открыты только то, что не требует админа или берёт его через
+`get_admin_with_temporary_password`: `/auth/me` (по нему интерфейс покажет экран смены), `POST /auth/change-password`,
+`/auth/refresh`, `/auth/logout`. Флаг читается из БД на каждом запросе — действует и на уже выданные токены.
+Новый эндпоинт, которому нужен админ, берёт `get_current_admin`/`require`; `get_admin_with_temporary_password` — только
+для экрана смены пароля. Админу, созданному через `POST /admins`, флаг ставится по умолчанию (`AdminCreate.must_change_password`,
+сервисной учётке — `false`): пароль знает создатель. Тест `test_forced_password_change.py` обходит все маршруты.
 
 ## RBAC (`permissions.py`, `dependencies.py`)
 

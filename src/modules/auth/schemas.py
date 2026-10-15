@@ -51,6 +51,8 @@ class AdminCreate(BaseModel):
     email: EmailStr
     password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=256)
     role: AdminRole = AdminRole.VIEWER
+    # Пароль задал создатель учётки, значит знает его: админ сменит на свой при первом входе. Сервисной учётке — false.
+    must_change_password: bool = True
 
 
 class AdminUpdate(BaseModel):

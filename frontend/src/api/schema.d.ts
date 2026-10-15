@@ -755,6 +755,11 @@ export interface components {
             password: string;
             /** @default viewer */
             role: components["schemas"]["AdminRole"];
+            /**
+             * Must Change Password
+             * @default true
+             */
+            must_change_password: boolean;
         };
         /** AdminRead */
         AdminRead: {

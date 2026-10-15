@@ -113,7 +113,12 @@ async def test_me_shows_role_and_permissions(session: AsyncSession) -> None:
 async def test_superadmin_manages_admins_and_changes_apply_immediately(
     api: httpx.AsyncClient, session: AsyncSession
 ) -> None:
-    body = {"email": "op@example.com", "password": "long-enough-pass", "role": "operator"}
+    body = {
+        "email": "op@example.com",
+        "password": "long-enough-pass",
+        "role": "operator",
+        "must_change_password": False,
+    }
     created = await api.post("/api/v1/admins", json=body)
     assert created.status_code == 201 and created.json()["role"] == "operator"
     assert "password_hash" not in created.text and body["password"] not in created.text  # ни пароля, ни хэша
