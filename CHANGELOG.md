@@ -6,6 +6,30 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Changing your own password: `POST /api/v1/auth/change-password`, and a "Change password" button in the sidebar.
+  It ends the other sessions and revokes access tokens issued before the change; wrong current passwords are
+  rate-limited like sign-ins.
+- Temporary passwords: an admin created with a password someone else knows (`POST /api/v1/admins`, or the console
+  script with a generated password) must set their own at the first sign-in — until then the panel answers 403
+  everywhere except `/auth/me`, the password change, refresh and sign-out, and the interface shows a
+  "Set your own password" screen. `must_change_password: false` opts a service account out.
+- `scripts.create_admin` is interactive: it asks for the email and offers a random password (shown once, only in a
+  terminal, never in a file or a pipe) or your own. `--random-password`, `--only-if-empty`. The creation is
+  written to the audit log (`source: cli`).
+- `install.sh` — a one-command installer: checks Docker, creates `.env.prod` with random secrets, issues a TLS
+  certificate (self-signed, or your own with `--cert`/`--key`), starts the panel, waits until it answers over HTTPS
+  and offers to create the first administrator. Safe to re-run; an existing `.env.prod` or certificate is never
+  replaced. Messages in English or Russian (`PANEL_LANG`, or the system locale).
+- The VPN container is created with `--restart unless-stopped`, so the VPN comes back after a server reboot.
+  Installing the protocol again sets the policy on servers installed earlier (without restarting the container),
+  and the health check shows `restart_policy`.
+
+### Changed
+
+- Password-change attempts and events (`password_changed`, `password_change_failed`) appear in the audit log.
+
 ## [0.2.0] - 2026-10-10
 
 ### Added

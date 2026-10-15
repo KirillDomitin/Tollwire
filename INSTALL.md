@@ -80,12 +80,12 @@ uv run alembic upgrade head
 ### 5. First admin
 
 ```bash
-PYTHONPATH=src uv run python -m scripts.create_admin you@example.com
+PYTHONPATH=src uv run python -m scripts.create_admin
 ```
 
-The password is asked for silently (at least 12 characters). The default role is `superadmin`; for other roles use `--role operator` or `--role viewer` (it is easier to create them in the panel itself).
+The script asks for the email and offers a password: a **random** one (the default — shown once, stored nowhere, the panel asks you to set your own at the first sign-in) or your own (typed silently, at least 12 characters). `--random-password` skips the questions; `--only-if-empty` does nothing when admins already exist. The default role is `superadmin`; for other roles use `--role operator` or `--role viewer` (it is easier to create them in the panel itself).
 
-Run it from the repository root and **in an interactive terminal**: the password is read from the console and cannot be piped in.
+Run it from the repository root and **in an interactive terminal**. A random password is shown only in a terminal: if the output goes to a file or a pipe (`| tee`), the script refuses, so the password cannot end up in a log.
 
 ### 6. Run
 
@@ -163,6 +163,17 @@ internet ── 80/443 ──► nginx ──► api ──► postgres, redis
 - migrations are applied on every start (`migrate`); the API and the worker start only after it finishes;
 - the API documentation (`/api/openapi`) is disabled in production.
 
+### Quick install
+
+```bash
+git clone <repository-url> tollwire && cd tollwire
+./install.sh --domain panel.example.com
+```
+
+In one run the installer checks Docker, creates `.env.prod` with random secrets, issues a TLS certificate, starts the panel, waits until it is ready and offers to create the first administrator (a random password is shown once; the panel asks for your own at the first sign-in). The first image build takes a few minutes. Running it again is safe: an existing `.env.prod` and certificate are never touched, the panel is just brought back to a running state. The steps below describe the same thing by hand.
+
+Options: `--domain`, `--cert`/`--key` (your own certificate), `--admin-email`, `--no-start` (only prepare the files). `INSTALL_WAIT_SECONDS` is how long to wait for readiness (300 s by default); the ports `HTTP_PORT`/`HTTPS_PORT` are read from the environment or `.env.prod`. Messages are in English or Russian: `PANEL_LANG=ru|en`, otherwise the system locale.
+
 ### Requirements
 
 - a Linux server with Docker and Docker Compose (the `docker compose` plugin);
@@ -178,15 +189,9 @@ cd tollwire
 
 ### 2. Secrets: `.env.prod`
 
-**Автоматически:**
+**Automatically** (`./install.sh` does this first): it checks Docker, Compose and openssl and creates `.env.prod` with a random database password, JWT secret and encryption key (mode 600; secrets are never printed). Without `--domain` it asks for the panel address in a terminal. An existing `.env.prod` is never touched; if the file is missing but a database volume from a previous installation (`vpn-panel_pg_data`) is left on the server, the installer stops — new secrets would not fit that database.
 
-```bash
-./install.sh --domain panel.example.com
-```
-
-Установщик проверяет Docker, Compose и openssl и создаёт `.env.prod` со случайными паролем БД, JWT-секретом и ключом шифрования (права 600, на экран секреты не выводятся). Без `--domain` в терминале спросит адрес панели. Повторный запуск **не трогает** существующий `.env.prod`; если файла нет, но на сервере остался том базы от прошлой установки (`vpn-panel_pg_data`), установщик остановится: новые секреты к этой базе не подойдут. Сертификат, запуск и админа пока делаются вручную (шаги 3–5); их он возьмёт на себя в следующих версиях.
-
-**Вручную:**
+**By hand:**
 
 ```bash
 cp .env.prod.example .env.prod
@@ -214,7 +219,13 @@ docker run --rm vpn-panel:latest python -c "from cryptography.fernet import Fern
 
 ### 3. TLS certificate
 
-nginx expects two files:
+**Automatically** (`./install.sh` does this right after `.env.prod`):
+
+- by default it issues a **self-signed** certificate for the panel address, valid for 825 days (the browser will warn that it does not trust it; the installer prints the SHA-256 fingerprint to compare);
+- your own certificate: `./install.sh --cert fullchain.pem --key privkey.pem` — the files are checked (PEM, the key matches the certificate, not expired) and copied into `certs/`. You can also put them into `certs/` yourself and run the installer again;
+- existing files in `certs/` are **never replaced**: the installer only checks the pair and warns if the certificate expires soon or does not cover the address. To replace a certificate, delete both files deliberately.
+
+**By hand.** nginx expects two files:
 
 ```
 certs/fullchain.pem   — certificate with the chain
@@ -233,6 +244,8 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 30 -subj "/CN=localhost" \
 
 ### 4. Start
 
+`./install.sh` does this for you: it checks that ports 80/443 are free, runs `up -d --build`, and waits until the `api` container is healthy and nginx answers `/health` over HTTPS. By hand:
+
 ```bash
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 ```
@@ -249,10 +262,10 @@ curl -fsS https://<your-domain>/health
 ### 5. First admin
 
 ```bash
-docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm api python -m scripts.create_admin you@example.com
+docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm api python -m scripts.create_admin
 ```
 
-The password is asked for in the terminal. Then sign in at `https://<your-domain>`; it is easier to create the other admins in the panel.
+It asks for the email and offers a password: a **random** one (the default — shown once, stored nowhere; the panel asks you to set your own at the first sign-in) or your own (at least 12 characters). `--only-if-empty` does nothing when admins already exist. `./install.sh` runs this step itself when it has a terminal; without one it prints the ready command. Then sign in at `https://<your-domain>`; it is easier to create the other admins in the panel.
 
 ### Updating
 

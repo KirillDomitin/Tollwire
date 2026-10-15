@@ -78,7 +78,7 @@ Full instructions, including PowerShell and troubleshooting, are in [INSTALL.md]
 
 ## Production
 
-Everything runs in Docker behind nginx with TLS: `docker-compose.prod.yml` starts nginx, the API, the worker, a one-shot migration job, PostgreSQL and Redis. Only nginx is exposed; the database and Redis sit on an internal network. See the [production section of INSTALL.md](INSTALL.md#production) for secrets, certificates, updates and backups.
+Everything runs in Docker behind nginx with TLS: `docker-compose.prod.yml` starts nginx, the API, the worker, a one-shot migration job, PostgreSQL and Redis. Only nginx is exposed; the database and Redis sit on an internal network. The quickest way is `./install.sh --domain panel.example.com`: it creates the secrets, issues a TLS certificate, starts the panel and offers to create the first administrator. See the [production section of INSTALL.md](INSTALL.md#production) for the details, certificates, updates and backups.
 
 > **Back up `ENCRYPTION_KEY` together with the database.** SSH credentials and VPN configs are encrypted with it. Without the key a database backup cannot be read.
 
