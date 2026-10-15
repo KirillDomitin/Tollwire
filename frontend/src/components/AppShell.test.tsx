@@ -43,7 +43,7 @@ describe("AppShell navigation", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Сменить пароль" }));
 
-    expect(screen.getByRole("dialog", { name: "Смена пароля" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "Смена пароля" })).toBeInTheDocument();
     expect(screen.getByLabelText("Текущий пароль")).toBeInTheDocument();
   });
 });
