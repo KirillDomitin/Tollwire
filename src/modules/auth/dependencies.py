@@ -37,6 +37,10 @@ async def get_current_admin(
     admin = await admin_repo.get_by_id(admin_id)
     if not admin or not admin.is_active:
         raise HTTPException(401)
+    # Токен выдан до смены пароля — его мог получить тот, из-за кого пароль меняли. Сравнение по целым секундам:
+    # iat в JWT целый, а токен, выданный в ту же секунду после смены (ответ change-password), должен проходить.
+    if admin.password_changed_at and int(payload.get("iat", 0)) < int(admin.password_changed_at.timestamp()):
+        raise HTTPException(401)
     return admin
 
 

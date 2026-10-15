@@ -13,6 +13,8 @@
     "login_failed": "Неудачная попытка входа",
     "login_locked": "Вход заблокирован после серии неудач",
     "logout": "Выход из панели",
+    "password_changed": "Сменён пароль",
+    "password_change_failed": "Неверный текущий пароль при смене пароля",
     "admin_created": "Добавлен админ",
     "admin_updated": "Изменён админ",
     "server_created": "Добавлен сервер",

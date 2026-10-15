@@ -3,7 +3,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, true
+from sqlalchemy import DateTime, String, false, true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.database.base import Base, TimestampMixin, UuidPkMixin
@@ -25,3 +25,7 @@ class Admin(UuidPkMixin, TimestampMixin, Base):
     # По умолчанию — минимум прав: роль повыше выдаётся явно.
     role: Mapped[AdminRole] = mapped_column(default=AdminRole.VIEWER)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    # Пароль временный (его знает тот, кто создал учётку): пока админ не задаст свой, пользоваться панелью нельзя.
+    must_change_password: Mapped[bool] = mapped_column(server_default=false())
+    # Access-токены, выданные раньше этого момента, не принимаются: смена пароля обрывает и их, а не только refresh.
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)

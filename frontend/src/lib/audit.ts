@@ -22,6 +22,8 @@ export const AUDIT_ACTIONS: Record<AuditAction, ActionInfo> = {
   login_failed: { group: "signIn", tone: "warn" },
   login_locked: { group: "signIn", tone: "down" },
   logout: { group: "signIn" },
+  password_changed: { group: "signIn" },
+  password_change_failed: { group: "signIn", tone: "warn" },
   admin_created: { group: "admins" },
   admin_updated: { group: "admins" },
   server_created: { group: "servers" },

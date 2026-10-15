@@ -17,6 +17,9 @@ LOGIN_BY_IP = Limit("login_ip", settings.login_ip_max_attempts, settings.login_i
 #   безнадёжно), а запереть админа становится на порядок дороже.
 LOGIN_FAILURES_BY_EMAIL_IP = Limit("login_email_ip_failures", settings.login_max_failures, settings.login_lock_seconds)
 LOGIN_FAILURES_BY_EMAIL = Limit("login_email_failures", settings.login_email_max_failures, settings.login_lock_seconds)
+# Неверный текущий пароль при смене: с украденным access-токеном это оракул для подбора пароля.
+# Порог тот же, что у входа.
+PASSWORD_CHANGE_FAILURES = Limit("password_change_failures", settings.login_max_failures, settings.login_lock_seconds)
 REFRESH_BY_IP = Limit("refresh_ip", settings.refresh_ip_max_attempts, settings.refresh_ip_window_seconds)
 
 

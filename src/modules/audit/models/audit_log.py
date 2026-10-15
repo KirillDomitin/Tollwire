@@ -18,6 +18,8 @@ class AuditAction(enum.Enum):
     LOGIN_FAILED = "login_failed"
     LOGIN_LOCKED = "login_locked"  # учётка закрыта для входа после серии неудач (rate limiting)
     LOGOUT = "logout"
+    PASSWORD_CHANGED = "password_changed"  # админ сам сменил пароль; остальные его сессии завершены
+    PASSWORD_CHANGE_FAILED = "password_change_failed"  # неверный текущий пароль при смене
     # Админы панели (RBAC)
     ADMIN_CREATED = "admin_created"
     ADMIN_UPDATED = "admin_updated"  # смена роли / отключение / включение

@@ -13,6 +13,8 @@
     "login_failed": "Failed sign-in attempt",
     "login_locked": "Sign-in locked after a series of failures",
     "logout": "Signed out of the panel",
+    "password_changed": "Password changed",
+    "password_change_failed": "Wrong current password when changing the password",
     "admin_created": "Admin added",
     "admin_updated": "Admin changed",
     "server_created": "Server added",

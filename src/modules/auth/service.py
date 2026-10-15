@@ -5,12 +5,13 @@ from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions import InvalidCredentialsError
+from core.exceptions import InvalidCredentialsError, InvalidDataError
 from core.rate_limit import RateLimiter, subject_key
 from core.security import (
     DUMMY_PASSWORD_HASH,
     create_access_token,
     generate_refresh_token,
+    hash_password,
     hash_refresh_token,
     verify_password,
 )
@@ -19,7 +20,7 @@ from modules.audit.actor import AuditActor
 from modules.audit.models.audit_log import AuditAction, AuditEntity
 from modules.audit.service import AuditService
 from modules.auth.models.admin import Admin
-from modules.auth.rate_limits import LOGIN_FAILURES_BY_EMAIL, LOGIN_FAILURES_BY_EMAIL_IP
+from modules.auth.rate_limits import LOGIN_FAILURES_BY_EMAIL, LOGIN_FAILURES_BY_EMAIL_IP, PASSWORD_CHANGE_FAILURES
 from modules.auth.repository import AdminRepository, AdminSessionRepository
 
 
@@ -91,6 +92,37 @@ class AuthService:
         await self.sessions.create(admin_id, hash_refresh_token(new_refresh), get_refresh_expires_at())
         await self.session.commit()
         return create_access_token(str(admin_id)), new_refresh
+
+    async def change_password(self, admin: Admin, current_password: str, new_password: str) -> tuple[str, str]:
+        """Смена пароля самим админом. Завершает все прежние сессии и выдаёт новую пару токенов этой вкладке.
+
+        Неверный текущий пароль → InvalidCredentialsError (и засчитывается: см. PASSWORD_CHANGE_FAILURES).
+        """
+        key = str(admin.id)
+        await self.limiter.ensure_not_exceeded(PASSWORD_CHANGE_FAILURES, key)
+        # Строка админа блокируется на время смены: два одновременных запроса с одним текущим паролем не пройдут оба.
+        await self.session.refresh(admin, with_for_update=True)
+        audit = AuditService(self.session, self.actor.as_admin(admin.id))
+        if not await asyncio.to_thread(verify_password, current_password, admin.password_hash):
+            audit.record(AuditAction.PASSWORD_CHANGE_FAILED, AuditEntity.ADMIN, admin.id)
+            await self.session.commit()
+            await self.limiter.record(PASSWORD_CHANGE_FAILURES, key)
+            raise InvalidCredentialsError
+        if new_password == current_password:
+            await self.session.rollback()
+            raise InvalidDataError("New password must differ from the current one")
+        admin.password_hash = await asyncio.to_thread(hash_password, new_password)
+        admin.must_change_password = False
+        admin.password_changed_at = datetime.now(timezone.utc)
+        revoked = await self.sessions.delete_for_admin(admin.id)
+        refresh = generate_refresh_token()
+        await self.sessions.create(admin.id, hash_refresh_token(refresh), get_refresh_expires_at())
+        # Токен выдаётся уже после password_changed_at: его iat (целые секунды) не меньше отметки и проверку проходит.
+        access = create_access_token(str(admin.id))
+        audit.record(AuditAction.PASSWORD_CHANGED, AuditEntity.ADMIN, admin.id, {"sessions_revoked": revoked})
+        await self.session.commit()
+        await self.limiter.reset(PASSWORD_CHANGE_FAILURES, key)
+        return access, refresh
 
     async def cleanup_expired_sessions(self) -> int:
         """Удаляет сессии с истёкшим refresh-токеном (вызывает планировщик). Войти по ним и так нельзя."""

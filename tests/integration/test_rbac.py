@@ -22,7 +22,14 @@ from modules.auth.permissions import Permission, has_permission
 from modules.auth.schemas import AdminUpdate
 from tests.integration.conftest import AdminLogin, login_client, make_admin
 
-PUBLIC = {"/api/v1/auth/login", "/api/v1/auth/refresh", "/api/v1/auth/logout", "/api/v1/auth/me", "/health"}
+PUBLIC = {
+    "/api/v1/auth/login",
+    "/api/v1/auth/refresh",
+    "/api/v1/auth/logout",
+    "/api/v1/auth/me",
+    "/api/v1/auth/change-password",
+    "/health",
+}
 
 
 def required_permissions(route: APIRoute) -> list[Permission]:
@@ -109,7 +116,7 @@ async def test_superadmin_manages_admins_and_changes_apply_immediately(
     body = {"email": "op@example.com", "password": "long-enough-pass", "role": "operator"}
     created = await api.post("/api/v1/admins", json=body)
     assert created.status_code == 201 and created.json()["role"] == "operator"
-    assert "password" not in created.text  # ни пароля, ни хэша в ответе
+    assert "password_hash" not in created.text and body["password"] not in created.text  # ни пароля, ни хэша
     assert (await api.post("/api/v1/admins", json=body)).status_code == 409
     assert (await api.post("/api/v1/admins", json={"email": "x@example.com", "password": "short"})).status_code == 422
     op_id = uuid.UUID(created.json()["id"])

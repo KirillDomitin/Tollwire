@@ -13,7 +13,7 @@ from modules.audit.dependencies import get_anonymous_actor
 from modules.auth.dependencies import get_current_admin
 from modules.auth.models.admin import Admin
 from modules.auth.rate_limits import LOGIN_BY_IP, REFRESH_BY_IP, limit_by_ip
-from modules.auth.schemas import AdminRead, LoginRequest, TokenResponse
+from modules.auth.schemas import AdminRead, ChangePasswordRequest, LoginRequest, TokenResponse
 from modules.auth.service import AuthService
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
@@ -76,6 +76,22 @@ async def logout(
         await service.logout(refresh_token)
     response.delete_cookie("refresh_token", path="/api/v1/auth")
     return {"detail": "logged out"}
+
+
+@router.post("/change-password", response_model=TokenResponse)
+async def change_password(
+    body: ChangePasswordRequest,
+    response: Response,
+    current_admin: Annotated[Admin, Depends(get_current_admin)],
+    service: Annotated[AuthService, Depends(get_auth_service)],
+) -> TokenResponse:
+    try:
+        access, new_refresh = await service.change_password(current_admin, body.current_password, body.new_password)
+    except InvalidCredentialsError:
+        # Не 401: клиент принял бы это за истёкшую сессию и стал бы её обновлять.
+        raise HTTPException(400, detail="Current password is incorrect")
+    set_cookie(response, new_refresh)
+    return TokenResponse(access_token=access)
 
 
 @router.get("/me", response_model=AdminRead)

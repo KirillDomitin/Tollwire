@@ -55,6 +55,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/change-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Change Password */
+        post: operations["change_password_api_v1_auth_change_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/me": {
         parameters: {
             query?: never;
@@ -757,6 +774,11 @@ export interface components {
             /** Last Login At */
             last_login_at?: string | null;
             /**
+             * Must Change Password
+             * @default false
+             */
+            must_change_password: boolean;
+            /**
              * Created At
              * Format: date-time
              */
@@ -782,7 +804,7 @@ export interface components {
          * AuditAction
          * @enum {string}
          */
-        AuditAction: "login" | "login_failed" | "login_locked" | "logout" | "admin_created" | "admin_updated" | "server_created" | "server_updated" | "server_deleted" | "server_credentials_set" | "server_credentials_deleted" | "server_host_key_pinned" | "server_host_key_reset" | "server_host_key_mismatch" | "server_install_started" | "server_install_completed" | "server_install_failed" | "server_sync_started" | "server_sync_completed" | "server_sync_failed" | "server_ssh_key_install_started" | "server_ssh_key_install_completed" | "server_ssh_key_install_failed" | "protocol_install_started" | "protocol_install_completed" | "protocol_install_failed" | "protocol_remove_started" | "protocol_remove_completed" | "protocol_remove_failed" | "vpn_user_created" | "vpn_user_updated" | "vpn_user_deleted" | "subscription_created" | "subscription_updated" | "subscription_activated" | "subscription_revoked" | "subscription_expired" | "subscription_deleted" | "access_granted" | "access_updated" | "access_revoked" | "access_expired" | "access_deleted" | "credential_issued" | "credential_issue_failed" | "credential_revoked" | "credential_revoke_failed" | "config_viewed";
+        AuditAction: "login" | "login_failed" | "login_locked" | "logout" | "password_changed" | "password_change_failed" | "admin_created" | "admin_updated" | "server_created" | "server_updated" | "server_deleted" | "server_credentials_set" | "server_credentials_deleted" | "server_host_key_pinned" | "server_host_key_reset" | "server_host_key_mismatch" | "server_install_started" | "server_install_completed" | "server_install_failed" | "server_sync_started" | "server_sync_completed" | "server_sync_failed" | "server_ssh_key_install_started" | "server_ssh_key_install_completed" | "server_ssh_key_install_failed" | "protocol_install_started" | "protocol_install_completed" | "protocol_install_failed" | "protocol_remove_started" | "protocol_remove_completed" | "protocol_remove_failed" | "vpn_user_created" | "vpn_user_updated" | "vpn_user_deleted" | "subscription_created" | "subscription_updated" | "subscription_activated" | "subscription_revoked" | "subscription_expired" | "subscription_deleted" | "access_granted" | "access_updated" | "access_revoked" | "access_expired" | "access_deleted" | "credential_issued" | "credential_issue_failed" | "credential_revoked" | "credential_revoke_failed" | "config_viewed";
         /** AuditActorRead */
         AuditActorRead: {
             /**
@@ -826,6 +848,13 @@ export interface components {
          * @enum {string}
          */
         AuthType: "password" | "ssh_key";
+        /** ChangePasswordRequest */
+        ChangePasswordRequest: {
+            /** Current Password */
+            current_password: string;
+            /** New Password */
+            new_password: string;
+        };
         /** CredentialCreate */
         CredentialCreate: {
             /** @default password */
@@ -1415,6 +1444,39 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    change_password_api_v1_auth_change_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenResponse"];
                 };
             };
             /** @description Validation Error */

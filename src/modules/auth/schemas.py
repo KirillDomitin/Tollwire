@@ -21,6 +21,11 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(max_length=256)
+    new_password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=256)
+
+
 class AdminRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
@@ -28,6 +33,7 @@ class AdminRead(BaseModel):
     is_active: bool
     role: AdminRole
     last_login_at: datetime | None = None
+    must_change_password: bool = False
     created_at: datetime
 
     @computed_field  # type: ignore[prop-decorator]
