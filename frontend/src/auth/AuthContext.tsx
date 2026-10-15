@@ -3,7 +3,10 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 
 import { api, ApiError, messageForStatus, type Admin } from "../api/client";
 import i18n from "../i18n";
-import { onSessionChange, refreshAccessToken, setAccessToken } from "../api/session";
+import { getAccessToken, onSessionChange, refreshAccessToken, setAccessToken } from "../api/session";
+
+/** Как на бэкенде: MIN_PASSWORD_LENGTH. */
+export const MIN_PASSWORD_LENGTH = 12;
 
 type AuthState = { status: "checking" } | { status: "signed-out" } | { status: "signed-in"; admin: Admin };
 
@@ -11,6 +14,8 @@ interface AuthApi {
   state: AuthState;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  /** Сменить свой пароль. Остальные сессии завершаются, текущая получает новый токен; профиль перечитывается. */
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   /** Есть ли у текущего админа право (строка из /auth/me, например "servers:manage"). */
   can: (permission: string) => boolean;
 }
@@ -73,6 +78,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setState({ status: "signed-in", admin: await loadMe() });
   }, []);
 
+  const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
+    // Не через openapi-fetch: ответ 401 для /auth/* там не повторяется после refresh, а здесь это нужно —
+    // админ с временным паролем мог просидеть над формой дольше жизни access-токена.
+    const send = () => {
+      const token = getAccessToken();
+      return fetch("/api/v1/auth/change-password", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+        credentials: "same-origin",
+      });
+    };
+    let response: Response;
+    try {
+      response = await send();
+      if (response.status === 401 && (await refreshAccessToken())) response = await send();
+    } catch {
+      throw new ApiError(i18n.t("common.errors.network"), 0);
+    }
+    if (!response.ok) {
+      const retryAfter = Number(response.headers.get("Retry-After")) || undefined;
+      throw new ApiError(
+        changePasswordErrorMessage(response.status, retryAfter),
+        response.status,
+        retryAfter,
+      );
+    }
+    const { access_token } = (await response.json()) as { access_token: string };
+    setAccessToken(access_token);
+    setState({ status: "signed-in", admin: await loadMe() });
+  }, []);
+
   const logout = useCallback(async () => {
     await fetch("/api/v1/auth/logout", { method: "POST", credentials: "same-origin" }).catch(() => undefined);
     setAccessToken(null);
@@ -85,9 +125,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       state,
       login,
       logout,
+      changePassword,
       can: (permission) => state.status === "signed-in" && state.admin.permissions.includes(permission),
     }),
-    [state, login, logout],
+    [state, login, logout, changePassword],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -101,6 +142,19 @@ export function loginErrorMessage(status: number, retryAfterSeconds?: number): s
     return minutes
       ? i18n.t("auth.errors.tooManyAttemptsMinutes", { minutes })
       : i18n.t("auth.errors.tooManyAttempts");
+  }
+  return messageForStatus(status);
+}
+
+export function changePasswordErrorMessage(status: number, retryAfterSeconds?: number): string {
+  // 400 — неверный текущий пароль (не 401: 401 означает «сессия закончилась»).
+  if (status === 400) return i18n.t("auth.changePassword.errors.wrongCurrent");
+  if (status === 422) return i18n.t("auth.changePassword.errors.invalidNew", { min: MIN_PASSWORD_LENGTH });
+  if (status === 429) {
+    const minutes = retryAfterSeconds ? Math.max(1, Math.ceil(retryAfterSeconds / 60)) : null;
+    return minutes
+      ? i18n.t("auth.changePassword.errors.tooManyAttemptsMinutes", { minutes })
+      : i18n.t("auth.changePassword.errors.tooManyAttempts");
   }
   return messageForStatus(status);
 }

@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 
 import { AuthContext } from "../auth/AuthContext";
@@ -35,5 +36,14 @@ describe("AppShell navigation", () => {
 
     expect(screen.queryByRole("link", { name: "Журнал" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Серверы" })).toBeInTheDocument();
+  });
+
+  it("offers to change the password from the account block", async () => {
+    renderShell(["servers:read"]);
+
+    await userEvent.click(screen.getByRole("button", { name: "Сменить пароль" }));
+
+    expect(screen.getByRole("dialog", { name: "Смена пароля" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Текущий пароль")).toBeInTheDocument();
   });
 });

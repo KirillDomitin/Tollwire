@@ -20,6 +20,7 @@ export function renderWithProviders(ui: ReactNode, { permissions = "all", route 
     state: { status: "checking" as const },
     login: async () => {},
     logout: async () => {},
+    changePassword: async () => {},
     can: (permission: string) => permissions === "all" || permissions.includes(permission),
   };
   return render(

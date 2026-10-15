@@ -6,6 +6,7 @@ import styles from "./AppShell.module.css";
 import { BrandMark } from "./BrandMark";
 import { Button } from "./Button";
 import { LanguageSwitch } from "./LanguageSwitch";
+import { ChangePasswordDialog } from "./ChangePasswordDialog";
 import { ThemeSwitch } from "./ThemeSwitch";
 
 /** Разделы показываются только тем, кому они доступны: недоступное не видно, а не «серое». */
@@ -45,6 +46,7 @@ export function AppShell() {
           <p className={styles.role}>{roleName(admin.role)}</p>
           <ThemeSwitch />
           <LanguageSwitch />
+          <ChangePasswordDialog />
           <Button variant="quiet" onClick={() => void logout()}>
             {t("shell.nav.signOut")}
           </Button>
