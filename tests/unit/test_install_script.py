@@ -3,6 +3,7 @@
 Скрипт запускается по-настоящему (bash), но вместо Docker — заглушка в PATH, а работа идёт в копии каталога во
 временной папке: настоящий .env.prod и тома разработчика не затрагиваются."""
 
+import re
 import shutil
 import stat
 import sys
@@ -13,7 +14,7 @@ from cryptography.fernet import Fernet
 from dotenv import dotenv_values
 
 from core.config import Settings
-from tests.unit.install_support import BASE_FILES, ROOT, env_values, requires_bash, run
+from tests.unit.install_support import BASE_FILES, ROOT, env_values, free_port, requires_bash, run
 
 pytestmark = requires_bash
 
@@ -178,3 +179,72 @@ def test_help_does_not_touch_anything(app: Path) -> None:
 
     assert result.returncode == 0 and "--domain" in result.stdout
     assert not (app / ".env.prod").exists()
+
+
+# --- язык сообщений -------------------------------------------------------------------------------------------------
+
+NO_LOCALE = {"PANEL_LANG": "", "LC_ALL": "", "LC_MESSAGES": "", "LANG": ""}
+
+
+def test_messages_are_english_by_default(app: Path) -> None:
+    result = run(app, "--domain", "panel.example.com", **NO_LOCALE)
+
+    assert result.returncode == 0, result.stderr
+    assert "Created .env.prod" in result.stdout and "IMPORTANT: keep a copy" in result.stdout
+    assert not re.search("[А-Яа-я]", result.stdout + result.stderr)
+
+
+def test_messages_follow_the_system_locale(app: Path) -> None:
+    result = run(app, "--domain", "panel.example.com", **{**NO_LOCALE, "LANG": "ru_RU.UTF-8"})
+
+    assert "Создан .env.prod" in result.stdout
+
+
+def test_locale_variables_have_the_usual_priority(app: Path) -> None:
+    """LC_ALL важнее LC_MESSAGES и LANG, как везде в Unix."""
+    result = run(app, "--domain", "panel.example.com", **{**NO_LOCALE, "LC_ALL": "en_US.UTF-8", "LANG": "ru_RU.UTF-8"})
+
+    assert "Created .env.prod" in result.stdout
+
+
+def test_panel_lang_beats_the_locale(app: Path) -> None:
+    result = run(app, "--domain", "panel.example.com", **{**NO_LOCALE, "LANG": "ru_RU.UTF-8", "PANEL_LANG": "en"})
+
+    assert "Created .env.prod" in result.stdout
+
+
+def test_errors_and_usage_are_translated(app: Path) -> None:
+    bad = run(app, "--domain", "bad domain", **NO_LOCALE)
+    assert bad.returncode != 0 and bad.stderr.startswith("Error: invalid domain")
+
+    together = run(
+        app, "--cert", "x", **NO_LOCALE
+    )  # сообщение начинается с «--»: printf не должен принять его за параметр
+    assert together.returncode != 0 and "--cert and --key must be given together" in together.stderr
+
+    english_help = run(app, "--help", **NO_LOCALE)
+    russian_help = run(app, "--help")
+    assert "Usage: ./install.sh" in english_help.stdout and "Использование: ./install.sh" in russian_help.stdout
+    assert "PANEL_LANG" in english_help.stdout and "PANEL_LANG" in russian_help.stdout
+
+
+def test_both_languages_have_the_same_messages() -> None:
+    """Каждый ключ есть и в русской, и в английской таблице, а число подстановок %s у них совпадает."""
+    text = (ROOT / "install.sh").read_text(encoding="utf-8")
+
+    def table(name: str) -> dict[str, str]:
+        body = text.split(f"{name}() {{", 1)[1].split("\n}\n", 1)[0]
+        return dict(re.findall(r"^\s+(\w+)\) printf '%s' \"(.*)\" ;;$", body, re.M))
+
+    ru, en = table("msg_ru"), table("msg_en")
+    assert ru.keys() == en.keys() and len(ru) > 50
+    assert {key: ru[key].count("%s") for key in ru} == {key: en[key].count("%s") for key in en}
+
+
+def test_admin_step_speaks_the_installers_language(app: Path) -> None:
+    ports = {"HTTP_PORT": str(free_port()), "HTTPS_PORT": str(free_port())}
+    ru = run(app, "--domain", "panel.example.com", start=True, **ports)
+    en = run(app, "--domain", "panel.example.com", start=True, **{**NO_LOCALE, **ports, "PANEL_LANG": "en"})
+
+    assert "-e PANEL_LANG=ru api python -m scripts.create_admin" in ru.stdout
+    assert "-e PANEL_LANG=en api python -m scripts.create_admin" in en.stdout

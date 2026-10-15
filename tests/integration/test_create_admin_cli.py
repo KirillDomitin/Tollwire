@@ -19,6 +19,12 @@ CUSTOM = "my-own-long-password"
 GENERATED = re.compile(r"\b[a-km-zA-HJ-NP-Z2-9]{5}(?:-[a-km-zA-HJ-NP-Z2-9]{5}){3}\b")
 
 
+@pytest.fixture(autouse=True)
+def russian(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Тексты проверяются по-русски: язык фиксируем, а не берём из локали машины, где идут тесты."""
+    monkeypatch.setenv("PANEL_LANG", "ru")
+
+
 class Terminal:
     """Подставной терминал: ответы на вопросы заданы заранее, всё сказанное запоминается."""
 
@@ -199,3 +205,53 @@ async def test_generated_admin_signs_in_but_is_locked_until_password_change(
 
     assert (await client.get("/api/v1/servers", headers=headers)).status_code == 403  # панель закрыта
     assert (await client.get("/api/v1/auth/me", headers=headers)).json()["must_change_password"] is True
+
+
+# --- язык сообщений -------------------------------------------------------------------------------------------------
+
+
+def clear_language(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("PANEL_LANG", "LC_ALL", "LC_MESSAGES", "LANG"):
+        monkeypatch.delenv(name, raising=False)
+
+
+async def test_messages_are_english_by_default(monkeypatch: pytest.MonkeyPatch, session: AsyncSession) -> None:
+    clear_language(monkeypatch)
+    terminal = Terminal()
+
+    await run([EMAIL, "--random-password"], terminal.console)
+
+    assert f"Admin {EMAIL} created." in terminal.screen and "Temporary password:" in terminal.screen
+    assert "set your own password at first sign-in" in terminal.screen
+    assert not re.search("[А-Яа-я]", terminal.screen)
+
+
+async def test_messages_follow_the_system_locale(monkeypatch: pytest.MonkeyPatch, session: AsyncSession) -> None:
+    clear_language(monkeypatch)
+    monkeypatch.setenv("LANG", "ru_RU.UTF-8")
+    terminal = Terminal()
+
+    await run([EMAIL, "--random-password"], terminal.console)
+
+    assert "Временный пароль:" in terminal.screen
+
+
+async def test_panel_lang_beats_the_locale(monkeypatch: pytest.MonkeyPatch, session: AsyncSession) -> None:
+    clear_language(monkeypatch)
+    monkeypatch.setenv("LANG", "ru_RU.UTF-8")
+    monkeypatch.setenv("PANEL_LANG", "en")
+    terminal = Terminal()
+
+    await run([EMAIL, "--random-password"], terminal.console)
+
+    assert "Temporary password:" in terminal.screen
+
+
+async def test_errors_are_english_too(monkeypatch: pytest.MonkeyPatch, session: AsyncSession) -> None:
+    clear_language(monkeypatch)
+    terminal = Terminal(answers=[EMAIL, "2"], secrets=["short", "short"])
+
+    with pytest.raises(CliError, match="at least 12 characters"):
+        await run([], terminal.console)
+    with pytest.raises(CliError, match="terminal"):
+        await run([EMAIL, "--random-password"], Terminal(interactive=False).console)

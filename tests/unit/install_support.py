@@ -3,6 +3,7 @@
 
 import os
 import shutil
+import socket
 import stat
 import subprocess
 from pathlib import Path
@@ -58,6 +59,13 @@ echo "curl $*" >> "$FAKE_DOCKER_LOG"
 """
 
 
+def free_port() -> int:
+    """Заведомо свободный порт: тест запуска не должен зависеть от того, что слушает машина разработчика."""
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return int(probe.getsockname()[1])
+
+
 def prepare_app(tmp_path: Path) -> Path:
     """Копия того, что нужно установщику: сам скрипт и шаблон. Заглушка docker — в соседнем bin/."""
     target = tmp_path / "app"
@@ -80,6 +88,7 @@ def run(app: Path, *args: str, start: bool = False, **env: str) -> subprocess.Co
     environment = {
         **os.environ,
         "PATH": f"{app.parent / 'bin'}{os.pathsep}{os.environ['PATH']}",
+        "PANEL_LANG": "ru",  # тексты проверяются по-русски; язык меняют тесты в разделе «язык сообщений»
         "FAKE_DOCKER_LOG": str(app.parent / "docker.log"),
         **env,
     }
