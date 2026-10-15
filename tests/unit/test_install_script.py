@@ -13,7 +13,7 @@ from cryptography.fernet import Fernet
 from dotenv import dotenv_values
 
 from core.config import Settings
-from tests.unit.install_support import ROOT, env_values, requires_bash, run
+from tests.unit.install_support import BASE_FILES, ROOT, env_values, requires_bash, run
 
 pytestmark = requires_bash
 
@@ -95,7 +95,7 @@ def test_existing_env_is_left_untouched(app: Path) -> None:
     assert (app / ".env.prod").read_bytes() == original
     assert "уже" in result.stdout
     assert "precious" not in result.stdout + result.stderr
-    assert sorted(path.name for path in app.iterdir()) == [".env.prod", ".env.prod.example", "certs", "install.sh"]
+    assert {path.name for path in app.iterdir()} == BASE_FILES | {".env.prod", "certs"}
 
 
 def test_data_volume_without_env_stops_the_install(app: Path) -> None:
@@ -139,7 +139,7 @@ def test_template_without_a_secret_stops_the_install(app: Path) -> None:
 
     assert result.returncode != 0 and "ENCRYPTION_KEY" in result.stderr
     assert not (app / ".env.prod").exists()
-    assert sorted(path.name for path in app.iterdir()) == [".env.prod.example", "install.sh"]
+    assert {path.name for path in app.iterdir()} == BASE_FILES
 
 
 # --- домен ----------------------------------------------------------------------------------------------------------

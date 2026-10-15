@@ -12,7 +12,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID
 
-from tests.unit.install_support import requires_bash, run
+from tests.unit.install_support import BASE_FILES, requires_bash, run
 
 pytestmark = requires_bash
 
@@ -231,7 +231,7 @@ def test_bad_own_certificate_stops_before_anything_is_written(app: Path, tmp_pat
     result = run(app, "--cert", str(cert_path), "--key", str(key_path))
 
     assert result.returncode != 0
-    assert sorted(path.name for path in app.iterdir()) == [".env.prod.example", "install.sh"]
+    assert {path.name for path in app.iterdir()} == BASE_FILES  # ни .env.prod, ни certs/
 
 
 def test_missing_own_files_are_reported(app: Path, tmp_path: Path) -> None:

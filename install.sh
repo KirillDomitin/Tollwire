@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Установщик VPN Control Panel (прод, Docker).
 #
-#   ./install.sh [--domain panel.example.com] [--cert fullchain.pem --key privkey.pem]
+#   ./install.sh [--domain panel.example.com] [--cert fullchain.pem --key privkey.pem] [--admin-email EMAIL]
 #
-# Сейчас делает два шага: проверяет окружение, создаёт .env.prod со случайными секретами и готовит
-# TLS-сертификат в certs/. Запуск и создание админа — следующие шаги (пока вручную, см. INSTALL.md).
+# Проверяет окружение, создаёт .env.prod со случайными секретами, готовит TLS-сертификат в certs/,
+# запускает панель (docker compose up), ждёт готовности и предлагает создать первого администратора.
 #
 # Безопасно запускать повторно: существующие .env.prod и сертификат не трогаются никогда. Новый ENCRYPTION_KEY
 # сделал бы нечитаемыми все SSH-учётки и VPN-конфиги в базе. Секреты и закрытый ключ на экран не выводятся.
@@ -19,6 +19,7 @@ TEMPLATE=.env.prod.example
 # потеряла свои секреты, и новые к этой базе не подойдут.
 DB_VOLUME=vpn-panel_pg_data
 DEFAULT_DOMAIN=localhost
+COMPOSE_FILE=docker-compose.prod.yml
 CERT_DIR=certs
 CERT_FILE=$CERT_DIR/fullchain.pem
 KEY_FILE=$CERT_DIR/privkey.pem
@@ -41,14 +42,18 @@ die() { printf 'Ошибка: %s\n' "$*" >&2; exit 1; }
 
 usage() {
     cat <<'EOF'
-Использование: ./install.sh [--domain ДОМЕН_ИЛИ_IP] [--cert ФАЙЛ --key ФАЙЛ]
+Использование: ./install.sh [--domain ДОМЕН_ИЛИ_IP] [--cert ФАЙЛ --key ФАЙЛ] [--admin-email EMAIL] [--no-start]
 
   --domain   адрес, по которому будет открываться панель (по умолчанию localhost);
              по нему выпускается сертификат. Без параметра в терминале спросит.
   --cert     свой сертификат с цепочкой (PEM), копируется в certs/fullchain.pem;
   --key      его закрытый ключ (PEM, без пароля), копируется в certs/privkey.pem.
              Без них выпускается самоподписанный сертификат (браузер предупредит, что ему не доверяет).
+  --admin-email  email первого администратора (иначе спросит в терминале);
+  --no-start     только подготовить .env.prod и сертификат, панель не запускать;
   -h, --help эта справка
+
+Переменная INSTALL_WAIT_SECONDS (по умолчанию 300) — сколько ждать готовности панели после запуска.
 
 Существующие .env.prod и certs/*.pem не изменяются: чтобы заменить сертификат, удалите файлы осознанно.
 EOF
@@ -58,6 +63,8 @@ domain=""
 domain_given=0
 cert_src=""
 key_src=""
+admin_email=""
+start=1
 while [ $# -gt 0 ]; do
     case "$1" in
         --domain)
@@ -75,6 +82,15 @@ while [ $# -gt 0 ]; do
             [ $# -ge 2 ] || die "после --key нужен путь к файлу."
             key_src=$2
             shift 2
+            ;;
+        --admin-email)
+            [ $# -ge 2 ] || die "после --admin-email нужен адрес."
+            admin_email=$2
+            shift 2
+            ;;
+        --no-start)
+            start=0
+            shift
             ;;
         -h | --help)
             usage
@@ -114,6 +130,11 @@ docker compose version > /dev/null 2>&1 \
     || die "не найден плагин Docker Compose (команда 'docker compose'). Установите docker-compose-plugin."
 command -v openssl > /dev/null 2>&1 || die "openssl не найден: он нужен для генерации секретов и сертификата."
 [ -f "$TEMPLATE" ] || die "не найден шаблон $TEMPLATE: запускайте установщик из корня репозитория."
+[ -f "$COMPOSE_FILE" ] || die "не найден $COMPOSE_FILE: запускайте установщик из корня репозитория."
+# Адрес уходит аргументом команды, но проверяется строго: опечатку лучше поймать до записи секретов.
+if [ -n "$admin_email" ] && ! [[ $admin_email =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
+    die "некорректный email администратора: $admin_email"
+fi
 
 # --- сертификат: что делать, решаем ДО записи чего-либо ----------------------------------------------------------------
 # Ошибка в сертификате не должна оставить после себя .env.prod с уже сгенерированными секретами.
@@ -139,15 +160,22 @@ fi
 
 # --- .env.prod -----------------------------------------------------------------------------------------------------
 
-env_domain() {
-    # PANEL_DOMAIN из готового .env.prod (если задан и корректен); комментарий после значения и кавычки отбрасываются.
+env_get() {
+    # Значение переменной из готового .env.prod; комментарий после значения и кавычки отбрасываются.
     local value
-    value=$(grep -m1 '^PANEL_DOMAIN=' "$ENV_FILE" 2> /dev/null | cut -d= -f2- || true)
+    value=$(grep -m1 "^$1=" "$ENV_FILE" 2> /dev/null | cut -d= -f2- || true)
     value=${value%%#*}
     value="${value#"${value%%[![:space:]]*}"}"
     value="${value%"${value##*[![:space:]]}"}"
     value=${value#[\"\']}
     value=${value%[\"\']}
+    printf '%s' "$value"
+}
+
+env_domain() {
+    # PANEL_DOMAIN из готового .env.prod, если задан и корректен.
+    local value
+    value=$(env_get PANEL_DOMAIN)
     if [ -n "$value" ] && is_valid_domain "$value"; then
         printf '%s' "$value"
     fi
@@ -303,5 +331,108 @@ if [ "$env_created" -eq 1 ]; then
     say "ВАЖНО: сохраните копию $ENV_FILE отдельно от этого сервера (менеджер паролей, сейф)."
     say "ENCRYPTION_KEY нельзя ни потерять, ни сменить: им зашифрованы SSH-учётки и VPN-конфиги в базе."
 fi
+
+# --- запуск --------------------------------------------------------------------------------------------------------
+
+compose=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
+compose_text="docker compose --env-file $ENV_FILE -f $COMPOSE_FILE"
+
+if [ "$start" -eq 0 ]; then
+    say ""
+    say "Запуск пропущен (--no-start). Когда будете готовы: $compose_text up -d --build"
+    exit 0
+fi
+
+wait_seconds=${INSTALL_WAIT_SECONDS:-300}
+[[ $wait_seconds =~ ^[1-9][0-9]*$ ]] || die "INSTALL_WAIT_SECONDS=«$wait_seconds» — нужно целое число секунд больше нуля."
+
+# Порт: переменная окружения (compose читает и её, она важнее файла), затем .env.prod, затем умолчание.
+port_setting() {
+    local name=$1 value
+    value=${!name:-}
+    [ -n "$value" ] || value=$(env_get "$name")
+    value=${value:-$2}
+    if ! [[ $value =~ ^[0-9]{1,5}$ ]] || [ "$value" -lt 1 ] || [ "$value" -gt 65535 ]; then
+        die "$name=«$value» — это не номер порта (1–65535)."
+    fi
+    printf '%s' "$value"
+}
+http_port=$(port_setting HTTP_PORT 80)
+https_port=$(port_setting HTTPS_PORT 443)
+
+# Занятый порт compose заметит, лишь когда nginx уже не сможет стартовать, — лучше сказать об этом сразу.
+# Если панель уже работает, порты заняты нами самими (повторный запуск) — тогда не проверяем.
+port_busy() { (exec 3<> "/dev/tcp/127.0.0.1/$1") 2> /dev/null; }
+if [ -z "$("${compose[@]}" ps -q nginx 2> /dev/null)" ]; then
+    for port in "$http_port" "$https_port"; do
+        if port_busy "$port"; then
+            die "порт $port уже занят другой программой. Освободите его или задайте другой в $ENV_FILE (HTTP_PORT, HTTPS_PORT) и запустите установщик снова."
+        fi
+    done
+fi
+
 say ""
-say "Дальше (пока вручную, см. INSTALL.md): запуск через docker compose."
+say "Запускаю панель. Первая сборка образов занимает несколько минут…"
+"${compose[@]}" up -d --build || die "не удалось запустить панель. Что случилось: $compose_text logs --tail 100"
+
+# Готовность: контейнер api здоров (проверка внутри compose) и nginx отдаёт /health по HTTPS (-k: сертификат
+# может быть самоподписанным, цепочку проверить нечем; здесь важно, что TLS и проксирование работают).
+api_status=""
+probe_https() {
+    command -v curl > /dev/null 2>&1 || return 0
+    curl -fsSk --max-time 5 "https://127.0.0.1:$https_port/health" > /dev/null 2>&1
+}
+wait_ready() {
+    local deadline=$((SECONDS + wait_seconds)) id
+    while :; do
+        id=$("${compose[@]}" ps -q api 2> /dev/null | head -n 1 || true)
+        api_status=""
+        [ -z "$id" ] || api_status=$(docker inspect -f '{{.State.Health.Status}}' "$id" 2> /dev/null || true)
+        if [ "$api_status" = healthy ] && probe_https; then
+            return 0
+        fi
+        [ "$SECONDS" -lt "$deadline" ] || return 1
+        sleep 2
+    done
+}
+
+say "Жду готовности панели (до $wait_seconds с)…"
+if ! wait_ready; then
+    "${compose[@]}" logs --tail 30 api nginx 2>&1 | sed 's/^/  | /' >&2 || true
+    if [ "$api_status" != healthy ]; then
+        die "контейнер api не стал готовым за $wait_seconds с (статус: ${api_status:-нет}). Последние строки логов выше; полные: $compose_text logs"
+    fi
+    die "api готов, но https://127.0.0.1:$https_port/health не отвечает по HTTPS: смотрите nginx и сертификат. Полные логи: $compose_text logs"
+fi
+
+# --- первый администратор ------------------------------------------------------------------------------------------
+
+admin_cmd=("${compose[@]}" run --rm api python -m scripts.create_admin --only-if-empty)
+[ -z "$admin_email" ] || admin_cmd+=("$admin_email")
+admin_text=$(printf '%q ' "${admin_cmd[@]}")
+admin_text=${admin_text% }
+
+say ""
+if [ -t 0 ] && [ -t 1 ]; then
+    say "Создаём первого администратора (если админов ещё нет):"
+    "${admin_cmd[@]}" || die "не удалось создать администратора. Повторите: $admin_text"
+else
+    say "Администратор не создан: для ввода пароля нужен терминал. Создайте его командой:"
+    say "  $admin_text"
+fi
+
+# --- итог ----------------------------------------------------------------------------------------------------------
+
+url="https://$domain"
+[ "$https_port" -eq 443 ] || url="$url:$https_port"
+say ""
+say "Панель запущена: $url"
+if [ "$cert_mode" = generate ]; then
+    say "Сертификат самоподписанный: браузер предупредит, что не доверяет ему, — для пробного запуска это нормально."
+fi
+say "Логи:      $compose_text logs -f"
+say "Остановка: $compose_text down"
+if [ "$env_created" -eq 1 ]; then
+    say ""
+    say "Не забудьте сохранить копию $ENV_FILE отдельно от этого сервера: без ENCRYPTION_KEY данные в базе не прочитать."
+fi
