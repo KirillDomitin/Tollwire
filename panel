@@ -5,6 +5,7 @@
 #   ./panel restore FILE [--yes] [--no-safety-backup]
 #   ./panel update  [--no-backup] [--no-pull]
 #   ./panel logs    [SERVICE...] [--tail N] [--no-follow]
+#   ./panel cert    [status | letsencrypt [--email E] [--accept-le-terms] | renew]
 #
 # В бэкап попадает только дамп базы: ключ шифрования (ENCRYPTION_KEY из .env.prod) нарочно не кладётся рядом с
 # данными — иначе тот, кто унесёт файл, получит и данные, и ключ к ним. Храните копию .env.prod отдельно.
@@ -19,10 +20,15 @@ DEFAULT_BACKUP_DIR=backups
 DEFAULT_KEEP=14
 DEFAULT_TAIL=100
 SERVICES="nginx api worker postgres redis migrate"
+CERT_DIR=certs
+CERT_FILE=$CERT_DIR/fullchain.pem
+KEY_FILE=$CERT_DIR/privkey.pem
 
 # Язык сообщений, t, say и die — общее с ./install.sh.
 # shellcheck source=deploy/common.sh
 source deploy/common.sh
+# shellcheck source=deploy/letsencrypt.sh
+source deploy/letsencrypt.sh
 
 part_file=""
 cleanup() {
@@ -69,6 +75,19 @@ msg_ru() {
         update_failed_nobackup) printf '%s' "обновление не удалось (бэкап не делался). Логи: ./panel logs" ;;
         update_done) printf '%s' "Обновление завершено." ;;
         bad_service) printf '%s' "неизвестный сервис: %s (доступны: %s)" ;;
+        cert_unknown) printf '%s' "неизвестная подкоманда: %s (доступны: status, letsencrypt, renew)" ;;
+        cert_missing) printf '%s' "файла сертификата нет: %s" ;;
+        cert_file) printf '%s' "Сертификат:      %s" ;;
+        cert_issuer) printf '%s' "Издатель:        %s" ;;
+        cert_valid) printf '%s' "Действителен до: %s (осталось дней: %s)" ;;
+        cert_covers) printf '%s' "Покрывает %s:  %s" ;;
+        yes) printf '%s' "да" ;;
+        no) printf '%s' "нет" ;;
+        cert_le_managed) printf '%s' "Let's Encrypt:    да, обновляется автоматически" ;;
+        cert_not_le) printf '%s' "Let's Encrypt:    нет (самоподписанный или свой). Перейти: ./panel cert letsencrypt" ;;
+        cert_no_domain) printf '%s' "в %s нет корректного PANEL_DOMAIN — укажите домен панели." ;;
+        cert_renew_no_certbot) printf '%s' "сертификат не от Let's Encrypt или certbot не установлен. Выпустить: ./panel cert letsencrypt" ;;
+        cert_renewed) printf '%s' "Проверка обновления выполнена." ;;
     esac
 }
 
@@ -110,6 +129,19 @@ msg_en() {
         update_failed_nobackup) printf '%s' "the update failed (no backup was taken). Logs: ./panel logs" ;;
         update_done) printf '%s' "Update finished." ;;
         bad_service) printf '%s' "unknown service: %s (available: %s)" ;;
+        cert_unknown) printf '%s' "unknown subcommand: %s (available: status, letsencrypt, renew)" ;;
+        cert_missing) printf '%s' "certificate file not found: %s" ;;
+        cert_file) printf '%s' "Certificate:   %s" ;;
+        cert_issuer) printf '%s' "Issuer:        %s" ;;
+        cert_valid) printf '%s' "Valid until:   %s (days left: %s)" ;;
+        cert_covers) printf '%s' "Covers %s:  %s" ;;
+        yes) printf '%s' "yes" ;;
+        no) printf '%s' "no" ;;
+        cert_le_managed) printf '%s' "Let's Encrypt: yes, renews automatically" ;;
+        cert_not_le) printf '%s' "Let's Encrypt: no (self-signed or your own). Switch: ./panel cert letsencrypt" ;;
+        cert_no_domain) printf '%s' "%s has no valid PANEL_DOMAIN - set the panel domain." ;;
+        cert_renew_no_certbot) printf '%s' "the certificate is not from Let's Encrypt or certbot is not installed. Issue one: ./panel cert letsencrypt" ;;
+        cert_renewed) printf '%s' "Renewal check done." ;;
     esac
 }
 
@@ -129,6 +161,10 @@ usage() {
   logs    [СЕРВИС...] [--tail N] [--no-follow]
           Логи сервисов (nginx api worker postgres redis migrate); по умолчанию последние 100 строк и слежение.
 
+  cert    [status | letsencrypt [--email EMAIL] [--accept-le-terms] | renew]
+          Сертификат: status — срок и издатель; letsencrypt — перейти на настоящий сертификат Let's Encrypt
+          (ставит certbot, на секунды останавливает nginx, обновляется само); renew — проверить обновление.
+
 В бэкап не входит .env.prod: ключ шифрования хранится отдельно от данных. Язык сообщений: PANEL_LANG=ru|en,
 иначе по локали системы, по умолчанию английский.
 EOF
@@ -146,6 +182,10 @@ Usage: ./panel COMMAND [options]
           --no-build - do not build, use the images brought by ./deploy/ship-images.sh.
   logs    [SERVICE...] [--tail N] [--no-follow]
           Service logs (nginx api worker postgres redis migrate); the last 100 lines and follow by default.
+
+  cert    [status | letsencrypt [--email EMAIL] [--accept-le-terms] | renew]
+          Certificate: status - expiry and issuer; letsencrypt - switch to a real Let's Encrypt certificate
+          (installs certbot, stops nginx for seconds, renews itself); renew - check the renewal.
 
 .env.prod is not part of the backup: the encryption key is kept apart from the data. Message language:
 PANEL_LANG=ru|en, otherwise the system locale, English by default.
@@ -378,10 +418,73 @@ cmd_logs() {
     "${compose[@]}" "${args[@]}" ${services[@]+"${services[@]}"}
 }
 
+cmd_cert() {
+    local sub=${1:-status}
+    [ $# -eq 0 ] || shift
+    case $sub in
+        status) cert_status ;;
+        letsencrypt) cert_letsencrypt "$@" ;;
+        renew) cert_renew ;;
+        *) die "$(t cert_unknown "$sub")" ;;
+    esac
+}
+
+cert_status() {
+    [ -f "$CERT_FILE" ] || die "$(t cert_missing "$CERT_FILE")"
+    local domain days_left covers issuer
+    domain=$(env_get PANEL_DOMAIN)
+    issuer=$(openssl x509 -in "$CERT_FILE" -noout -issuer | sed 's/^issuer= *//')
+    days_left=$(( ($(date -d "$(openssl x509 -in "$CERT_FILE" -noout -enddate | cut -d= -f2)" +%s 2> /dev/null || echo 0) - $(date +%s)) / 86400 ))
+    say "$(t cert_file "$CERT_FILE")"
+    say "$(t cert_issuer "$issuer")"
+    say "$(t cert_valid "$(openssl x509 -in "$CERT_FILE" -noout -enddate | cut -d= -f2)" "$days_left")"
+    if [ -n "$domain" ]; then
+        covers=$(openssl x509 -in "$CERT_FILE" -noout -checkhost "$domain" 2> /dev/null || true)
+        case $covers in
+            *"does match"*) say "$(t cert_covers "$domain" "$(t yes)")" ;;
+            *) say "$(t cert_covers "$domain" "$(t no)")" ;;
+        esac
+    fi
+    if [[ $issuer == *"Let's Encrypt"* ]]; then say "$(t cert_le_managed)"; else say "$(t cert_not_le)"; fi
+}
+
+cert_letsencrypt() {
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --email)
+                [ $# -ge 2 ] || die "$(t need_value --email)"
+                le_email=$2
+                shift 2
+                ;;
+            --accept-le-terms)
+                le_accept=1
+                shift
+                ;;
+            *) die "$(t unknown_option "$1")" ;;
+        esac
+    done
+    preflight
+    local domain
+    domain=$(env_get PANEL_DOMAIN)
+    le_public_domain "$domain" || die "$(t le_bad_domain "${domain:-?}")"
+    le_consent || exit 1
+    le_issue "$domain" || exit 1
+    le_report_success
+}
+
+cert_renew() {
+    preflight
+    command -v certbot > /dev/null 2>&1 || die "$(t cert_renew_no_certbot)"
+    le_prepare_root || exit 1
+    # shellcheck disable=SC2086
+    $le_sudo certbot renew --cert-name "$LE_CERT_NAME" || exit 1
+    say "$(t cert_renewed)"
+}
+
 main() {
     local command=${1:-}
     case $command in
-        backup | restore | update | logs)
+        backup | restore | update | logs | cert)
             shift
             "cmd_$command" "$@"
             ;;

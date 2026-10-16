@@ -40,6 +40,8 @@ trap cleanup EXIT
 # Язык сообщений, t, say и die — общее с ./panel.
 # shellcheck source=deploy/common.sh
 source deploy/common.sh
+# shellcheck source=deploy/letsencrypt.sh
+source deploy/letsencrypt.sh
 
 # Сообщения: ключ → строка для printf (подстановки %s — по порядку, одинаковому в обоих языках).
 msg_ru() {
@@ -48,6 +50,7 @@ msg_ru() {
         need_cert) printf '%s' "после --cert нужен путь к файлу." ;;
         need_key) printf '%s' "после --key нужен путь к файлу." ;;
         need_admin_email) printf '%s' "после --admin-email нужен адрес." ;;
+        need_le_email) printf '%s' "после --le-email нужен адрес." ;;
         unknown_param) printf '%s' "неизвестный параметр: %s" ;;
         not_cert) printf '%s' "%s — не сертификат в формате PEM." ;;
         not_key) printf '%s' "%s — не закрытый ключ в формате PEM (ключи с паролем не поддерживаются)." ;;
@@ -90,6 +93,16 @@ msg_ru() {
         bad_wait) printf '%s' "INSTALL_WAIT_SECONDS=«%s» — нужно целое число секунд больше нуля." ;;
         bad_port) printf '%s' "%s=«%s» — это не номер порта (1–65535)." ;;
         port_busy) printf '%s' "порт %s уже занят другой программой. Освободите его или задайте другой в %s (HTTP_PORT, HTTPS_PORT) и запустите установщик снова." ;;
+        cert_menu_title) printf '%s' "Какой TLS-сертификат использовать для %s?" ;;
+        cert_menu_self) printf '%s' "  1) самоподписанный — для пробы, браузер будет предупреждать (по умолчанию)" ;;
+        cert_menu_le) printf '%s' "  2) Let's Encrypt — настоящий, без предупреждений; нужен домен и открытый из интернета порт 80" ;;
+        cert_menu_own) printf '%s' "  3) свои файлы сертификата и ключа" ;;
+        cert_menu_choice) printf '%s' "Выбор [1]: " ;;
+        cert_menu_again) printf '%s' "Введите 1, 2 или 3." ;;
+        ask_cert_path) printf '%s' "Путь к файлу сертификата (с цепочкой, PEM): " ;;
+        ask_key_path) printf '%s' "Путь к закрытому ключу (PEM, без пароля): " ;;
+        le_skipped_fallback) printf '%s' "Let's Encrypt не получился — панель запущена с самоподписанным сертификатом. Повторить позже: ./panel cert letsencrypt" ;;
+        le_existing_cert) printf '%s' "в %s/ уже есть сертификат — установщик его не заменяет. Чтобы перейти на Let's Encrypt, выполните: ./panel cert letsencrypt" ;;
         starting) printf '%s' "Запускаю панель. Первая сборка образов занимает несколько минут…" ;;
         starting_nobuild) printf '%s' "Запускаю панель из образов, уже загруженных на этой машине (без сборки)…" ;;
         no_local_images) printf '%s' "нет образов панели на этой машине (%s). Привезите их с другого компьютера: ./deploy/ship-images.sh ЭТОТ_СЕРВЕР" ;;
@@ -115,6 +128,7 @@ msg_en() {
         need_cert) printf '%s' "--cert needs a file path." ;;
         need_key) printf '%s' "--key needs a file path." ;;
         need_admin_email) printf '%s' "--admin-email needs an address." ;;
+        need_le_email) printf '%s' "--le-email needs an address." ;;
         unknown_param) printf '%s' "unknown option: %s" ;;
         not_cert) printf '%s' "%s is not a PEM certificate." ;;
         not_key) printf '%s' "%s is not a PEM private key (keys protected by a passphrase are not supported)." ;;
@@ -157,6 +171,16 @@ msg_en() {
         bad_wait) printf '%s' "INSTALL_WAIT_SECONDS=\"%s\" must be a whole number of seconds greater than zero." ;;
         bad_port) printf '%s' "%s=\"%s\" is not a port number (1-65535)." ;;
         port_busy) printf '%s' "port %s is already in use by another program. Free it or set another in %s (HTTP_PORT, HTTPS_PORT) and run the installer again." ;;
+        cert_menu_title) printf '%s' "Which TLS certificate to use for %s?" ;;
+        cert_menu_self) printf '%s' "  1) self-signed - for a trial, the browser will warn (default)" ;;
+        cert_menu_le) printf '%s' "  2) Let's Encrypt - a real one, no warnings; needs a domain and port 80 open to the internet" ;;
+        cert_menu_own) printf '%s' "  3) your own certificate and key files" ;;
+        cert_menu_choice) printf '%s' "Choice [1]: " ;;
+        cert_menu_again) printf '%s' "Enter 1, 2 or 3." ;;
+        ask_cert_path) printf '%s' "Path to the certificate file (with chain, PEM): " ;;
+        ask_key_path) printf '%s' "Path to the private key (PEM, no passphrase): " ;;
+        le_skipped_fallback) printf '%s' "Let's Encrypt did not work out - the panel starts with a self-signed certificate. Retry later: ./panel cert letsencrypt" ;;
+        le_existing_cert) printf '%s' "%s/ already holds a certificate - the installer does not replace it. To switch to Let's Encrypt run: ./panel cert letsencrypt" ;;
         starting) printf '%s' "Starting the panel. The first image build takes a few minutes..." ;;
         starting_nobuild) printf '%s' "Starting the panel from the images already on this machine (no build)..." ;;
         no_local_images) printf '%s' "the panel images are missing on this machine (%s). Bring them from another computer: ./deploy/ship-images.sh THIS_SERVER" ;;
@@ -180,12 +204,17 @@ usage() {
     if [ "$lang" = ru ]; then
         cat <<'EOF'
 Использование: ./install.sh [--domain ДОМЕН_ИЛИ_IP] [--cert ФАЙЛ --key ФАЙЛ] [--admin-email EMAIL] [--no-start] [--no-admin] [--no-build]
+                    [--letsencrypt [--le-email EMAIL] [--accept-le-terms]]
 
   --domain   адрес, по которому будет открываться панель (по умолчанию localhost);
              по нему выпускается сертификат. Без параметра в терминале спросит.
   --cert     свой сертификат с цепочкой (PEM), копируется в certs/fullchain.pem;
   --key      его закрытый ключ (PEM, без пароля), копируется в certs/privkey.pem.
-             Без них выпускается самоподписанный сертификат (браузер предупредит, что ему не доверяет).
+             Без них выпускается самоподписанный сертификат (браузер предупредит, что ему не доверяет);
+             в терминале установщик предложит выбор: самоподписанный, Let's Encrypt или свои файлы.
+  --letsencrypt  настоящий сертификат Let's Encrypt (ставит certbot, нужен домен и порт 80 из интернета);
+  --le-email     email для уведомлений Let's Encrypt (без него — без адреса);
+  --accept-le-terms  согласие с условиями Let's Encrypt (без терминала обязательно, это решение человека);
   --admin-email  email первого администратора (иначе спросит в терминале);
   --no-start     только подготовить .env.prod и сертификат, панель не запускать;
   --no-admin     не предлагать создать администратора (так вызывает ./panel update);
@@ -201,12 +230,17 @@ EOF
     else
         cat <<'EOF'
 Usage: ./install.sh [--domain DOMAIN_OR_IP] [--cert FILE --key FILE] [--admin-email EMAIL] [--no-start] [--no-admin] [--no-build]
+                    [--letsencrypt [--le-email EMAIL] [--accept-le-terms]]
 
   --domain   address the panel will be opened at (default localhost);
              the certificate is issued for it. Asked in a terminal if omitted.
   --cert     your own certificate with its chain (PEM), copied to certs/fullchain.pem;
   --key      its private key (PEM, no passphrase), copied to certs/privkey.pem.
-             Without them a self-signed certificate is issued (the browser will warn that it does not trust it).
+             Without them a self-signed certificate is issued (the browser will warn that it does not trust it);
+             in a terminal the installer offers a choice: self-signed, Let's Encrypt or your own files.
+  --letsencrypt  a real Let's Encrypt certificate (installs certbot; needs a domain and port 80 from the internet);
+  --le-email     email for Let's Encrypt notices (none if omitted);
+  --accept-le-terms  consent to the Let's Encrypt terms (required without a terminal - it is a human's decision);
   --admin-email  email of the first administrator (asked in a terminal otherwise);
   --no-start     only prepare .env.prod and the certificate, do not start the panel;
   --no-admin     do not offer to create an administrator (./panel update uses this);
@@ -230,6 +264,7 @@ admin_email=""
 start=1
 ask_admin=1
 build=1
+want_le=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --domain)
@@ -263,6 +298,19 @@ while [ $# -gt 0 ]; do
             ;;
         --no-build)
             build=0
+            shift
+            ;;
+        --letsencrypt)
+            want_le=1
+            shift
+            ;;
+        --le-email)
+            [ $# -ge 2 ] || die "$(t need_le_email)"
+            le_email=$2
+            shift 2
+            ;;
+        --accept-le-terms)
+            le_accept=1
             shift
             ;;
         -h | --help)
@@ -331,19 +379,13 @@ else
     cert_mode=generate
 fi
 
-# --- .env.prod -----------------------------------------------------------------------------------------------------
+# --letsencrypt: условия и адрес проверяются ДО записи секретов; существующий сертификат установщик не заменяет.
+if [ "$want_le" -eq 1 ]; then
+    [ "$cert_mode" = generate ] || die "$(t le_existing_cert "$CERT_DIR")"
+    le_consent || exit 1
+fi
 
-env_get() {
-    # Значение переменной из готового .env.prod; комментарий после значения и кавычки отбрасываются.
-    local value
-    value=$(grep -m1 "^$1=" "$ENV_FILE" 2> /dev/null | cut -d= -f2- || true)
-    value=${value%%#*}
-    value="${value#"${value%%[![:space:]]*}"}"
-    value="${value%"${value##*[![:space:]]}"}"
-    value=${value#[\"\']}
-    value=${value%[\"\']}
-    printf '%s' "$value"
-}
+# --- .env.prod -----------------------------------------------------------------------------------------------------
 
 env_domain() {
     # PANEL_DOMAIN из готового .env.prod, если задан и корректен.
@@ -425,6 +467,8 @@ fi
 
 # --- TLS-сертификат ------------------------------------------------------------------------------------------------
 
+compose=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
+
 cert_expiry() { openssl x509 -in "$1" -noout -enddate | cut -d= -f2; }
 
 # Положить пару в certs/ целиком или никак: сначала во временный каталог рядом, затем переименованием.
@@ -464,15 +508,55 @@ issue_self_signed() {
     issue_dir=""
 }
 
+# Меню выбора сертификата: только в терминале, если ничего не задано флагами и у домена есть шанс на Let's Encrypt.
+if [ "$cert_mode" = generate ] && [ "$want_le" -eq 0 ] && [ -t 0 ] && [ -t 1 ] && le_public_domain "$domain"; then
+    say ""
+    say "$(t cert_menu_title "$domain")"
+    say "$(t cert_menu_self)"
+    say "$(t cert_menu_le)"
+    say "$(t cert_menu_own)"
+    while true; do
+        read -r -p "$(t cert_menu_choice)" choice || choice=1
+        case ${choice:-1} in
+            1) break ;;
+            2)
+                if le_consent; then want_le=1; fi
+                break
+                ;;
+            3)
+                read -r -p "$(t ask_cert_path)" cert_src || cert_src=""
+                read -r -p "$(t ask_key_path)" key_src || key_src=""
+                [ -f "$cert_src" ] || die "$(t cert_file_missing "$cert_src")"
+                [ -f "$key_src" ] || die "$(t key_file_missing "$key_src")"
+                check_pair "$cert_src" "$key_src"
+                cert_mode=own
+                break
+                ;;
+            *) say "$(t cert_menu_again)" ;;
+        esac
+    done
+fi
+
 case $cert_mode in
     generate)
         issue_self_signed
-        fingerprint=$(openssl x509 -in "$CERT_FILE" -noout -fingerprint -sha256 | cut -d= -f2)
-        say "$(t selfsigned_issued "$domain" "$(cert_expiry "$CERT_FILE")")"
-        say "$(t selfsigned_browser)"
-        say "$(t fingerprint "$fingerprint")"
-        say "$(t own_cert_hint)"
-        say "$(t own_cert_hint2 "$CERT_DIR" "$CERT_FILE" "$KEY_FILE")"
+        # С --letsencrypt самоподписанный сертификат — только страховка (без файлов nginx не запустится, а выпуск может не
+        # получиться): подробности про него показываем, лишь если Let's Encrypt не вышел.
+        if [ "$want_le" -eq 1 ] && le_issue "$domain"; then
+            cert_mode=letsencrypt
+            le_report_success
+        else
+            fingerprint=$(openssl x509 -in "$CERT_FILE" -noout -fingerprint -sha256 | cut -d= -f2)
+            say "$(t selfsigned_issued "$domain" "$(cert_expiry "$CERT_FILE")")"
+            say "$(t selfsigned_browser)"
+            say "$(t fingerprint "$fingerprint")"
+            if [ "$want_le" -eq 1 ]; then
+                say "$(t le_skipped_fallback)"
+            else
+                say "$(t own_cert_hint)"
+                say "$(t own_cert_hint2 "$CERT_DIR" "$CERT_FILE" "$KEY_FILE")"
+            fi
+        fi
         ;;
     own)
         install_pair "$cert_src" "$key_src"
@@ -483,7 +567,7 @@ case $cert_mode in
         ;;
 esac
 
-if [ "$cert_mode" != generate ]; then
+if [ "$cert_mode" != generate ] && [ "$cert_mode" != letsencrypt ]; then
     openssl x509 -in "$CERT_FILE" -noout -checkend "$WARN_EXPIRY_SECONDS" > /dev/null \
         || say "$(t cert_expiring "$(cert_expiry "$CERT_FILE")" "$CERT_DIR")"
     if [[ $domain =~ $ipv4 ]]; then
@@ -507,7 +591,6 @@ fi
 
 # --- запуск --------------------------------------------------------------------------------------------------------
 
-compose=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
 compose_text="docker compose --env-file $ENV_FILE -f $COMPOSE_FILE"
 
 if [ "$start" -eq 0 ]; then
@@ -535,7 +618,6 @@ https_port=$(port_setting HTTPS_PORT 443)
 
 # Занятый порт compose заметит, лишь когда nginx уже не сможет стартовать, — лучше сказать об этом сразу.
 # Если панель уже работает, порты заняты нами самими (повторный запуск) — тогда не проверяем.
-port_busy() { (exec 3<> "/dev/tcp/127.0.0.1/$1") 2> /dev/null; }
 if [ -z "$("${compose[@]}" ps -q nginx 2> /dev/null)" ]; then
     for port in "$http_port" "$https_port"; do
         if port_busy "$port"; then

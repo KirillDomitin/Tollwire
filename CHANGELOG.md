@@ -26,6 +26,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   kept), `restore` (replaces the data after a confirmation and a safety backup, in one transaction), `update`
   (backup, `git pull --ff-only`, rebuild and start, wait until ready) and `logs`. The encryption key is deliberately
   not part of a backup. `install.sh --no-admin` skips the administrator step (`update` uses it).
+- Let's Encrypt from the installer: a certificate menu in a terminal (self-signed / Let's Encrypt / your own files), `--letsencrypt` with `--accept-le-terms` and `--le-email` otherwise. certbot is installed if
+  missing, nginx is stopped for seconds during verification, renewal is automatic (hooks keep the panel's `certs/` in
+  sync). If issuing fails the panel starts with a self-signed certificate. `./panel cert [status|letsencrypt|renew]`
+  does the same for an installed panel. The terms are accepted by the person, never silently.
 - Servers that cannot reach Docker's or npm's CDNs: `./deploy/ship-images.sh SERVER` builds the panel images on
   another computer (from the committed state) and loads them over SSH; `install.sh --no-build` and
   `./panel update --no-build` start from images already on the machine; `POSTGRES_IMAGE` / `REDIS_IMAGE` in

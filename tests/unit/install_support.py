@@ -78,6 +78,58 @@ echo "curl $*" >> "$FAKE_DOCKER_LOG"
 """
 
 
+FAKE_SUDO = """#!/usr/bin/env bash
+echo "sudo $*" >> "$FAKE_DOCKER_LOG"
+exec "$@"
+"""
+
+# Настоящий certbot по --standalone слушал бы порт 80; заглушка делает видимое снаружи: запускает хуки так же, как
+# он (pre → выпуск → deploy → post) и кладёт «выпущенный» сертификат в $LE_LIVE_DIR/tollwire.
+FAKE_CERTBOT = """#!/usr/bin/env bash
+export MSYS_NO_PATHCONV=1
+echo "certbot $*" >> "$FAKE_DOCKER_LOG"
+args=("$@")
+dry=0; pre=""; post=""; deploy=""; domain=""
+for ((i = 0; i < ${#args[@]}; i++)); do
+  case "${args[$i]}" in
+    --dry-run) dry=1 ;;
+    --pre-hook) pre=${args[$((i + 1))]} ;;
+    --post-hook) post=${args[$((i + 1))]} ;;
+    --deploy-hook) deploy=${args[$((i + 1))]} ;;
+    -d) domain=${args[$((i + 1))]} ;;
+  esac
+done
+[ "${args[0]}" != renew ] || { echo "renewal check"; exit "${FAKE_RENEW_EXIT:-0}"; }
+[ -z "$pre" ] || "$pre"
+if [ -n "${FAKE_CERTBOT_FAIL:-}" ] && { [ -z "${FAKE_CERTBOT_FAIL_REAL_ONLY:-}" ] || [ "$dry" -eq 0 ]; }; then
+  [ -z "$post" ] || "$post"
+  echo "Challenge failed for domain $domain" >&2
+  exit 1
+fi
+if [ "$dry" -eq 0 ]; then
+  live="$LE_LIVE_DIR/tollwire"
+  mkdir -p "$live"
+  openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 90 \
+    -subj "/O=Fake Let's Encrypt/CN=$domain" -addext "subjectAltName=DNS:$domain" \
+    -keyout "$live/privkey.pem" -out "$live/fullchain.pem" > /dev/null 2>&1
+  if [ -z "${FAKE_CERTBOT_NO_DEPLOY:-}" ] && [ -n "$deploy" ]; then RENEWED_LINEAGE="$live" "$deploy"; fi
+fi
+[ -z "$post" ] || "$post"
+exit 0
+"""
+
+FAKE_APT_GET = """#!/usr/bin/env bash
+echo "apt-get $*" >> "$FAKE_DOCKER_LOG"
+case " $* " in
+  *" install "*)
+    [ -z "${FAKE_APT_FAIL:-}" ] || exit 100
+    cp "$(dirname "$0")/.certbot-real" "$(dirname "$0")/certbot"
+    chmod +x "$(dirname "$0")/certbot"
+    ;;
+esac
+"""
+
+
 def free_port() -> int:
     """Заведомо свободный порт: тест запуска не должен зависеть от того, что слушает машина разработчика."""
     with socket.socket() as probe:
@@ -92,27 +144,43 @@ def prepare_app(tmp_path: Path) -> Path:
     for name in ("install.sh", "panel", ".env.prod.example", "docker-compose.prod.yml", ".gitignore"):
         shutil.copy(ROOT / name, target / name)
     (target / "deploy").mkdir()
-    shutil.copy(ROOT / "deploy" / "common.sh", target / "deploy" / "common.sh")
+    for name in ("common.sh", "letsencrypt.sh"):
+        shutil.copy(ROOT / "deploy" / name, target / "deploy" / name)
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    for name, body in (("docker", FAKE_DOCKER), ("curl", FAKE_CURL)):
+    # certbot есть сразу; тест «не установлен» удаляет bin/certbot, apt-get-заглушка вернёт его из .certbot-real.
+    (bin_dir / ".certbot-real").write_bytes(FAKE_CERTBOT.encode())
+    for name, body in (
+        ("docker", FAKE_DOCKER),
+        ("curl", FAKE_CURL),
+        ("sudo", FAKE_SUDO),
+        ("certbot", FAKE_CERTBOT),
+        ("apt-get", FAKE_APT_GET),
+    ):
         fake = bin_dir / name
         fake.write_bytes(body.encode())  # байты: переводов строки Windows в shebang быть не должно
         fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
     return target
 
 
+def base_env(app: Path) -> dict[str, str]:
+    """PATH с заглушками и каталоги Let's Encrypt во временной папке: /etc настоящей машины тесты не трогают."""
+    return {
+        **os.environ,
+        "PATH": f"{app.parent / 'bin'}{os.pathsep}{os.environ['PATH']}",
+        "FAKE_DOCKER_LOG": str(app.parent / "docker.log"),
+        "TOLLWIRE_LE_DIR": str(app.parent / "le-hooks"),
+        "LE_LIVE_DIR": str(app.parent / "le-live"),
+        "TOLLWIRE_LE_HTTP_PORT": str(free_port()),
+        "PANEL_LANG": "ru",  # тексты проверяются по-русски; язык меняют тесты в разделе «язык сообщений»
+    }
+
+
 def run(app: Path, *args: str, start: bool = False, **env: str) -> subprocess.CompletedProcess[str]:
     """start=False добавляет --no-start: тесты проверки окружения, секретов и сертификата не запускают панель."""
     if not start:
         args = (*args, "--no-start")
-    environment = {
-        **os.environ,
-        "PATH": f"{app.parent / 'bin'}{os.pathsep}{os.environ['PATH']}",
-        "PANEL_LANG": "ru",  # тексты проверяются по-русски; язык меняют тесты в разделе «язык сообщений»
-        "FAKE_DOCKER_LOG": str(app.parent / "docker.log"),
-        **env,
-    }
+    environment = {**base_env(app), **env}
     return subprocess.run(
         [str(BASH), "install.sh", *args],
         cwd=app,
@@ -131,15 +199,7 @@ def env_values(app: Path) -> dict[str, str | None]:
 
 def run_panel(app: Path, *args: str, **env: str) -> subprocess.CompletedProcess[str]:
     """./panel в копии каталога. Язык русский, как у run(); порты — заведомо свободные: panel запускает install.sh."""
-    environment = {
-        **os.environ,
-        "PATH": f"{app.parent / 'bin'}{os.pathsep}{os.environ['PATH']}",
-        "FAKE_DOCKER_LOG": str(app.parent / "docker.log"),
-        "PANEL_LANG": "ru",
-        "HTTP_PORT": str(free_port()),
-        "HTTPS_PORT": str(free_port()),
-        **env,
-    }
+    environment = {**base_env(app), "HTTP_PORT": str(free_port()), "HTTPS_PORT": str(free_port()), **env}
     return subprocess.run(
         [str(BASH), "panel", *args],
         cwd=app,
