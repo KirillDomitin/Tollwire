@@ -23,6 +23,7 @@ case "$1" in
   info) [ -z "${FAKE_DOCKER_DOWN:-}" ] || exit 1 ;;
   volume) printf '%s' "${FAKE_VOLUMES:-}" ;;
   inspect) echo "${FAKE_API_HEALTH:-healthy}" ;;
+  image) [ -z "${FAKE_NO_IMAGES:-}" ] || exit 1 ;; # docker image inspect: образы панели есть на машине
   compose)
     shift
     if [ "$1" = version ]; then

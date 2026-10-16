@@ -91,6 +91,8 @@ msg_ru() {
         bad_port) printf '%s' "%s=«%s» — это не номер порта (1–65535)." ;;
         port_busy) printf '%s' "порт %s уже занят другой программой. Освободите его или задайте другой в %s (HTTP_PORT, HTTPS_PORT) и запустите установщик снова." ;;
         starting) printf '%s' "Запускаю панель. Первая сборка образов занимает несколько минут…" ;;
+        starting_nobuild) printf '%s' "Запускаю панель из образов, уже загруженных на этой машине (без сборки)…" ;;
+        no_local_images) printf '%s' "нет образов панели на этой машине (%s). Привезите их с другого компьютера: ./deploy/ship-images.sh ЭТОТ_СЕРВЕР" ;;
         up_failed) printf '%s' "не удалось запустить панель. Что случилось: %s logs --tail 100" ;;
         waiting) printf '%s' "Жду готовности панели (до %s с)…" ;;
         none) printf '%s' "нет" ;;
@@ -156,6 +158,8 @@ msg_en() {
         bad_port) printf '%s' "%s=\"%s\" is not a port number (1-65535)." ;;
         port_busy) printf '%s' "port %s is already in use by another program. Free it or set another in %s (HTTP_PORT, HTTPS_PORT) and run the installer again." ;;
         starting) printf '%s' "Starting the panel. The first image build takes a few minutes..." ;;
+        starting_nobuild) printf '%s' "Starting the panel from the images already on this machine (no build)..." ;;
+        no_local_images) printf '%s' "the panel images are missing on this machine (%s). Bring them from another computer: ./deploy/ship-images.sh THIS_SERVER" ;;
         up_failed) printf '%s' "could not start the panel. What happened: %s logs --tail 100" ;;
         waiting) printf '%s' "Waiting for the panel to be ready (up to %s s)..." ;;
         none) printf '%s' "none" ;;
@@ -175,7 +179,7 @@ msg_en() {
 usage() {
     if [ "$lang" = ru ]; then
         cat <<'EOF'
-Использование: ./install.sh [--domain ДОМЕН_ИЛИ_IP] [--cert ФАЙЛ --key ФАЙЛ] [--admin-email EMAIL] [--no-start] [--no-admin]
+Использование: ./install.sh [--domain ДОМЕН_ИЛИ_IP] [--cert ФАЙЛ --key ФАЙЛ] [--admin-email EMAIL] [--no-start] [--no-admin] [--no-build]
 
   --domain   адрес, по которому будет открываться панель (по умолчанию localhost);
              по нему выпускается сертификат. Без параметра в терминале спросит.
@@ -185,6 +189,8 @@ usage() {
   --admin-email  email первого администратора (иначе спросит в терминале);
   --no-start     только подготовить .env.prod и сертификат, панель не запускать;
   --no-admin     не предлагать создать администратора (так вызывает ./panel update);
+  --no-build     не собирать образы, взять уже загруженные (для серверов, куда образы привозят
+                 с другого компьютера: ./deploy/ship-images.sh);
   -h, --help эта справка
 
 Переменная INSTALL_WAIT_SECONDS (по умолчанию 300) — сколько ждать готовности панели после запуска.
@@ -194,7 +200,7 @@ usage() {
 EOF
     else
         cat <<'EOF'
-Usage: ./install.sh [--domain DOMAIN_OR_IP] [--cert FILE --key FILE] [--admin-email EMAIL] [--no-start] [--no-admin]
+Usage: ./install.sh [--domain DOMAIN_OR_IP] [--cert FILE --key FILE] [--admin-email EMAIL] [--no-start] [--no-admin] [--no-build]
 
   --domain   address the panel will be opened at (default localhost);
              the certificate is issued for it. Asked in a terminal if omitted.
@@ -204,6 +210,8 @@ Usage: ./install.sh [--domain DOMAIN_OR_IP] [--cert FILE --key FILE] [--admin-em
   --admin-email  email of the first administrator (asked in a terminal otherwise);
   --no-start     only prepare .env.prod and the certificate, do not start the panel;
   --no-admin     do not offer to create an administrator (./panel update uses this);
+  --no-build     do not build the images, use the ones already loaded (for servers that get the
+                 images from another computer: ./deploy/ship-images.sh);
   -h, --help     this help
 
 INSTALL_WAIT_SECONDS (default 300) is how long to wait for the panel to become ready after the start.
@@ -221,6 +229,7 @@ key_src=""
 admin_email=""
 start=1
 ask_admin=1
+build=1
 while [ $# -gt 0 ]; do
     case "$1" in
         --domain)
@@ -250,6 +259,10 @@ while [ $# -gt 0 ]; do
             ;;
         --no-admin)
             ask_admin=0
+            shift
+            ;;
+        --no-build)
+            build=0
             shift
             ;;
         -h | --help)
@@ -532,8 +545,20 @@ if [ -z "$("${compose[@]}" ps -q nginx 2> /dev/null)" ]; then
 fi
 
 say ""
-say "$(t starting)"
-"${compose[@]}" up -d --build || die "$(t up_failed "$compose_text")"
+if [ "$build" -eq 1 ]; then
+    say "$(t starting)"
+    "${compose[@]}" up -d --build || die "$(t up_failed "$compose_text")"
+else
+    # Без сборки образы панели должны уже лежать на машине (их привозит ship-images.sh): иначе compose полез бы за
+    # ними в реестр, а не нашёл бы — лучше сказать об этом прямо.
+    missing=""
+    for image in vpn-panel:latest vpn-panel-web:latest; do
+        docker image inspect "$image" > /dev/null 2>&1 || missing="$missing $image"
+    done
+    [ -z "$missing" ] || die "$(t no_local_images "${missing# }")"
+    say "$(t starting_nobuild)"
+    "${compose[@]}" up -d || die "$(t up_failed "$compose_text")"
+fi
 
 # Готовность: контейнер api здоров (проверка внутри compose) и nginx отдаёт /health по HTTPS (-k: сертификат
 # может быть самоподписанным, цепочку проверить нечем; здесь важно, что TLS и проксирование работают).

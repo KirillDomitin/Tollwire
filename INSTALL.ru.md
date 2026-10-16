@@ -174,6 +174,22 @@ git clone <адрес репозитория> tollwire && cd tollwire
 
 Параметры: `--domain`, `--cert`/`--key` (свой сертификат), `--admin-email`, `--no-start` (только подготовить файлы). `INSTALL_WAIT_SECONDS` — сколько ждать готовности (по умолчанию 300 с); порты `HTTP_PORT`/`HTTPS_PORT` берутся из окружения или `.env.prod`. Сообщения на английском или русском: `PANEL_LANG=ru|en`, иначе по локали системы.
 
+### Если сервер не может скачать образы
+
+В некоторых сетях соединения к CDN Docker и npm обрываются после нескольких килобайт (загрузка зависает с `connection timed out`). Тогда соберите образы на компьютере с нормальным интернетом и отправьте по SSH:
+
+```bash
+# на этом компьютере, из корня репозитория (нужен вход на сервер по SSH-ключу)
+./deploy/ship-images.sh мой-сервер        # имя из ~/.ssh/config или user@host
+```
+
+Скрипт соберёт `vpn-panel` и `vpn-panel-web` из закоммиченного состояния (git HEAD), передаст их на сервер и пометит там нужными именами. `postgres` и `redis` сервер тянет сам по закреплённым дайджестам; если и это зависает, привезите их так же (`docker save | gzip | ssh ... 'gunzip | docker load'`) и укажите имена в `.env.prod`: `POSTGRES_IMAGE=...`, `REDIS_IMAGE=...`. На сервере запускайте без сборки:
+
+```bash
+./install.sh --domain panel.example.com --no-build       # первая установка
+./panel update --no-pull --no-build                      # потом: снова привезти образы, затем это
+```
+
 ### Что нужно
 
 - Linux-сервер с Docker и Docker Compose (плагин `docker compose`);

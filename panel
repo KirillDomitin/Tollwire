@@ -123,8 +123,9 @@ usage() {
   restore ФАЙЛ [--yes] [--no-safety-backup]
           Заменить данные панели содержимым бэкапа. Просит подтверждение (без терминала нужен --yes) и перед
           заменой делает страховочный бэкап текущих данных.
-  update  [--no-backup] [--no-pull]
+  update  [--no-backup] [--no-pull] [--no-build]
           Бэкап, затем git pull --ff-only, затем пересборка и запуск (./install.sh) с ожиданием готовности.
+          --no-build — не собирать, взять образы, привезённые ./deploy/ship-images.sh.
   logs    [СЕРВИС...] [--tail N] [--no-follow]
           Логи сервисов (nginx api worker postgres redis migrate); по умолчанию последние 100 строк и слежение.
 
@@ -140,8 +141,9 @@ Usage: ./panel COMMAND [options]
   restore FILE [--yes] [--no-safety-backup]
           Replace the panel data with the backup. Asks for confirmation (--yes without a terminal) and takes a
           safety backup of the current data first.
-  update  [--no-backup] [--no-pull]
+  update  [--no-backup] [--no-pull] [--no-build]
           Backup, then git pull --ff-only, then rebuild and start (./install.sh) and wait until ready.
+          --no-build - do not build, use the images brought by ./deploy/ship-images.sh.
   logs    [SERVICE...] [--tail N] [--no-follow]
           Service logs (nginx api worker postgres redis migrate); the last 100 lines and follow by default.
 
@@ -289,7 +291,7 @@ cmd_restore() {
 }
 
 cmd_update() {
-    local do_backup=1 do_pull=1 taken="" status
+    local do_backup=1 do_pull=1 build_args=() taken="" status
     while [ $# -gt 0 ]; do
         case "$1" in
             --no-backup)
@@ -298,6 +300,10 @@ cmd_update() {
                 ;;
             --no-pull)
                 do_pull=0
+                shift
+                ;;
+            --no-build)
+                build_args=(--no-build)
                 shift
                 ;;
             *) die "$(t unknown_option "$1")" ;;
@@ -326,7 +332,7 @@ cmd_update() {
 
     # После git pull ./install.sh — уже новая версия: пересборка, миграции и ожидание готовности делает он.
     status=0
-    PANEL_LANG=$lang ./install.sh --no-admin || status=$?
+    PANEL_LANG=$lang ./install.sh --no-admin ${build_args[@]+"${build_args[@]}"} || status=$?
     if [ "$status" -ne 0 ]; then
         if [ -n "$taken" ]; then
             printf '%s\n' "$(t update_failed "$taken" "$taken")" >&2

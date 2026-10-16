@@ -26,6 +26,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   kept), `restore` (replaces the data after a confirmation and a safety backup, in one transaction), `update`
   (backup, `git pull --ff-only`, rebuild and start, wait until ready) and `logs`. The encryption key is deliberately
   not part of a backup. `install.sh --no-admin` skips the administrator step (`update` uses it).
+- Servers that cannot reach Docker's or npm's CDNs: `./deploy/ship-images.sh SERVER` builds the panel images on
+  another computer (from the committed state) and loads them over SSH; `install.sh --no-build` and
+  `./panel update --no-build` start from images already on the machine; `POSTGRES_IMAGE` / `REDIS_IMAGE` in
+  `.env.prod` replace the pinned database images.
 - The VPN container is created with `--restart unless-stopped`, so the VPN comes back after a server reboot.
   Installing the protocol again sets the policy on servers installed earlier (without restarting the container),
   and the health check shows `restart_policy`.

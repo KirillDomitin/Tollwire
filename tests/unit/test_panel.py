@@ -313,6 +313,15 @@ def test_update_refuses_a_dirty_tree_before_doing_anything(app: Path) -> None:
     assert backups(app) == [] and UP not in docker_calls(app)
 
 
+def test_update_can_start_without_building(app: Path) -> None:
+    result = run_panel(app, "update", "--no-pull", "--no-backup", "--no-build")
+
+    assert result.returncode == 0, result.stderr
+    calls = docker_calls(app)
+    assert "docker compose --env-file .env.prod -f docker-compose.prod.yml up -d" in calls
+    assert not has(calls, "--build")
+
+
 def test_update_ignores_untracked_files(app: Path) -> None:
     repo_with_origin(app)
     (app / "scratch.txt").write_text("not tracked", encoding="utf-8")

@@ -209,3 +209,21 @@ def test_no_admin_skips_the_admin_step_entirely(app: Path) -> None:
     assert result.returncode == 0, result.stderr
     assert "create_admin" not in result.stdout and not any("create_admin" in line for line in calls(app))
     assert "Панель запущена" in result.stdout
+
+
+def test_no_build_starts_from_the_images_already_on_the_machine(app: Path) -> None:
+    result = start(app, "--domain", "panel.example.com", "--no-build")
+
+    assert result.returncode == 0, result.stderr
+    log = calls(app)
+    assert "docker compose --env-file .env.prod -f docker-compose.prod.yml up -d" in log
+    assert not any("--build" in line for line in log)  # сборки нет: образы привезены с другой машины
+    assert "без сборки" in result.stdout
+
+
+def test_no_build_without_the_images_says_how_to_get_them(app: Path) -> None:
+    result = start(app, "--domain", "panel.example.com", "--no-build", FAKE_NO_IMAGES="1")
+
+    assert result.returncode != 0
+    assert "vpn-panel:latest" in result.stderr and "ship-images.sh" in result.stderr
+    assert not any(line.endswith("up -d") for line in calls(app))  # compose не пытался тянуть их из реестра

@@ -19,7 +19,7 @@
 | `services/` | Сервисы с настоящей БД и Redis: доступы, sync/health, ключ хоста, ключ панели, миграции (upgrade/downgrade), мониторинг. |
 | `integration/` | Через HTTP (`httpx.ASGITransport`, `base_url=http://testserver` для cookie), настоящий login, RBAC-матрица по всем маршрутам, сценарий DoD целиком (`test_mvp_flow.py`), воркер через `process_next()`/`drain(worker)`, установка SSH-ключа панели. |
 
-## Установщик и `./panel` (`unit/test_install_*.py`, `unit/test_panel.py`, `install_support.py`)
+## Установщик и `./panel` (`unit/test_install_*.py`, `unit/test_panel.py`, `unit/test_ship_images.py`, `install_support.py`)
 
 `install.sh` запускается по-настоящему (bash) в копии каталога во временной папке; Docker и curl — заглушки в `PATH`
 (`FakeDocker` пишет вызовы в журнал, поведением управляют переменные `FAKE_*`). Настоящий `.env.prod`, `certs/` и

@@ -174,6 +174,22 @@ In one run the installer checks Docker, creates `.env.prod` with random secrets,
 
 Options: `--domain`, `--cert`/`--key` (your own certificate), `--admin-email`, `--no-start` (only prepare the files). `INSTALL_WAIT_SECONDS` is how long to wait for readiness (300 s by default); the ports `HTTP_PORT`/`HTTPS_PORT` are read from the environment or `.env.prod`. Messages are in English or Russian: `PANEL_LANG=ru|en`, otherwise the system locale.
 
+### If the server cannot download images
+
+Some networks cut connections to Docker's and npm's CDNs after a few kilobytes (the pull stalls with `connection timed out`). Then build the images on a computer with a normal connection and send them over SSH:
+
+```bash
+# on that computer, from the repository root (key-based SSH login to the server is required)
+./deploy/ship-images.sh my-server        # a name from ~/.ssh/config or user@host
+```
+
+It builds `vpn-panel` and `vpn-panel-web` from the committed state (git HEAD), streams them to the server and tags them there. `postgres` and `redis` are pulled by the server by their pinned digests; if that stalls too, ship them the same way (`docker save | gzip | ssh ... 'gunzip | docker load'`) and name them in `.env.prod`: `POSTGRES_IMAGE=...`, `REDIS_IMAGE=...`. On the server start without building:
+
+```bash
+./install.sh --domain panel.example.com --no-build       # first install
+./panel update --no-pull --no-build                      # later: ship again, then this
+```
+
 ### Requirements
 
 - a Linux server with Docker and Docker Compose (the `docker compose` plugin);
