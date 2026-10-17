@@ -1,5 +1,7 @@
 """Провайдеры чужих установок AmneziaVPN (этап 23.2): контейнеры `amnezia-awg` (v1) и `amnezia-awg2`. Настоящий код
-провайдера поверх FakeServer; они ТОЛЬКО ЧИТАЮТ — ни одной изменяющей команды, секреты сервера не выходят наружу.
+провайдера поверх FakeServer; чтение (get_status, list_clients, sync, health_check, discover) не делает ни одной
+изменяющей команды, секреты сервера не выходят наружу. Запись (revoke_client, restore_peer, этап 23.3) — в
+test_amnezia_app_write.py; install, uninstall, create_client и restore_client остаются Unsupported.
 
 Новые имена импортируются внутри хелперов: пока кода нет, красными становятся тесты, а не вся коллекция."""
 
@@ -396,7 +398,6 @@ async def test_install_uninstall_and_client_changes_are_unsupported_and_touch_no
         ("install", ()),
         ("uninstall", ()),
         ("create_client", ("grant-aaa",)),
-        ("revoke_client", (scenario.named,)),
         ("restore_client", ("grant-aaa", client_config)),
     ]:
         with pytest.raises(error_class):

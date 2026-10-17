@@ -15,6 +15,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- Removing a client of an AmneziaVPN app from the panel: its peer leaves the server and its name leaves the app's
+  client list, applied to the running VPN without a restart. Before writing, the panel re-reads the app's config; if
+  applying fails, it restores the previous config and re-aligns the interface with the file. Returning a client's peer
+  to the app's container (restore) is done just as safely. Creating new clients in the app's container is not
+  supported yet.
 - Finding an existing AmneziaVPN app on a server (read-only): `POST /api/v1/servers/{id}/discover` starts a job,
   `GET /api/v1/servers/{id}/discovery` returns the last report with each client's status (`new`, `in_panel`,
   `revoked_in_panel`, `unsupported`). Installing a server runs the search too. The panel does not change the app

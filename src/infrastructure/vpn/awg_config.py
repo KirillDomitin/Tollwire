@@ -247,6 +247,11 @@ def render_peer_block(name: str, public_key: str, psk: str, address: ipaddress.I
     )
 
 
+def render_app_peer_block(public_key: str, psk: str, address: str) -> str:
+    """[Peer] в формате приложения AmneziaVPN: без комментария с именем (имена Amnezia хранит в clientsTable)."""
+    return f"[Peer]\nPublicKey = {public_key}\nPresharedKey = {psk}\nAllowedIPs = {address}/32\n"
+
+
 def append_peer(server_config: str, peer_block: str) -> str:
     return server_config.rstrip("\n") + "\n\n" + peer_block.rstrip("\n") + "\n"
 

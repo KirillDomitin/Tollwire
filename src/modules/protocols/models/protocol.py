@@ -15,7 +15,7 @@ class ProtocolType(enum.Enum):
     AMNEZIA_APP_AWG2 = "amnezia_app_awg2"
 
 
-# Установки приложения AmneziaVPN: панель их только читает, а не ставит и не обслуживает.
+# Установки приложения AmneziaVPN: панель их не ставит и не удаляет, клиентов в них только отзывает и возвращает.
 APP_PROTOCOLS = frozenset({ProtocolType.AMNEZIA_APP_AWG, ProtocolType.AMNEZIA_APP_AWG2})
 
 

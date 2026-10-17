@@ -15,9 +15,11 @@
 
 | Папка | Что |
 |---|---|
-| `unit/` | Чистые функции: awg_config (в т.ч. `test_awg_discovery.py` — clientsTable и peer'ы чужой установки), amnezia_link, host_metrics, host_keys, authorized_keys (текст файла), логи, правила, провайдеры на фейке (`test_provider.py`; `test_amnezia_app.py` — только чтение приложения AmneziaVPN, `test_fake_amnezia_app.py` — страховка фейка); `test_ssh_real_server.py` — настоящий AsyncSSH-сервер в процессе. |
+| `unit/` | Чистые функции: awg_config (в т.ч. `test_awg_discovery.py` — clientsTable и peer'ы чужой установки), amnezia_link, host_metrics, host_keys, authorized_keys (текст файла), логи, правила, провайдеры на фейке (`test_provider.py`; `test_amnezia_app.py` — только чтение приложения AmneziaVPN, `test_amnezia_app_write.py` — запись (отзыв,
+`restore_peer`, протокол записи), `test_fake_amnezia_app.py` и `test_fake_amnezia_app_write.py` — страховка фейка); `test_ssh_real_server.py` — настоящий AsyncSSH-сервер в процессе. |
 | `services/` | Сервисы с настоящей БД и Redis: доступы, sync/health, ключ хоста, ключ панели, миграции (upgrade/downgrade), мониторинг. |
-| `integration/` | Через HTTP (`httpx.ASGITransport`, `base_url=http://testserver` для cookie), настоящий login, RBAC-матрица по всем маршрутам, сценарий DoD целиком (`test_mvp_flow.py`), воркер через `process_next()`/`drain(worker)`, установка SSH-ключа панели, поиск Amnezia (`test_discovery_job.py` — задача и автопоиск после установки, `test_discovery_api.py` — API и статусы клиентов; общее — `discovery_support.py`). |
+| `integration/` | Через HTTP (`httpx.ASGITransport`, `base_url=http://testserver` для cookie), настоящий login, RBAC-матрица по всем маршрутам, сценарий DoD целиком (`test_mvp_flow.py`), воркер через `process_next()`/`drain(worker)`, установка SSH-ключа панели, поиск Amnezia (`test_discovery_job.py` — задача и автопоиск после установки, `test_discovery_api.py` — API и статусы клиентов; общее — `discovery_support.py`), отзыв клиента приложения AmneziaVPN (`test_app_revoke.py`: строки протокола и credential
+в БД создаются вручную). |
 
 ## Установщик и `./panel` (`unit/test_install_*.py`, `unit/test_panel.py`, `unit/test_ship_images.py`, `unit/test_letsencrypt.py`, `install_support.py`)
 
@@ -47,6 +49,20 @@ git (локальный «сервер» + второй клон, из кото�
   `changing_commands()` — как `mutating_commands()`, но эти два чтения изменением не считаются (для провайдеров
   чужого контейнера; `mutating_commands()` остаётся строгим — любой docker exec там изменение). `container_reads` —
   журнал прочитанных внутри контейнеров файлов (проверка «секретные файлы не читали»).
+- Запись в приложение (этап 23.3, `test_amnezia_app_write.py`, `integration/test_app_revoke.py`): фейк понимает
+  `docker cp <STAGE_DIR>/<контейнер>.conf|.clientsTable <контейнер>:<конфиг|clientsTable>` (иные пути и чужие
+  контейнеры, в том числе контейнер панели, — `AssertionError`), `rm -f <файл из STAGE_DIR>` и
+  `docker exec <к> bash -c '<утилита> syncconf <iface> <(<утилита>-quick strip <конфиг>)'` (разбирает конфиг и
+  обновляет «живых» `app.peers`; мусорный конфиг — код 1). `stage_files()` — промежуточные файлы на хосте (после
+  любой операции их быть не должно), `unexpected_changing_commands()` — изменяющие команды сверх протокола записи,
+  `copies` (что и с какими правами скопировали), `file_modes` (SFTP всегда 0600), `write_attempts`. Сбои и гонки:
+  `app.apply_fails`, `app.docker_cp_fails` (пути в контейнере), `fake.write_fails` (пути SFTP на хосте),
+  `app.on_read(путь, номер_чтения)` — подмена файла «приложением» между чтением и записью, `app.on_apply` — действие
+  перед syncconf (например, сломать откат). `mutating_commands()` остаётся строгим. Дополнительно: `mkdir -p
+  /opt/vpn-admin` и `ensure_private_dir` (фейк запоминает 0700 в `dirs`) — как настоящие; `rm -f` вне `STAGE_DIR` —
+  `AssertionError`; `app.read_counts` (сколько раз прочитан путь), `app.applies` (сколько раз syncconf применил
+  конфиг). Сбой `strip` фейк не моделирует (`<утилита>-quick strip` в фейке всегда успешен), как и пустой конфиг,
+  сносящий peer'ов: это проверено только на живом контейнере (см. «Грабли» в `src/infrastructure/vpn/CLAUDE.md`).
 
 ## Правила
 

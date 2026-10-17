@@ -8,13 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions import NotFoundError, SSHConnectionError, SSHTimeoutError
 from core.security import decrypt_secret
-from core.ssh_exception import CommandExecutionError
+from core.ssh_exception import CommandExecutionError, UnsupportedOperationError
 from infrastructure.vpn.amnezia import AmneziaInstaller
 from infrastructure.vpn.provider import ProviderState, VPNClientInfo, VPNProvider
 from modules.access.models.vpn_credential import VPNCredential
 from modules.access.repository import VPNCredentialRepository
 from modules.access.service import CLIENT_NAME_PREFIX, client_name, inactive_reason
-from modules.protocols.models.protocol import ProtocolType, VPNProtocol
+from modules.protocols.models.protocol import APP_PROTOCOLS, ProtocolType, VPNProtocol
 from modules.protocols.repository import ProtocolRepository
 from modules.servers.reachability import mark_reachable, mark_unreachable
 from modules.servers.repository import ServerRepository
@@ -158,7 +158,7 @@ class ServerSyncService:
             elif client.public_key in revoked_keys:
                 await provider.revoke_client(client.public_key)
                 result["removed_revoked"].append(_client(client))
-            elif client.name and client.name.startswith(CLIENT_NAME_PREFIX):
+            elif client.name and client.name.startswith(CLIENT_NAME_PREFIX) and protocol.type not in APP_PROTOCOLS:
                 # Наш peer без записи в БД: упал commit после create_client или запись удалили.
                 await provider.revoke_client(client.public_key)
                 result["removed_orphans"].append(_client(client))
@@ -173,7 +173,7 @@ class ServerSyncService:
             config = decrypt_secret(credential.encrypted_config)
             try:
                 await provider.restore_client(client_name(access_grant_id), config)
-            except (CommandExecutionError, ValueError) as exc:
+            except (CommandExecutionError, UnsupportedOperationError, ValueError) as exc:
                 # Один битый клиент (адрес занят чужим peer'ом, повреждённый конфиг) не должен срывать весь sync.
                 issues.append(f"Credential {credential.id} was not restored: {exc}")
                 continue

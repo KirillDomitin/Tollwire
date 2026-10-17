@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from core.ssh_exception import UnsupportedOperationError
 from infrastructure.ssh.client import SSHClient
 from infrastructure.vpn.config import ACTIVE_HANDSHAKE_WINDOW_SECONDS
 
@@ -99,6 +100,11 @@ class VPNProvider(ABC):
     async def revoke_client(self, public_key: str) -> None: ...
     @abstractmethod
     async def restore_client(self, name: str, client_config: str) -> bool: ...
+    async def restore_peer(self, name: str, public_key: str, psk: str, address: str) -> bool:
+        """Возвращает на сервер peer клиента, у которого нет конфига с приватным ключом (подхваченного из чужой
+        установки). Нужен sync'у. True — peer добавлен, False — уже был. По умолчанию не поддерживается."""
+        raise UnsupportedOperationError(f"{type(self).__name__} cannot restore a peer without a client config")
+
     @abstractmethod
     async def list_clients(self) -> list[VPNClientInfo]: ...
     @abstractmethod

@@ -5,7 +5,10 @@ FakeSSHClient повторяет интерфейс infrastructure.ssh.client.SS
 AssertionError: если провайдер начнёт слать что-то новое, тест сразу это покажет, а не тихо получит пустой ответ.
 """
 
+import fnmatch
+import ipaddress
 import json
+import posixpath
 import re
 import shlex
 from collections.abc import Awaitable, Callable, Sequence
@@ -19,6 +22,7 @@ from infrastructure.ssh.client import CommandResult
 from infrastructure.vpn.awg_config import (
     generate_secret_keys,
     interface_values,
+    is_valid_public_key,
     list_peers,
     public_key_from_private,
 )
@@ -55,6 +59,82 @@ APP_LAYOUT = {
 _READ_ONLY_EXEC = re.compile(
     rf"docker exec \S+ (?:cat {re.escape(APP_CONFIG_DIR)}/[\w.-]+|(?:wg|awg) show \w+ latest-handshakes)"
 )
+
+
+# Запись в контейнер приложения (этап 23.3): SFTP-файл на хосте → `docker cp` → `rm -f`. Промежуточные файлы бывают с
+# приватным ключом сервера, поэтому фейк следит, что после любой операции в STAGE_DIR пусто.
+STAGE_DIR = "/opt/vpn-admin/stage"
+_STAGE_FILE = re.compile(rf"{re.escape(STAGE_DIR)}/[\w.*-]+")  # `*` - очистка остатков: `<контейнер>.*`
+_STAGE_PARENT = posixpath.dirname(STAGE_DIR)
+_APP_PATHS = rf"{re.escape(APP_CONFIG_DIR)}/(?:wg0\.conf|awg0\.conf|clientsTable)"
+# Применение конфига: strip проверяется до syncconf (сломанный strip не должен давать пустой конфиг и сносить peer'ов).
+# Группы: утилита strip, путь конфига, утилита syncconf, интерфейс.
+_APPLY_SCRIPT = (
+    r'c=\$\(((?:wg|awg))-quick strip {strip}\) && \[ -n "\$c" \] && '
+    r'((?:wg|awg)) syncconf (\w+) <\(printf "%s\\n" "\$c"\)'
+)
+# Команды протокола записи (единственные изменяющие, которые допустимы для приложения). Строгие шаблоны: любая
+# другая изменяющая команда — «лишняя» (unexpected_changing_commands).
+_APP_WRITE_COMMANDS = re.compile(
+    rf"docker cp {_STAGE_FILE.pattern} amnezia-awg2?:{_APP_PATHS}"
+    rf"|rm -f {_STAGE_FILE.pattern}"
+    rf"|mkdir -p {re.escape(_STAGE_PARENT)}"
+    rf"|docker exec amnezia-awg2? bash -c '{_APPLY_SCRIPT.format(strip=_APP_PATHS)}'"
+)
+
+
+def apply_command(container: str, tool: str, interface: str, config_path: str) -> str:
+    """Команда применения конфига так, как её шлёт провайдер (см. AmneziaAppProvider._apply)."""
+    script = (
+        f'c=$({tool}-quick strip {config_path}) && [ -n "$c" ] && {tool} syncconf {interface} <(printf "%s\\n" "$c")'
+    )
+    return f"docker exec {container} bash -c '{script}'"
+
+
+def stage_conf(container: str) -> str:
+    """Промежуточный файл конфига на хосте (в нём бывает приватный ключ сервера)."""
+    return f"{STAGE_DIR}/{container}.conf"
+
+
+def stage_table(container: str) -> str:
+    return f"{STAGE_DIR}/{container}.clientsTable"
+
+
+def _parse_app_config(text: str, previous: list["AppPeer"]) -> list["AppPeer"]:
+    """Как `<tool>-quick strip` + `<tool> syncconf`: разбирает конфиг и возвращает живых peer'ов. Мусор → ValueError.
+    Рукопожатия у peer'ов, которые уже были, сохраняются."""
+    peers: list[dict[str, str]] = []
+    section = ""
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("["):
+            if line not in ("[Interface]", "[Peer]"):
+                raise ValueError("unknown section")
+            section = line
+            if section == "[Peer]":
+                peers.append({})
+            continue
+        if not section or "=" not in line:
+            raise ValueError("line unrecognized")
+        key, _, value = line.partition("=")
+        if section == "[Peer]":
+            peers[-1][key.strip()] = value.strip()
+    known = {peer.public_key: peer for peer in previous}
+    result: list[AppPeer] = []
+    for values in peers:
+        public_key = values.get("PublicKey", "")
+        if not is_valid_public_key(public_key) or any(p.public_key == public_key for p in result):
+            raise ValueError("bad or duplicate peer")
+        psk = values.get("PresharedKey", "")
+        if psk and not is_valid_public_key(psk):
+            raise ValueError("bad preshared key")
+        allowed = values.get("AllowedIPs", "")
+        for item in filter(None, (part.strip() for part in allowed.split(","))):
+            ipaddress.ip_network(item, strict=False)
+        result.append(AppPeer(public_key, allowed, psk, known[public_key].handshake if public_key in known else 0))
+    return result
 
 
 FOREIGN_MOUNT_SOURCE = "/var/lib/docker/volumes/amnezia-awg/_data"  # том контейнера, созданного AmneziaVPN
@@ -117,6 +197,15 @@ class AmneziaApp:
     peers: list[AppPeer]
     files: dict[str, str] = field(default_factory=dict)
     interface_up: bool = True  # False — как контейнер, где интерфейс не поднялся: `<tool> show <iface>` падает
+    # Запись (23.3). `peers` — «живые» peer'ы интерфейса: после успешного syncconf они берутся из конфига.
+    apply_fails: bool = False  # syncconf падает (код 1, stderr без содержимого конфига), интерфейс не меняется
+    docker_cp_fails: set[str] = field(default_factory=set)  # пути ВНУТРИ контейнера, `docker cp` в которые падает
+    applies: int = 0  # сколько раз syncconf применился успешно
+    read_counts: dict[str, int] = field(default_factory=dict)  # путь → сколько раз прочитан (`cat`)
+    # Вызывается при каждом `cat` ПЕРЕД ответом: (путь, номер чтения этого пути с 1). Тест подменяет здесь файл —
+    # «приложение AmneziaVPN поменяло конфиг между чтением и записью».
+    on_read: Callable[[str, int], None] | None = None
+    on_apply: Callable[[], None] | None = None  # перед каждым syncconf (например, чтобы сломать откат)
 
     @property
     def secrets(self) -> list[str]:
@@ -162,6 +251,17 @@ def clients_table_json(names: dict[str, str], *, legacy: bool = False) -> str:
 
 
 @dataclass
+class CopyRecord:
+    """Успешный `docker cp <файл хоста> <контейнер>:<путь>`: что и с какими правами лежало на хосте."""
+
+    src: str
+    container: str
+    dst: str
+    mode: int | None
+    content: str
+
+
+@dataclass
 class FakeServer:
     host: str = "203.0.113.10"
     files: dict[str, str] = field(default_factory=dict)
@@ -204,6 +304,10 @@ class FakeServer:
     apps: dict[str, AmneziaApp] = field(default_factory=dict)
     images: dict[str, str] = field(default_factory=dict)
     container_reads: list[tuple[str, str]] = field(default_factory=list)  # (контейнер, путь) для каждого `cat`
+    file_modes: dict[str, int] = field(default_factory=dict)  # права файлов, записанных через SFTP (всегда 0600)
+    write_fails: set[str] = field(default_factory=set)  # SFTP-запись в эти пути хоста падает, файл не появляется
+    write_attempts: list[str] = field(default_factory=list)  # все попытки SFTP-записи, в том числе неудачные
+    copies: list["CopyRecord"] = field(default_factory=list)  # успешные `docker cp` в контейнеры
 
     def add_amnezia_app(
         self,
@@ -292,6 +396,15 @@ class FakeServer:
         /opt/amnezia/awg/<файл>` и `docker exec <контейнер> wg|awg show <интерфейс> latest-handshakes`. Любой иной
         docker exec остаётся изменяющим. Для провайдеров чужого контейнера (приложение AmneziaVPN)."""
         return [c for c in self.mutating_commands() if not _READ_ONLY_EXEC.fullmatch(" ".join(c.split()))]
+
+    def unexpected_changing_commands(self) -> list[str]:
+        """changing_commands() без команд протокола записи в приложение (23.3): `docker cp <stage> C:<путь>`,
+        `rm -f <stage>`, `docker exec C bash -c '<утилита> syncconf …'`. Всё, что осталось, — лишнее."""
+        return [c for c in self.changing_commands() if not _APP_WRITE_COMMANDS.fullmatch(" ".join(c.split()))]
+
+    def stage_files(self) -> list[str]:
+        """Промежуточные файлы на хосте. После операции записи их не должно остаться: там бывает приватный ключ."""
+        return sorted(path for path in self.files if path.startswith(f"{STAGE_DIR}/"))
 
     @property
     def running(self) -> bool:
@@ -388,6 +501,18 @@ class FakeServer:
             if not self.port_published:
                 return _fail("no public port published", 1)
             return _ok(f"0.0.0.0:{match.group(1)}\n[::]:{match.group(1)}\n")
+        if match := re.fullmatch(r"docker cp (\S+) ([\w.-]+):(\S+)", cmd):
+            return self._docker_cp(*match.groups())
+        if cmd == f"mkdir -p {_STAGE_PARENT}":
+            return _ok()
+        if match := re.fullmatch(r"rm -f (\S+)", cmd):
+            if not _STAGE_FILE.fullmatch(match.group(1)):  # удалять можно только промежуточные файлы панели
+                raise AssertionError(f"FakeServer: rm -f outside the stage folder: {command!r}")
+            pattern = match.group(1)  # как настоящий rm -f: нет файла — не ошибка; `*` раскрывает оболочка
+            for path in [p for p in self.files if fnmatch.fnmatchcase(p, pattern)]:
+                self.files.pop(path)
+            self.file_modes.pop(match.group(1), None)
+            return _ok()
         if match := re.fullmatch(r"docker exec (\S+) (.+)", cmd):
             if (app := self.apps.get(match.group(1))) is not None:
                 return self._app_exec(app, match.group(2))
@@ -419,12 +544,59 @@ class FakeServer:
                 lines.append(_PS_FIELD_RE.sub(substitute, template.replace("\\t", "\t")))
         return _ok("".join(f"{line}\n" for line in lines))
 
+    def _docker_cp(self, src: str, container: str, dst: str) -> CommandResult:
+        """`docker cp <файл хоста> <контейнер>:<путь>`: только из промежуточной папки панели в конфиг или таблицу
+        приложения, и только в «свои» промежуточные файлы контейнера. Остальное — AssertionError (чужие пути,
+        чужие контейнеры — в том числе контейнер самой панели)."""
+        app = self.apps.get(container)
+        if app is None:
+            raise AssertionError(f"FakeServer: docker cp into {container!r}, which is not an AmneziaVPN app container")
+        expected = {app.config_path: stage_conf(container), APP_CLIENTS_TABLE: stage_table(container)}
+        if dst not in expected:
+            raise AssertionError(f"FakeServer: docker cp into unexpected path {dst!r}")
+        if src != expected[dst]:
+            raise AssertionError(f"FakeServer: docker cp from {src!r} into {dst!r}")
+        if self.containers.get(container) != "running":
+            return _fail(f"Error response from daemon: container {container} is not running", 1)
+        if src not in self.files:
+            return _fail(f"Error: Could not find the file {src} in the host", 1)
+        if dst in app.docker_cp_fails:
+            return _fail("Error response from daemon: copy failed", 1)
+        app.files[dst] = self.files[src]
+        self.copies.append(CopyRecord(src, container, dst, self.file_modes.get(src), self.files[src]))
+        return _ok()
+
+    def _apply(self, app: AmneziaApp, tool: str, interface: str, strip_tool: str, path: str) -> CommandResult:
+        """`<утилита> syncconf <интерфейс> <(<утилита>-quick strip <конфиг>)`: живые peer'ы берутся из конфига."""
+        if strip_tool != tool or path != app.config_path:
+            raise AssertionError(f"FakeServer: syncconf with {strip_tool!r} over {path!r}")
+        if tool != app.tool:  # в контейнере другой утилиты нет
+            return _fail(f'exec: "{tool}": executable file not found in $PATH', 126)
+        if interface != app.interface or not app.interface_up:
+            return _fail(f"Unable to access interface: No such device ({interface})", 1)
+        if app.on_apply is not None:
+            app.on_apply()
+        if app.apply_fails:
+            return _fail("Configuration parsing error", 1)  # настоящий wg цитирует строку, фейк — нет
+        try:
+            app.peers = _parse_app_config(app.files.get(path, ""), app.peers)
+        except ValueError:
+            return _fail("Configuration parsing error", 1)
+        app.applies += 1
+        return _ok()
+
     def _app_exec(self, app: AmneziaApp, inner: str) -> CommandResult:
-        """docker exec в контейнере приложения AmneziaVPN. Отвечает только на чтение: файл и рукопожатия."""
+        """docker exec в контейнере приложения AmneziaVPN: чтение (файл, рукопожатия) и применение конфига."""
         if self.containers.get(app.container) != "running":
             return _fail(f"Error response from daemon: container {app.container} is not running", 1)
+        if match := re.fullmatch(r"bash -c '" + _APPLY_SCRIPT.format(strip=r"(\S+)") + "'", inner):
+            strip_tool, path, tool, interface = match.groups()
+            return self._apply(app, tool, interface, strip_tool, path)
         if match := re.fullmatch(r"cat (\S+)", inner):
             self.container_reads.append((app.container, match.group(1)))
+            app.read_counts[match.group(1)] = count = app.read_counts.get(match.group(1), 0) + 1
+            if app.on_read is not None:
+                app.on_read(match.group(1), count)
             if match.group(1) not in app.files:
                 return _fail(f"cat: can't open '{match.group(1)}': No such file or directory", 1)
             return _ok(app.files[match.group(1)])
@@ -503,8 +675,12 @@ class FakeSSHClient:
 
     async def write_file(self, remote_path: str, content: str) -> None:
         assert self.connected, "write_file() before connect()"
+        self.server.write_attempts.append(remote_path)
+        if remote_path in self.server.write_fails:
+            raise SSHConnectionError(f"File write: host={self.host}, path={remote_path}")
         self.server.writes.append(remote_path)
         self.server.files[remote_path] = content
+        self.server.file_modes[remote_path] = 0o600  # настоящий write_file создаёт файл сразу с 0600
 
     async def home_dir(self) -> str:
         assert self.connected, "home_dir() before connect()"

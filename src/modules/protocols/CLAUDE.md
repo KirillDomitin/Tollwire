@@ -1,8 +1,8 @@
 # modules/protocols — VPN-протокол на сервере
 
 Типы: `ProtocolType.AMNEZIA_WG` (свой протокол панели) и `AMNEZIA_APP_AWG` / `AMNEZIA_APP_AWG2` — установки
-приложения AmneziaVPN, «чужие» (`APP_PROTOCOLS`): панель их не ставит, не удаляет и не меняет клиентов, только читает
-(поиск, sync, health; см. `infrastructure/vpn/CLAUDE.md`). Своего роутера нет: протоколом управляют эндпоинты серверов
+приложения AmneziaVPN, «чужие» (`APP_PROTOCOLS`): панель их не ставит и не удаляет, клиентов отзывает и возвращает
+(`revoke_client`/`restore_peer`), остальное читает (поиск, sync, health; см. `infrastructure/vpn/CLAUDE.md`). Своего роутера нет: протоколом управляют эндпоинты серверов
 (`POST/DELETE /api/v1/servers/{id}/protocol`, `GET /api/v1/servers/{id}/protocols`).
 
 - Модель `protocols`: `server_id` (FK CASCADE), `type`, `port` (реальный UDP-порт из конфига сервера);
