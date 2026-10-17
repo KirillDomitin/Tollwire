@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- The panel no longer touches a foreign `amnezia-awg` container. The AmneziaVPN app names its container the same
+  way, so "Remove protocol" on such a server would have deleted a working VPN. A container now counts as the
+  panel's only if it mounts `/opt/vpn-admin/awg`; installing or managing clients against a foreign one fails with a
+  clear error, removal changes nothing, and status and health report "not installed".
+
 ### Added
 
 - Changing your own password: `POST /api/v1/auth/change-password`, and a "Change password" button in the sidebar.

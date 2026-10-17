@@ -4,11 +4,18 @@ from datetime import datetime, timezone
 
 import pytest
 
-from core.ssh_exception import CommandExecutionError
+from core import ssh_exception
+from core.ssh_exception import CommandExecutionError, DockerError
 from infrastructure.ssh.client import CommandResult
 from infrastructure.vpn.amnezia import AmneziaInstaller, AmneziaWGProvider
-from infrastructure.vpn.awg_config import interface_values, list_peers, parse_client_config, remove_peer
-from infrastructure.vpn.config import CONTAINER_NAME, NAT_POST_UP
+from infrastructure.vpn.awg_config import (
+    generate_secret_keys,
+    interface_values,
+    list_peers,
+    parse_client_config,
+    remove_peer,
+)
+from infrastructure.vpn.config import CONTAINER_NAME, HOST_CONFIG_DIR, NAT_POST_UP
 from infrastructure.vpn.provider import ProviderState
 from tests.fakes.fake_ssh import CONFIG_FILE, FakeServer, FakeSSHClient
 
@@ -205,3 +212,175 @@ async def test_docker_install_gets_long_timeout() -> None:
         await AmneziaInstaller(ssh).ensure_ready()
     (apt_timeout,) = [t for command, t in timeouts.items() if command.startswith("apt-get")]
     assert apt_timeout is not None and apt_timeout >= 600
+
+
+# --- чужой контейнер amnezia-awg (этап 23.1) --------------------------------------------------------------------------
+# AmneziaVPN ставит свой контейнер с тем же именем; его конфиг внутри тома Docker, папки панели среди монтирований нет.
+# Панель такой контейнер не трогает: ни остановки, ни удаления, ни записи файлов.
+
+MOUNTS_COMMAND = "docker inspect --type container -f '{{range .Mounts}}{{.Source}} {{end}}' " + CONTAINER_NAME
+
+
+def foreign_server(state: str = "running", *, panel_config: bool = False) -> FakeServer:
+    """Сервер с чужим контейнером. panel_config=True — на диске осталась папка панели (от прежней установки)."""
+    fake = FakeServer()
+    fake.add_foreign_container(state)
+    if panel_config:
+        fake.files[CONFIG_FILE] = "[Interface]\nPrivateKey = stale\nListenPort = 1\n"
+    return fake
+
+
+def assert_untouched(fake: FakeServer) -> None:
+    assert fake.mutating_commands() == [], "panel ran a mutating command against a foreign container"
+    assert fake.writes == [], "panel wrote files on a server with a foreign container"
+    assert CONTAINER_NAME in fake.containers  # контейнер на месте
+
+
+async def expect_foreign_error(fake: FakeServer, method: str, *args: object) -> None:
+    """Вызов должен упасть ForeignContainerError, ничего не изменив на сервере."""
+    try:
+        await call(fake, method, *args)
+    except Exception as exc:  # noqa: BLE001 — тип проверяем ниже, после проверки «ничего не менялось»
+        assert_untouched(fake)
+        error_class = getattr(ssh_exception, "ForeignContainerError", None)
+        assert error_class is not None, "core.ssh_exception.ForeignContainerError is not defined"
+        assert isinstance(exc, error_class), f"expected ForeignContainerError, got {type(exc).__name__}: {exc}"
+        assert isinstance(exc, DockerError)
+        message = str(exc)
+        assert "AmneziaVPN" in message and CONTAINER_NAME in message  # понятно, чей это контейнер
+    else:
+        assert_untouched(fake)
+        pytest.fail(f"{method}() did not raise ForeignContainerError for a foreign container")
+
+
+@pytest.fixture(params=["running", "exited"])
+def foreign(request: pytest.FixtureRequest) -> FakeServer:
+    return foreign_server(request.param)
+
+
+async def test_foreign_install_refuses_without_any_change(foreign: FakeServer) -> None:
+    await expect_foreign_error(foreign, "install")
+
+
+async def test_foreign_install_refuses_even_if_panel_config_dir_exists() -> None:
+    fake = foreign_server(panel_config=True)  # test -f нашёл бы awg0.conf и «починил» NAT внутри чужого контейнера
+    before = dict(fake.files)
+    await expect_foreign_error(fake, "install")
+    assert fake.files == before
+
+
+async def test_foreign_uninstall_changes_nothing_and_reports_not_installed(foreign: FakeServer) -> None:
+    status = await call(foreign, "uninstall")
+    assert status.server_status == ProviderState.NOT_INSTALLED  # type: ignore[attr-defined]
+    assert (status.version, status.port, status.uptime) == (None, None, None)  # type: ignore[attr-defined]
+    assert_untouched(foreign)
+
+
+async def test_foreign_uninstall_keeps_panel_config_dir() -> None:
+    fake = foreign_server(panel_config=True)
+    before = dict(fake.files)
+    await call(fake, "uninstall")
+    assert fake.files == before and not any(c.startswith("rm ") for c in fake.commands)
+    assert_untouched(fake)
+
+
+async def test_foreign_status_is_not_installed_without_reading_config(foreign: FakeServer) -> None:
+    status = await call(foreign, "get_status")
+    assert status.server_status == ProviderState.NOT_INSTALLED  # type: ignore[attr-defined]
+    assert (status.version, status.port, status.uptime) == (None, None, None)  # type: ignore[attr-defined]
+    assert MOUNTS_COMMAND in foreign.commands  # решение принято по монтированиям
+    assert not any("ListenPort" in c for c in foreign.commands) and foreign.reads == []
+    assert_untouched(foreign)
+
+
+async def test_foreign_list_clients_is_empty_without_exec_or_config(foreign: FakeServer) -> None:
+    foreign.files[CONFIG_FILE] = "[Interface]\nListenPort = 1\n\n# client:stale\n[Peer]\nPublicKey = x\n"
+    assert await call(foreign, "list_clients") == []
+    assert foreign.reads == [] and not any(c.startswith("test -f") for c in foreign.commands)
+    assert_untouched(foreign)  # в том числе ни одного docker exec
+
+
+async def test_foreign_health_is_not_installed_without_exec(foreign: FakeServer) -> None:
+    health = await call(foreign, "health_check")
+    assert health.installed is False and health.port is None  # type: ignore[attr-defined]
+    assert (health.clients_total, health.clients_active) == (0, 0)  # type: ignore[attr-defined]
+    assert_untouched(foreign)
+
+
+async def test_foreign_sync_snapshot_is_empty_and_not_installed(foreign: FakeServer) -> None:
+    snapshot = await call(foreign, "sync")
+    assert snapshot.provider_status.server_status == ProviderState.NOT_INSTALLED  # type: ignore[attr-defined]
+    assert snapshot.client_list == []  # type: ignore[attr-defined]
+    assert_untouched(foreign)
+
+
+async def test_foreign_create_client_refuses(foreign: FakeServer) -> None:
+    await expect_foreign_error(foreign, "create_client", "grant-aaa")
+
+
+async def test_foreign_revoke_client_refuses(foreign: FakeServer) -> None:
+    await expect_foreign_error(foreign, "revoke_client", generate_secret_keys().public_key)
+
+
+async def test_foreign_restore_client_refuses(foreign: FakeServer, server: FakeServer) -> None:
+    client = await call(server, "create_client", "grant-aaa")  # конфиг клиента, выданный раньше
+    await expect_foreign_error(foreign, "restore_client", "grant-aaa", client.config)  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize("source", ["/opt/vpn-admin/awg2", "/opt/vpn-admin", "/opt/vpn-admin/awg-old"])
+async def test_mount_with_similar_path_is_still_foreign(source: str) -> None:
+    fake = FakeServer()
+    fake.add_foreign_container("running", source=source)  # сравнение точное, не по префиксу
+    await expect_foreign_error(fake, "install")
+
+
+async def test_container_with_several_mounts_is_ours_if_panel_dir_among_them(server: FakeServer) -> None:
+    server.mounts[CONTAINER_NAME] = ["/var/lib/other", HOST_CONFIG_DIR]
+    client = await call(server, "create_client", "grant-aaa")
+    assert client.address == "10.8.1.1"  # type: ignore[attr-defined]
+    assert (await call(server, "get_status")).server_status == ProviderState.RUNNING  # type: ignore[attr-defined]
+
+
+async def test_panel_container_is_mounted_from_host_config_dir(server: FakeServer) -> None:
+    assert server.mounts[CONTAINER_NAME] == [HOST_CONFIG_DIR]  # docker run ... -v /opt/vpn-admin/awg:/etc/amnezia/awg
+
+
+async def test_own_stopped_container_is_not_foreign(server: FakeServer) -> None:
+    server.containers[CONTAINER_NAME] = "exited"
+    status = await call(server, "install")  # свой контейнер: как раньше, без отказа
+    assert status.server_status == ProviderState.STOPPED  # type: ignore[attr-defined]
+    assert server.files[CONFIG_FILE]  # конфиг на месте
+
+
+async def test_no_container_is_not_foreign() -> None:
+    fake = FakeServer(files={CONFIG_FILE: "[Interface]\nListenPort = 1\n"})  # папка есть, контейнера нет
+    status = await call(fake, "get_status")
+    assert status.server_status == ProviderState.NOT_INSTALLED  # type: ignore[attr-defined]
+    assert (await call(fake, "list_clients")) == []  # конфиг без peer'ов читается как раньше
+    fake.commands.clear()
+    assert (await call(fake, "uninstall")).server_status == ProviderState.NOT_INSTALLED  # type: ignore[attr-defined]
+    assert fake.mutating_commands() == []  # контейнера нет — останавливать и удалять нечего
+
+
+@pytest.mark.parametrize("method", ["install", "uninstall", "get_status", "list_clients", "health_check"])
+async def test_failed_container_listing_is_an_error_not_an_empty_server(method: str) -> None:
+    fake = foreign_server()
+    fake.ps_fails = True  # демон Docker перезапускается: «контейнеров нет» принять за правду нельзя
+    with pytest.raises(CommandExecutionError):
+        await call(fake, method)
+    assert_untouched(fake)
+
+
+async def test_failed_inspect_of_existing_container_is_an_error(server: FakeServer) -> None:
+    original = server.run
+
+    def failing(command: str) -> CommandResult:
+        if command.startswith("docker inspect --type container"):
+            return CommandResult(stdout="", stderr="no such object", exit_status=1)
+        return original(command)
+
+    server.run = failing  # type: ignore[method-assign]
+    server.commands.clear()
+    with pytest.raises(CommandExecutionError):
+        await call(server, "uninstall")
+    assert server.mutating_commands() == []  # проверить владельца нельзя — значит и удалять нельзя

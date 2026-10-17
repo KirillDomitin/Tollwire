@@ -31,6 +31,24 @@ _PS_RE = re.compile(r"docker ps -a --filter (\S+) --format '\{\{\.(\w+)\}\}'")
 _EXEC = f"docker exec {CONTAINER_NAME} "
 
 
+FOREIGN_MOUNT_SOURCE = "/var/lib/docker/volumes/amnezia-awg/_data"  # том контейнера, созданного AmneziaVPN
+INSPECT_MOUNTS = (
+    f"docker inspect --type container -f '{{{{range .Mounts}}}}{{{{.Source}}}} {{{{end}}}}' {CONTAINER_NAME}"
+)
+# Белый список команд, которые ничего не меняют на сервере; всё остальное (включая любой docker exec) — изменяющее.
+_READ_ONLY_PREFIXES = (
+    "docker ps",
+    "docker inspect",
+    "docker port",
+    "docker --version",
+    "test -f",
+    "grep ",
+    "uname",
+    "id -u",
+    "command -v",
+    "systemctl is-active",
+)
+
 HOME_DIR = "/root"
 AUTHORIZED_KEYS = f"{HOME_DIR}/.ssh/authorized_keys"
 
@@ -55,6 +73,7 @@ class FakeServer:
     files: dict[str, str] = field(default_factory=dict)
     containers: dict[str, str] = field(default_factory=dict)  # имя → running / exited
     docker_installed: bool = True
+    ps_fails: bool = False  # `docker ps` падает (демон перезапускается): решение «чей контейнер» принять нельзя
     docker_active: bool = True
     internet: bool = True
     reachable: bool = True
@@ -64,6 +83,12 @@ class FakeServer:
     interface_peers: set[str] = field(default_factory=set)  # ключи, применённые к живому интерфейсу
     handshakes: dict[str, int] = field(default_factory=dict)  # ключ → unix-время последнего рукопожатия
     commands: list[str] = field(default_factory=list)
+    # Журнал файловых операций клиента (SFTP): пути, которые прочитали / записали. Тесты «не трогаем чужое».
+    reads: list[str] = field(default_factory=list)
+    writes: list[str] = field(default_factory=list)
+    # Источники монтирований контейнера (`docker inspect .Mounts`). Нет записи — контейнер смонтирован как наш
+    # (HOST_CONFIG_DIR): так ведут себя тесты, которые выставляют `containers[...]` напрямую.
+    mounts: dict[str, list[str]] = field(default_factory=dict)
     dirs: dict[str, int] = field(default_factory=dict)  # каталоги, созданные через SFTP → права (0o700 для .ssh)
     key_auth_enabled: bool = True  # False — как sshd с PubkeyAuthentication no: вход по ключу отвергается
     # Вызывается перед каждой командой, выполняемой по ключу: (клиент, команда). Тест подставляет сюда
@@ -105,6 +130,17 @@ class FakeServer:
             if len(fields) >= 2 and not line.lstrip().startswith("#"):
                 found.add(fields[1])
         return found
+
+    def add_foreign_container(self, state: str = "running", source: str = FOREIGN_MOUNT_SOURCE) -> None:
+        """Контейнер `amnezia-awg`, созданный не панелью (приложением AmneziaVPN): конфиг внутри тома Docker,
+        папки панели среди монтирований нет."""
+        self.containers[CONTAINER_NAME] = state
+        self.mounts[CONTAINER_NAME] = [source]
+
+    def mutating_commands(self) -> list[str]:
+        """Команды из журнала, которые меняют сервер (или исполняются внутри контейнера). Чтение — docker ps/inspect,
+        test -f, grep, uname — сюда не входит."""
+        return [c for c in self.commands if not " ".join(c.split()).startswith(_READ_ONLY_PREFIXES)]
 
     @property
     def running(self) -> bool:
@@ -150,6 +186,8 @@ class FakeServer:
         if match := re.fullmatch(r"test -f (\S+)", cmd):
             return _ok() if match.group(1) in self.files else _fail(code=1)
         if match := _PS_RE.fullmatch(cmd):
+            if self.ps_fails:
+                return _fail("Cannot connect to the Docker daemon", 1)
             return self._docker_ps(match.group(1), match.group(2))
         if match := re.fullmatch(r"grep 'ListenPort' (\S+) \| cut -d' ' -f3", cmd):
             # Как настоящий пайп: код возврата — от cut (0), даже если файла нет и вывод пустой.
@@ -169,7 +207,15 @@ class FakeServer:
                 return _fail("No such container", 1)
             self.restart_policy = "unless-stopped"
             return _ok(f"{CONTAINER_NAME}\n")
+        if cmd == INSPECT_MOUNTS:
+            if CONTAINER_NAME not in self.containers:
+                return _fail("No such object", 1)
+            # Формат шаблона `{{.Source}} ` на каждое монтирование: источники через пробел, с хвостовым пробелом.
+            return _ok("".join(f"{source} " for source in self.mounts.get(CONTAINER_NAME, [HOST_CONFIG_DIR])) + "\n")
         if cmd.startswith(f"docker run -d --name {CONTAINER_NAME} "):
+            if CONTAINER_NAME in self.containers:  # как настоящий docker: имя занято
+                return _fail(f'Conflict. The container name "/{CONTAINER_NAME}" is already in use', 125)
+            self.mounts[CONTAINER_NAME] = re.findall(r" -v (\S+?):\S+", cmd)
             self.restart_policy = "unless-stopped" if " --restart unless-stopped " in cmd else "no"
             self._start()
             return _ok("container-id\n")
@@ -178,6 +224,7 @@ class FakeServer:
             return _ok()
         if cmd == f"docker stop {CONTAINER_NAME} && docker rm {CONTAINER_NAME}":
             self.containers.pop(CONTAINER_NAME, None)
+            self.mounts.pop(CONTAINER_NAME, None)
             self.interface_peers = set()
             self.nat_rule = False
             return _ok()
@@ -264,12 +311,14 @@ class FakeSSHClient:
 
     async def read_file(self, remote_path: str) -> str:
         assert self.connected, "read_file() before connect()"
+        self.server.reads.append(remote_path)
         if remote_path not in self.server.files:
             raise SSHConnectionError(f"File read: host={self.host}, path={remote_path}")
         return self.server.files[remote_path]
 
     async def write_file(self, remote_path: str, content: str) -> None:
         assert self.connected, "write_file() before connect()"
+        self.server.writes.append(remote_path)
         self.server.files[remote_path] = content
 
     async def home_dir(self) -> str:
@@ -282,4 +331,5 @@ class FakeSSHClient:
 
     async def read_file_optional(self, remote_path: str) -> str | None:
         assert self.connected, "read_file_optional() before connect()"
+        self.server.reads.append(remote_path)
         return self.server.files.get(remote_path)
