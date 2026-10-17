@@ -9,15 +9,17 @@ interface DialogProps {
   title: string;
   description?: ReactNode;
   children: ReactNode;
+  /** Широкое окно — для списков и таблиц. */
+  wide?: boolean;
 }
 
 /** Модальный диалог: фокус внутри, Esc закрывает, фон недоступен — всё это даёт Radix. */
-export function Dialog({ open, onOpenChange, title, description, children }: DialogProps) {
+export function Dialog({ open, onOpenChange, title, description, children, wide }: DialogProps) {
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
         <RadixDialog.Overlay className={styles.overlay} />
-        <RadixDialog.Content className={styles.content}>
+        <RadixDialog.Content className={styles.content} data-wide={wide || undefined}>
           <RadixDialog.Title className={styles.title}>{title}</RadixDialog.Title>
           {description ? (
             <RadixDialog.Description className={styles.description}>{description}</RadixDialog.Description>

@@ -9,7 +9,9 @@
     "health_check": "Проверка состояния",
     "create_user": "Выдача клиента",
     "revoke_access": "Отзыв клиента",
-    "delete_user": "Удаление пользователя"
+    "delete_user": "Удаление пользователя",
+    "discover_vpn": "Поиск AmneziaVPN",
+    "import_clients": "Перенос клиентов AmneziaVPN"
   },
   "statuses": {
     "pending": "В очереди",

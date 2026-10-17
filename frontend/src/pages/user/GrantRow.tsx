@@ -21,7 +21,13 @@ const ConfigDialog = lazy(() =>
 type RowState = { tone: "ok" | "process" | "down" | "idle"; text: string };
 
 /** Что сейчас с доступом к одному серверу — одной фразой для человека. */
-export function grantState(grant: Grant, credential: VPNCredential | null, job: Job | undefined): RowState {
+export function grantState(
+  grant: Grant,
+  credential: VPNCredential | null,
+  job: Job | undefined,
+  /** Клиент этого доступа подхвачен из AmneziaVPN (сейчас или раньше): панель сама клиента не выдаёт. */
+  fromApp = false,
+): RowState {
   if (!isLive(grant)) {
     if (credential) return { tone: "process", text: i18n.t("users.grant.removingClient") };
     return {
@@ -41,9 +47,13 @@ export function grantState(grant: Grant, credential: VPNCredential | null, job: 
   if (credential) {
     return {
       tone: "ok",
-      text: i18n.t("users.grant.configIssued", { date: formatDay(credential.created_at) }),
+      text:
+        credential.source === "imported"
+          ? i18n.t("users.grant.configImported", { date: formatDay(credential.created_at) })
+          : i18n.t("users.grant.configIssued", { date: formatDay(credential.created_at) }),
     };
   }
+  if (fromApp) return { tone: "idle", text: i18n.t("users.grant.importedRevoked") };
   if (job?.status === "failed" && job.type === "create_user")
     return { tone: "down", text: i18n.t("users.grant.configNotIssued") };
   return { tone: "idle", text: i18n.t("users.grant.configNotIssued") };
@@ -69,7 +79,10 @@ export function GrantRow({
   const queryClient = useQueryClient();
   const [configOpen, setConfigOpen] = useState(false);
   const credential = liveCredential(credentials);
-  const state = grantState(grant, credential, job);
+  // История credential'ов: подхваченный клиент остаётся признаком доступа к установке приложения и после отзыва.
+  const fromApp = credentials?.some((item) => item.source === "imported") ?? false;
+  const imported = credential?.source === "imported";
+  const state = grantState(grant, credential, job, fromApp);
   const live = isLive(grant);
   const busy = job !== undefined && isUnfinished(job);
   const manage = can("access:manage");
@@ -105,13 +118,18 @@ export function GrantRow({
         <p className={styles.grantError}>{job.error}</p>
       )}
       {issue.isError && <Notice>{issue.error.message}</Notice>}
+      {live && !busy && fromApp && (
+        <p className={styles.hint}>
+          {imported ? t("users.grant.importedNote") : t("users.grant.importedRevokedNote")}
+        </p>
+      )}
 
       {live && !busy && (
         <div className={styles.row}>
-          {credential && can("config:reveal") && (
+          {credential && !imported && can("config:reveal") && (
             <Button onClick={() => setConfigOpen(true)}>{t("users.grant.showConfig")}</Button>
           )}
-          {!credential && manage && (
+          {!credential && !fromApp && manage && (
             <Button
               busy={issue.isPending}
               busyLabel={t("users.grant.queueBusy")}
@@ -124,7 +142,11 @@ export function GrantRow({
             <ConfirmDialog
               trigger={<Button variant="quiet">{t("users.grant.revokeConfig.trigger")}</Button>}
               title={t("users.grant.revokeConfig.title")}
-              consequences={t("users.grant.revokeConfig.consequences", { server: serverName })}
+              consequences={
+                imported
+                  ? t("users.grant.revokeConfig.consequencesImported", { server: serverName })
+                  : t("users.grant.revokeConfig.consequences", { server: serverName })
+              }
               actionLabel={t("users.grant.revokeConfig.action")}
               busyLabel={t("users.grant.revokeConfig.busy")}
               onConfirm={async () => {
@@ -158,7 +180,7 @@ export function GrantRow({
           )}
         </div>
       )}
-      {credential && configOpen && (
+      {credential && !imported && configOpen && (
         <Suspense fallback={null}>
           <ConfigDialog
             credentialId={credential.id}

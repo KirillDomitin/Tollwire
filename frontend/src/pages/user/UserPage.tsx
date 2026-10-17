@@ -72,7 +72,7 @@ export function UserPage() {
           <h1 id="user-title" className={styles.title}>
             {user.username}
           </h1>
-          <p className={styles.address}>{user.email}</p>
+          <p className={styles.address}>{user.email ?? "—"}</p>
           {user.description && <p className={styles.description}>{user.description}</p>}
           {can("vpn_users:manage") && <EditUserDialog user={user} />}
         </div>

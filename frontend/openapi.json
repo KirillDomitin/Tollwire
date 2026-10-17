@@ -1162,6 +1162,161 @@
         }
       }
     },
+    "/api/v1/servers/{server_id}/discover": {
+      "post": {
+        "tags": [
+          "servers"
+        ],
+        "summary": "Server Discover",
+        "operationId": "server_discover_api_v1_servers__server_id__discover_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Server Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/servers/{server_id}/discovery": {
+      "get": {
+        "tags": [
+          "servers"
+        ],
+        "summary": "Server Discovery",
+        "operationId": "server_discovery_api_v1_servers__server_id__discovery_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Server Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoveryRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/servers/{server_id}/import": {
+      "post": {
+        "tags": [
+          "servers"
+        ],
+        "summary": "Import Clients",
+        "description": "Переносит выбранных клиентов установленной AmneziaVPN в БД панели (сервер не меняется). Ключи берутся из\nпоследнего отчёта поиска (GET /discovery); итог - в result задачи.",
+        "operationId": "import_clients_api_v1_servers__server_id__import_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Server Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClientImportCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/servers/{server_id}/host-key/scan": {
       "post": {
         "tags": [
@@ -3047,6 +3202,9 @@
           "server_sync_started",
           "server_sync_completed",
           "server_sync_failed",
+          "server_discover_started",
+          "server_discover_completed",
+          "server_discover_failed",
           "server_ssh_key_install_started",
           "server_ssh_key_install_completed",
           "server_ssh_key_install_failed",
@@ -3071,10 +3229,14 @@
           "access_expired",
           "access_deleted",
           "credential_issued",
+          "credential_imported",
           "credential_issue_failed",
           "credential_revoked",
           "credential_revoke_failed",
-          "config_viewed"
+          "config_viewed",
+          "clients_import_started",
+          "clients_import_completed",
+          "clients_import_failed"
         ],
         "title": "AuditAction"
       },
@@ -3223,6 +3385,35 @@
         ],
         "title": "ChangePasswordRequest"
       },
+      "ClientImportCreate": {
+        "properties": {
+          "protocol_type": {
+            "$ref": "#/components/schemas/ProtocolType"
+          },
+          "valid_until": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Valid Until"
+          },
+          "clients": {
+            "items": {
+              "$ref": "#/components/schemas/ImportClient"
+            },
+            "type": "array",
+            "maxItems": 250,
+            "minItems": 1,
+            "title": "Clients"
+          }
+        },
+        "type": "object",
+        "required": [
+          "protocol_type",
+          "valid_until",
+          "clients"
+        ],
+        "title": "ClientImportCreate",
+        "description": "Тело POST /servers/{id}/import."
+      },
       "CredentialCreate": {
         "properties": {
           "auth_type": {
@@ -3300,6 +3491,158 @@
           "created_at"
         ],
         "title": "CredentialRead"
+      },
+      "CredentialSource": {
+        "type": "string",
+        "enum": [
+          "issued",
+          "imported"
+        ],
+        "title": "CredentialSource"
+      },
+      "DiscoveredClientRead": {
+        "properties": {
+          "public_key": {
+            "type": "string",
+            "title": "Public Key"
+          },
+          "address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "latest_handshake": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Handshake"
+          },
+          "supported": {
+            "type": "boolean",
+            "title": "Supported"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "public_key",
+          "address",
+          "name",
+          "latest_handshake",
+          "supported",
+          "status"
+        ],
+        "title": "DiscoveredClientRead"
+      },
+      "DiscoveredProtocolRead": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "container": {
+            "type": "string",
+            "title": "Container"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "image": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port"
+          },
+          "clients": {
+            "items": {
+              "$ref": "#/components/schemas/DiscoveredClientRead"
+            },
+            "type": "array",
+            "title": "Clients"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "container",
+          "state",
+          "image",
+          "port",
+          "clients"
+        ],
+        "title": "DiscoveredProtocolRead"
+      },
+      "DiscoveryRead": {
+        "properties": {
+          "checked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "protocols": {
+            "items": {
+              "$ref": "#/components/schemas/DiscoveredProtocolRead"
+            },
+            "type": "array",
+            "title": "Protocols"
+          }
+        },
+        "type": "object",
+        "required": [
+          "checked_at",
+          "protocols"
+        ],
+        "title": "DiscoveryRead"
       },
       "HTTPValidationError": {
         "properties": {
@@ -3380,6 +3723,52 @@
         ],
         "title": "HostKeyScan",
         "description": "Ключ, который сервер предъявил сейчас (без входа). Сверить fingerprint с консолью хостинга перед PUT."
+      },
+      "ImportClient": {
+        "properties": {
+          "public_key": {
+            "type": "string",
+            "title": "Public Key"
+          },
+          "username": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Username"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "format": "email"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "public_key",
+          "username"
+        ],
+        "title": "ImportClient",
+        "description": "Один клиент установки AmneziaVPN для переноса в панель. Пользователь: существующий (user_id) или новый\n(username и, если известен, email). PSK и прочие секреты в запросе не принимаются и в параметры задачи не идут."
       },
       "JobRead": {
         "properties": {
@@ -3534,7 +3923,9 @@
           "remove_protocol",
           "uninstall_server",
           "install_protocol",
-          "install_ssh_key"
+          "install_ssh_key",
+          "discover_vpn",
+          "import_clients"
         ],
         "title": "JobType"
       },
@@ -3942,7 +4333,9 @@
       "ProtocolType": {
         "type": "string",
         "enum": [
-          "amnezia_wg"
+          "amnezia_wg",
+          "amnezia_app_awg",
+          "amnezia_app_awg2"
         ],
         "title": "ProtocolType"
       },
@@ -4393,6 +4786,20 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "source": {
+            "$ref": "#/components/schemas/CredentialSource"
+          },
+          "external_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Name"
           }
         },
         "type": "object",
@@ -4400,7 +4807,8 @@
           "id",
           "access_grant_id",
           "revoked_at",
-          "created_at"
+          "created_at",
+          "source"
         ],
         "title": "VPNCredentialRead",
         "description": "Метаданные credential. Конфига здесь нет намеренно — его отдаёт только отдельный эндпоинт."
@@ -4451,7 +4859,14 @@
             "title": "Username"
           },
           "email": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Email"
           },
           "status": {
@@ -4506,7 +4921,14 @@
             "title": "Username"
           },
           "email": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Email"
           },
           "status": {

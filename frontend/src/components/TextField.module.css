@@ -22,3 +22,13 @@
   outline-offset: 0;
   border-color: var(--focus);
 }
+
+.input[aria-invalid="true"] {
+  border-color: var(--signal-down);
+}
+
+.error {
+  margin: 0;
+  font-size: var(--text-meta);
+  color: var(--signal-down);
+}

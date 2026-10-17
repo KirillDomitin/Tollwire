@@ -10,14 +10,18 @@ import { TextField } from "../../components/TextField";
 import styles from "./UserPage.module.css";
 import { userKeys } from "./useUser";
 
-/** Данные пользователя: имя, email, заметка. Конфиги и доступы от них не зависят, на серверах ничего не меняется. */
+/**
+ * Данные пользователя: имя, email, заметка. Конфиги и доступы от них не зависят, на серверах ничего не меняется.
+ * У подхваченного из AmneziaVPN клиента email может не быть: тогда он необязателен, а пустое поле не отправляется.
+ */
 export function EditUserDialog({ user }: { user: VPNUser }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
+  const hadEmail = user.email !== null;
 
   const save = useMutation({
-    mutationFn: (body: { username: string; email: string; description: string | null }) =>
+    mutationFn: (body: { username: string; email?: string; description: string | null }) =>
       unwrap(api.PATCH("/api/v1/vpn-users/{user_id}", { params: { path: { user_id: user.id } }, body }), {
         409: t("users.edit.errors.conflict"),
         422: t("users.edit.errors.invalid"),
@@ -38,9 +42,10 @@ export function EditUserDialog({ user }: { user: VPNUser }) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const description = String(form.get("description")).trim();
+    const email = String(form.get("email")).trim();
     save.mutate({
       username: String(form.get("username")).trim(),
-      email: String(form.get("email")).trim(),
+      ...(email ? { email } : {}),
       description: description || null,
     });
   }
@@ -66,11 +71,11 @@ export function EditUserDialog({ user }: { user: VPNUser }) {
             autoComplete="off"
           />
           <TextField
-            label={t("users.add.email")}
+            label={hadEmail ? t("users.add.email") : t("users.edit.emailOptional")}
             name="email"
             type="email"
-            defaultValue={user.email}
-            required
+            defaultValue={user.email ?? ""}
+            required={hadEmail}
             maxLength={100}
             autoComplete="off"
           />

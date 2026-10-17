@@ -15,6 +15,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- Web interface for taking over the clients of an installed AmneziaVPN app: a server card with a found app shows an
+  "AmneziaVPN is already on this server" block (container, port, state, clients and how many are new) and, with the
+  `servers:manage` permission, a "Take over clients" button. The dialog picks the clients (new ones are selected;
+  those already in the panel or unsupported are locked with a reason), a user name and an optional email for each,
+  and one end-of-access date for all, then follows the job and shows what was taken over, what was already there,
+  what disappeared and what conflicted. "Find existing Amnezia" in maintenance starts a search; next to an app's v1
+  container the panel's own protocol step offers a hint instead of the install button. Users without an email show
+  a dash, and the email is optional when editing them. A client taken over from the app has no "Show config"
+  button, with a note that the private key stays in the app and the panel cannot issue a new client for that
+  access. The audit log knows the new discovery and takeover events.
 - Importing clients of an installed AmneziaVPN app into the panel: `POST /api/v1/servers/{id}/import` takes the chosen
   clients from the last discovery report and gives each one a user (an existing one, or a new one whose email may be
   empty), a subscription and an access grant. The admin sets the access period; the server does not change. The

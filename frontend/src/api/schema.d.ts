@@ -305,6 +305,61 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/servers/{server_id}/discover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Server Discover */
+        post: operations["server_discover_api_v1_servers__server_id__discover_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/servers/{server_id}/discovery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Server Discovery */
+        get: operations["server_discovery_api_v1_servers__server_id__discovery_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/servers/{server_id}/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Clients
+         * @description Переносит выбранных клиентов установленной AmneziaVPN в БД панели (сервер не меняется). Ключи берутся из
+         *     последнего отчёта поиска (GET /discovery); итог - в result задачи.
+         */
+        post: operations["import_clients_api_v1_servers__server_id__import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/servers/{server_id}/host-key/scan": {
         parameters: {
             query?: never;
@@ -809,7 +864,7 @@ export interface components {
          * AuditAction
          * @enum {string}
          */
-        AuditAction: "login" | "login_failed" | "login_locked" | "logout" | "password_changed" | "password_change_failed" | "admin_created" | "admin_updated" | "server_created" | "server_updated" | "server_deleted" | "server_credentials_set" | "server_credentials_deleted" | "server_host_key_pinned" | "server_host_key_reset" | "server_host_key_mismatch" | "server_install_started" | "server_install_completed" | "server_install_failed" | "server_sync_started" | "server_sync_completed" | "server_sync_failed" | "server_ssh_key_install_started" | "server_ssh_key_install_completed" | "server_ssh_key_install_failed" | "protocol_install_started" | "protocol_install_completed" | "protocol_install_failed" | "protocol_remove_started" | "protocol_remove_completed" | "protocol_remove_failed" | "vpn_user_created" | "vpn_user_updated" | "vpn_user_deleted" | "subscription_created" | "subscription_updated" | "subscription_activated" | "subscription_revoked" | "subscription_expired" | "subscription_deleted" | "access_granted" | "access_updated" | "access_revoked" | "access_expired" | "access_deleted" | "credential_issued" | "credential_issue_failed" | "credential_revoked" | "credential_revoke_failed" | "config_viewed";
+        AuditAction: "login" | "login_failed" | "login_locked" | "logout" | "password_changed" | "password_change_failed" | "admin_created" | "admin_updated" | "server_created" | "server_updated" | "server_deleted" | "server_credentials_set" | "server_credentials_deleted" | "server_host_key_pinned" | "server_host_key_reset" | "server_host_key_mismatch" | "server_install_started" | "server_install_completed" | "server_install_failed" | "server_sync_started" | "server_sync_completed" | "server_sync_failed" | "server_discover_started" | "server_discover_completed" | "server_discover_failed" | "server_ssh_key_install_started" | "server_ssh_key_install_completed" | "server_ssh_key_install_failed" | "protocol_install_started" | "protocol_install_completed" | "protocol_install_failed" | "protocol_remove_started" | "protocol_remove_completed" | "protocol_remove_failed" | "vpn_user_created" | "vpn_user_updated" | "vpn_user_deleted" | "subscription_created" | "subscription_updated" | "subscription_activated" | "subscription_revoked" | "subscription_expired" | "subscription_deleted" | "access_granted" | "access_updated" | "access_revoked" | "access_expired" | "access_deleted" | "credential_issued" | "credential_imported" | "credential_issue_failed" | "credential_revoked" | "credential_revoke_failed" | "config_viewed" | "clients_import_started" | "clients_import_completed" | "clients_import_failed";
         /** AuditActorRead */
         AuditActorRead: {
             /**
@@ -860,6 +915,20 @@ export interface components {
             /** New Password */
             new_password: string;
         };
+        /**
+         * ClientImportCreate
+         * @description Тело POST /servers/{id}/import.
+         */
+        ClientImportCreate: {
+            protocol_type: components["schemas"]["ProtocolType"];
+            /**
+             * Valid Until
+             * Format: date-time
+             */
+            valid_until: string;
+            /** Clients */
+            clients: components["schemas"]["ImportClient"][];
+        };
         /** CredentialCreate */
         CredentialCreate: {
             /** @default password */
@@ -897,6 +966,48 @@ export interface components {
              */
             created_at: string;
         };
+        /**
+         * CredentialSource
+         * @enum {string}
+         */
+        CredentialSource: "issued" | "imported";
+        /** DiscoveredClientRead */
+        DiscoveredClientRead: {
+            /** Public Key */
+            public_key: string;
+            /** Address */
+            address: string | null;
+            /** Name */
+            name: string | null;
+            /** Latest Handshake */
+            latest_handshake: string | null;
+            /** Supported */
+            supported: boolean;
+            /** Status */
+            status: string;
+        };
+        /** DiscoveredProtocolRead */
+        DiscoveredProtocolRead: {
+            /** Type */
+            type: string;
+            /** Container */
+            container: string;
+            /** State */
+            state: string;
+            /** Image */
+            image: string | null;
+            /** Port */
+            port: number | null;
+            /** Clients */
+            clients: components["schemas"]["DiscoveredClientRead"][];
+        };
+        /** DiscoveryRead */
+        DiscoveryRead: {
+            /** Checked At */
+            checked_at: string | null;
+            /** Protocols */
+            protocols: components["schemas"]["DiscoveredProtocolRead"][];
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -925,6 +1036,21 @@ export interface components {
             pinned_fingerprint: string | null;
             /** Matches Pinned */
             matches_pinned: boolean | null;
+        };
+        /**
+         * ImportClient
+         * @description Один клиент установки AmneziaVPN для переноса в панель. Пользователь: существующий (user_id) или новый
+         *     (username и, если известен, email). PSK и прочие секреты в запросе не принимаются и в параметры задачи не идут.
+         */
+        ImportClient: {
+            /** Public Key */
+            public_key: string;
+            /** Username */
+            username: string;
+            /** Email */
+            email?: string | null;
+            /** User Id */
+            user_id?: string | null;
         };
         /** JobRead */
         JobRead: {
@@ -970,7 +1096,7 @@ export interface components {
          * JobType
          * @enum {string}
          */
-        JobType: "create_user" | "delete_user" | "sync_server" | "health_check" | "revoke_access" | "install_server" | "remove_protocol" | "uninstall_server" | "install_protocol" | "install_ssh_key";
+        JobType: "create_user" | "delete_user" | "sync_server" | "health_check" | "revoke_access" | "install_server" | "remove_protocol" | "uninstall_server" | "install_protocol" | "install_ssh_key" | "discover_vpn" | "import_clients";
         /**
          * LatestMetrics
          * @description Последний замер сервера — для списка серверов.
@@ -1097,7 +1223,7 @@ export interface components {
          * ProtocolType
          * @enum {string}
          */
-        ProtocolType: "amnezia_wg";
+        ProtocolType: "amnezia_wg" | "amnezia_app_awg" | "amnezia_app_awg2";
         /** ServerCreate */
         ServerCreate: {
             /** Name */
@@ -1275,6 +1401,9 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            source: components["schemas"]["CredentialSource"];
+            /** External Name */
+            external_name?: string | null;
         };
         /** VPNUserCreate */
         VPNUserCreate: {
@@ -1298,7 +1427,7 @@ export interface components {
             /** Username */
             username: string;
             /** Email */
-            email: string;
+            email: string | null;
             status: components["schemas"]["VPNUserStatus"];
             /** Description */
             description?: string | null;
@@ -1319,7 +1448,7 @@ export interface components {
             /** Username */
             username: string;
             /** Email */
-            email: string;
+            email: string | null;
             status: components["schemas"]["VPNUserStatus"];
             /** Description */
             description?: string | null;
@@ -2108,6 +2237,103 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    server_discover_api_v1_servers__server_id__discover_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    server_discovery_api_v1_servers__server_id__discovery_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscoveryRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_clients_api_v1_servers__server_id__import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClientImportCreate"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             202: {

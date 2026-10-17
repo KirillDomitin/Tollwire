@@ -23,7 +23,7 @@ export function renderWithProviders(ui: ReactNode, { permissions = "all", route 
     changePassword: async () => {},
     can: (permission: string) => permissions === "all" || permissions.includes(permission),
   };
-  return render(
+  const rendered = render(
     <QueryClientProvider client={queryClient}>
       <AuthContext.Provider value={auth}>
         <MemoryRouter initialEntries={[route]}>
@@ -39,6 +39,8 @@ export function renderWithProviders(ui: ReactNode, { permissions = "all", route 
       </AuthContext.Provider>
     </QueryClientProvider>,
   );
+  // queryClient - чтобы тест мог проверить, какие запросы экран объявил устаревшими.
+  return { ...rendered, queryClient };
 }
 
 export function json(body: unknown, status = 200): Response {

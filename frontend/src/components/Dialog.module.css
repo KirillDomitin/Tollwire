@@ -19,6 +19,10 @@
   border-top: var(--rule-width) solid var(--pine);
 }
 
+.content[data-wide="true"] {
+  width: min(calc(100vw - 2 * var(--space-4)), 860px);
+}
+
 .content[data-danger="true"] {
   border-top-color: var(--signal-down);
 }

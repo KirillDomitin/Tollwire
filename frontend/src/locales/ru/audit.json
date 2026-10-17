@@ -58,7 +58,14 @@
     "credential_issue_failed": "Конфиг не выдан — ошибка",
     "credential_revoked": "Отозван конфиг",
     "credential_revoke_failed": "Конфиг не отозван — ошибка",
-    "config_viewed": "Показан конфиг"
+    "config_viewed": "Показан конфиг",
+    "server_discover_started": "Начат поиск AmneziaVPN",
+    "server_discover_completed": "Поиск AmneziaVPN завершён",
+    "server_discover_failed": "Поиск AmneziaVPN не удался",
+    "credential_imported": "Клиент подхвачен из AmneziaVPN",
+    "clients_import_started": "Начат перенос клиентов AmneziaVPN",
+    "clients_import_completed": "Перенос клиентов AmneziaVPN завершён",
+    "clients_import_failed": "Перенос клиентов AmneziaVPN не удался"
   },
   "details": {
     "reason": "Причина",
@@ -74,7 +81,16 @@
     "panel_key_left_on_server": "Ключ панели остался на сервере",
     "sessions_revoked": "Завершено сессий",
     "changed": "Изменено",
-    "address": "Адрес"
+    "address": "Адрес",
+    "protocols": "Найдено установок",
+    "clients": "Клиентов",
+    "imported": "Подхвачено",
+    "already": "Уже были в панели",
+    "gone": "Пропали с сервера",
+    "unsupported": "Не поддерживаются",
+    "conflict": "Конфликтов",
+    "public_key": "Публичный ключ клиента",
+    "source": "Источник"
   },
   "actor": {
     "anonymous": "Аноним",

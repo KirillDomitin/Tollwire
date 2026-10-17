@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import QRCode from "qrcode";
 
@@ -49,7 +49,16 @@ const server = {
   status: "ready",
   created_at: day(-60),
 };
-const credential = { id: "cred-1", access_grant_id: GRANT, revoked_at: null, created_at: day(-9) };
+const credential = {
+  id: "cred-1",
+  access_grant_id: GRANT,
+  revoked_at: null,
+  created_at: day(-9),
+  source: "issued",
+  external_name: null,
+};
+// Клиент, подхваченный из приложения AmneziaVPN: конфига у панели нет.
+const importedCredential = { ...credential, source: "imported", external_name: "iPhone Ивана" };
 
 /** Подменный API пользователей: отвечает по методу и пути, запоминает запросы. */
 function mockApi({
@@ -57,9 +66,11 @@ function mockApi({
   credentials = [credential] as unknown[],
   grants = [grant] as unknown[],
   patchStatus = 200,
+  userPatch = {} as Record<string, unknown>,
+  serverProtocols = [{ id: "p1", server_id: SERVER, type: "amnezia_wg", port: 51820 }] as unknown[],
 } = {}) {
   const calls: string[] = [];
-  let currentUser: Record<string, unknown> = { ...user };
+  let currentUser: Record<string, unknown> = { ...user, ...userPatch };
   vi.stubGlobal(
     "fetch",
     vi.fn(async (request: Request) => {
@@ -72,12 +83,13 @@ function mockApi({
         currentUser = { ...currentUser, ...body };
         return json(currentUser);
       }
-      if (path === "/api/v1/vpn-users") return json([{ ...user, access: subscriptions[0] ?? null }]);
+      if (path === "/api/v1/vpn-users") return json([{ ...currentUser, access: subscriptions[0] ?? null }]);
       if (path === `/api/v1/vpn-users/${USER}`) return json(currentUser);
       if (path === `/api/v1/vpn-users/${USER}/subscriptions`) return json(subscriptions);
       if (path === `/api/v1/subscriptions/${SUB}/grants`) return json(grants);
       if (path === `/api/v1/access/${GRANT}/credentials`) return json(credentials);
       if (path === "/api/v1/servers") return json([server]);
+      if (path === `/api/v1/servers/${SERVER}/protocols`) return json(serverProtocols);
       if (path === "/api/v1/credentials/cred-1/config") {
         return json({
           id: "cred-1",
@@ -112,6 +124,145 @@ describe("UsersPage", () => {
     expect(row).toHaveAttribute("data-signal", "ok");
     expect(within(row).getByText(/^До /)).toBeInTheDocument();
     expect(screen.getByText("1 пользователь — 1 с доступом")).toBeInTheDocument();
+  });
+});
+
+describe("users without an email (taken over from AmneziaVPN)", () => {
+  it("shows a dash instead of the email in the list and on the card", async () => {
+    mockApi({ userPatch: { email: null } });
+    const { unmount } = renderWithProviders(<UsersPage />);
+    const row = (await screen.findByRole("link", { name: "alice" })).closest("tr")!;
+    expect(within(row).getByText("—")).toBeInTheDocument();
+    unmount();
+
+    renderCard();
+    expect(await screen.findByRole("heading", { level: 1, name: "alice" })).toBeInTheDocument();
+    expect(screen.getByText("—")).toBeInTheDocument();
+  });
+
+  it("makes the email optional when editing and does not send an empty one", async () => {
+    const calls = mockApi({ userPatch: { email: null } });
+    renderCard();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Изменить" }));
+    const dialog = await screen.findByRole("dialog");
+    const email = within(dialog).getByLabelText("Email (необязательно)");
+    expect(email).toHaveValue("");
+    expect(email).not.toBeRequired();
+    await userEvent.clear(within(dialog).getByLabelText("Имя"));
+    await userEvent.type(within(dialog).getByLabelText("Имя"), "Alice B");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Сохранить" }));
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Alice B" })).toBeInTheDocument();
+    expect(calls).toContain('PATCH body {"username":"Alice B","description":null}');
+  });
+
+  it("sends the email once the admin fills it in", async () => {
+    const calls = mockApi({ userPatch: { email: null } });
+    renderCard();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Изменить" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.type(within(dialog).getByLabelText("Email (необязательно)"), "alice@example.com");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Сохранить" }));
+
+    await waitFor(() =>
+      expect(calls).toContain(
+        'PATCH body {"username":"alice","email":"alice@example.com","description":null}',
+      ),
+    );
+  });
+
+  it("keeps the email required for a user who has one", async () => {
+    mockApi();
+    renderCard();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Изменить" }));
+    expect(within(await screen.findByRole("dialog")).getByLabelText("Email")).toBeRequired();
+  });
+});
+
+describe("granting access to a server", () => {
+  it("offers a server that has the panel's own protocol", async () => {
+    mockApi({ grants: [], credentials: [] });
+    renderCard();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Добавить серверы" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByLabelText(/US2/)).toBeInTheDocument();
+  });
+
+  it("does not offer a server that has only the AmneziaVPN app's protocol", async () => {
+    mockApi({
+      grants: [],
+      credentials: [],
+      serverProtocols: [{ id: "p-app", server_id: SERVER, type: "amnezia_app_awg", port: 34567 }],
+    });
+    renderCard();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Добавить серверы" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText(/Нет готовых серверов с AmneziaWG/)).toBeInTheDocument();
+    expect(within(dialog).queryByLabelText(/US2/)).not.toBeInTheDocument();
+  });
+
+  it("takes the panel's protocol even when the app's one comes first", async () => {
+    mockApi({
+      grants: [],
+      credentials: [],
+      serverProtocols: [
+        { id: "p-app", server_id: SERVER, type: "amnezia_app_awg", port: 34567 },
+        { id: "p1", server_id: SERVER, type: "amnezia_wg", port: 51820 },
+      ],
+    });
+    renderCard();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Добавить серверы" }));
+    expect(await within(await screen.findByRole("dialog")).findByLabelText(/US2/)).toBeInTheDocument();
+  });
+});
+
+describe("a client taken over from AmneziaVPN", () => {
+  it("has no 'show config' button, explains why, and cannot be reissued", async () => {
+    mockApi({ credentials: [importedCredential] });
+    renderCard();
+
+    const row = (await screen.findByText(/Клиент подхвачен из AmneziaVPN/)).closest("li")!;
+    expect(
+      within(row).getByText(/Конфиг недоступен: клиент подхвачен из приложения AmneziaVPN/),
+    ).toBeInTheDocument();
+    expect(within(row).queryByRole("button", { name: "Показать конфиг" })).not.toBeInTheDocument();
+    expect(within(row).queryByRole("button", { name: "Выдать конфиг" })).not.toBeInTheDocument();
+    // Отозвать клиента с сервера можно, как и обычного.
+    expect(within(row).getByRole("button", { name: "Отозвать конфиг" })).toBeInTheDocument();
+  });
+
+  it("warns in the revoke dialog that a new client cannot be issued from the panel", async () => {
+    mockApi({ credentials: [importedCredential] });
+    renderCard();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Отозвать конфиг" }));
+    const dialog = await screen.findByRole("alertdialog");
+    expect(
+      within(dialog).getByText(/Выдать нового клиента для этого доступа из панели нельзя/),
+    ).toBeInTheDocument();
+  });
+
+  it("does not offer to issue a config after the imported client is revoked", async () => {
+    mockApi({ credentials: [{ ...importedCredential, revoked_at: day(-1) }] });
+    renderCard();
+
+    expect(await screen.findByText("Клиент приложения отозван")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Выдать конфиг" })).not.toBeInTheDocument();
+    expect(screen.getByText(/Нового клиента для этого доступа из панели выдать нельзя/)).toBeInTheDocument();
+  });
+
+  it("still shows the config button for a client issued by the panel", async () => {
+    mockApi({ credentials: [credential] });
+    renderCard();
+
+    expect(await screen.findByRole("button", { name: "Показать конфиг" })).toBeInTheDocument();
+    expect(screen.queryByText(/подхвачен/)).not.toBeInTheDocument();
   });
 });
 

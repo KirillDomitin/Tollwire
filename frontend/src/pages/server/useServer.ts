@@ -12,7 +12,12 @@ export const keys = {
   credential: (id: string) => ["server", id, "credential"] as const,
   protocols: (id: string) => ["server", id, "protocols"] as const,
   jobs: (id: string) => ["server", id, "jobs"] as const,
+  discovery: (id: string) => ["server", id, "discovery"] as const,
 };
+
+/** Последние задачи сервера: общий источник для карточки и диалога переноса (один запрос, один опрос). */
+export const fetchJobs = (serverId: string) =>
+  unwrap(api.GET("/api/v1/jobs", { params: { query: { server_id: serverId, limit: 10 } } }));
 
 /** Всё о сервере для карточки. Задачи опрашиваются, только пока есть незавершённые. */
 export function useServerData(serverId: string) {
@@ -42,9 +47,16 @@ export function useServerData(serverId: string) {
     queryKey: keys.protocols(serverId),
     queryFn: () => unwrap(api.GET("/api/v1/servers/{server_id}/protocols", path)),
   });
+  // Отчёт последнего поиска установленной AmneziaVPN. Нужен, только если панель может зайти на сервер по SSH.
+  // Сбой отчёта не мешает карточке: блок про приложение просто не показывается.
+  const discovery = useQuery({
+    queryKey: keys.discovery(serverId),
+    queryFn: () => unwrap(api.GET("/api/v1/servers/{server_id}/discovery", path)),
+    enabled: Boolean(credential.data),
+  });
   const jobs = useQuery({
     queryKey: keys.jobs(serverId),
-    queryFn: () => unwrap(api.GET("/api/v1/jobs", { params: { query: { server_id: serverId, limit: 10 } } })),
+    queryFn: () => fetchJobs(serverId),
     refetchInterval: (query) => (query.state.data?.some(isUnfinished) ? JOB_POLL_MS : false),
   });
 
@@ -56,15 +68,17 @@ export function useServerData(serverId: string) {
       void queryClient.invalidateQueries({ queryKey: keys.server(serverId), exact: true });
       void queryClient.invalidateQueries({ queryKey: keys.protocols(serverId) });
       void queryClient.invalidateQueries({ queryKey: keys.credential(serverId) }); // ключ панели меняет учётку
+      void queryClient.invalidateQueries({ queryKey: keys.discovery(serverId) }); // поиск, установка и перенос клиентов
       void queryClient.invalidateQueries({ queryKey: ["servers"] });
     }
     previous.current = running;
   }, [running, serverId, queryClient]);
 
-  return { server, credential, protocols, jobs };
+  return { server, credential, protocols, discovery, jobs };
 }
 
-export type ServerAction = "install" | "protocol" | "sync" | "health" | "remove-protocol" | "ssh-key";
+export type ServerAction =
+  "install" | "protocol" | "sync" | "health" | "discover" | "remove-protocol" | "ssh-key";
 
 /** Поставить серверную задачу (202 + Job) и сразу начать следить за ней. */
 export function useStartJob(serverId: string) {

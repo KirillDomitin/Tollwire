@@ -71,7 +71,8 @@ export function GrantAccessDialog({
     })),
   });
   const available = candidates.flatMap((server, index) => {
-    const protocol = protocols[index]?.data?.[0];
+    // Выдавать клиентов панель умеет только в своём протоколе; перенесённый из приложения AmneziaVPN не подходит.
+    const protocol = protocols[index]?.data?.find((item) => item.type === "amnezia_wg");
     return protocol ? [{ server, protocolId: protocol.id }] : [];
   });
 

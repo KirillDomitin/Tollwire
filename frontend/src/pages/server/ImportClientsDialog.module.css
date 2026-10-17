@@ -1,0 +1,133 @@
+/* Перенос клиентов AmneziaVPN: окно с формой, списком клиентов и итогом. Общие блоки — из карточки сервера. */
+
+.form {
+  composes: form from "./ServerPage.module.css";
+}
+.hint {
+  composes: hint from "./ServerPage.module.css";
+}
+.choice {
+  composes: choice from "./ServerPage.module.css";
+}
+
+.label {
+  margin-bottom: var(--space-2);
+  padding: 0;
+  font-size: var(--text-meta);
+  color: var(--pine-soft);
+}
+
+/* Постоянное пояснение (не ошибка): спокойная врезка с полосой слева. */
+.note {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--fog);
+  border-left: var(--rule-width) solid var(--signal-warn);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+}
+
+/* Клиенты — строки журнала: слева полоса статуса, поля имени и email раскрываются только у выбранных. */
+.clients {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 45vh;
+  overflow-y: auto;
+  background: var(--fog);
+}
+
+.client {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--rule);
+  border-left: var(--rule-width) solid var(--signal-idle);
+}
+.client:last-child {
+  border-bottom: 0;
+}
+.client[data-selected="true"] {
+  border-left-color: var(--pine);
+  background: var(--paper);
+}
+.client[data-status="in_panel"],
+.client[data-status="unsupported"] {
+  color: var(--pine-soft);
+}
+
+.clientHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-4);
+}
+
+.pick {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.address {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.badge {
+  font-size: var(--text-meta);
+  color: var(--pine-soft);
+}
+.badge[data-status="new"] {
+  color: var(--signal-ok);
+}
+.badge[data-status="revoked_in_panel"] {
+  color: var(--signal-warn-text);
+}
+
+.meta {
+  margin: 0;
+  font-size: var(--text-meta);
+  color: var(--pine-soft);
+  overflow-wrap: anywhere;
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.progress {
+  margin: 0;
+  color: var(--signal-process);
+}
+
+.resultTitle {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-lead);
+}
+
+.result,
+.conflicts {
+  margin: 0;
+  padding-left: var(--space-5);
+}
+.conflicts {
+  margin-top: var(--space-3);
+  font-size: var(--text-meta);
+  color: var(--signal-down);
+}
+
+@media (max-width: 760px) {
+  .fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

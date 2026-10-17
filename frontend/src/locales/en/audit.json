@@ -58,7 +58,14 @@
     "credential_issue_failed": "Config not issued — error",
     "credential_revoked": "Config revoked",
     "credential_revoke_failed": "Config not revoked — error",
-    "config_viewed": "Config viewed"
+    "config_viewed": "Config viewed",
+    "server_discover_started": "AmneziaVPN discovery started",
+    "server_discover_completed": "AmneziaVPN discovery finished",
+    "server_discover_failed": "AmneziaVPN discovery failed",
+    "credential_imported": "Client taken over from AmneziaVPN",
+    "clients_import_started": "AmneziaVPN clients takeover started",
+    "clients_import_completed": "AmneziaVPN clients takeover finished",
+    "clients_import_failed": "AmneziaVPN clients takeover failed"
   },
   "details": {
     "reason": "Reason",
@@ -74,7 +81,16 @@
     "panel_key_left_on_server": "Panel key left on the server",
     "sessions_revoked": "Sessions ended",
     "changed": "Changed",
-    "address": "Address"
+    "address": "Address",
+    "protocols": "Installations found",
+    "clients": "Clients",
+    "imported": "Taken over",
+    "already": "Already in the panel",
+    "gone": "Gone from the server",
+    "unsupported": "Not supported",
+    "conflict": "Conflicts",
+    "public_key": "Client public key",
+    "source": "Source"
   },
   "actor": {
     "anonymous": "Anonymous",

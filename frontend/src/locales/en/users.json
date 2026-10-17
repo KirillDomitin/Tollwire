@@ -48,7 +48,8 @@
     "errors": {
       "conflict": "A user with this email already exists.",
       "invalid": "Check the data: the email must be complete, for example name@example.com, and the name must not be empty."
-    }
+    },
+    "emailOptional": "Email (optional)"
   },
   "card": {
     "loading": "Loading the user…",
@@ -105,7 +106,8 @@
       "title": "Revoke the config?",
       "consequences": "The client will be removed from server {{server}}: it won't be possible to connect with this config anymore. Access to the server stays — you can issue a new config.",
       "action": "Revoke config",
-      "busy": "Revoking…"
+      "busy": "Revoking…",
+      "consequencesImported": "The client will be removed from server {{server}}: connecting with its config will no longer work. A new client cannot be issued for this access from the panel."
     },
     "removeServer": {
       "trigger": "Remove server",
@@ -113,7 +115,11 @@
       "consequences": "The config for this server will stop working and the client will be removed from the server. Access to the other servers and the term don't change.",
       "action": "Remove server",
       "busy": "Removing…"
-    }
+    },
+    "configImported": "Client taken over from AmneziaVPN {{date}}",
+    "importedRevoked": "App client revoked",
+    "importedNote": "Config unavailable: the client was taken over from the AmneziaVPN app. The private key stayed in the client's app, so the panel cannot show a config or QR code, and it cannot issue a new client for this access.",
+    "importedRevokedNote": "A new client cannot be issued for this access from the panel: clients of an AmneziaVPN installation are created only by the app."
   },
   "grantDialog": {
     "titleAdd": "Add servers",
@@ -172,7 +178,7 @@
     "qrFailed": "Couldn't make the QR code — download the .conf file.",
     "qrLabel": "Config QR code",
     "errors": {
-      "revoked": "This config has already been revoked. Issue a new one."
+      "revoked": "The config is unavailable: it is revoked, or the client was taken over from AmneziaVPN and the panel has no client key. For a revoked one, issue a new config."
     }
   }
 }

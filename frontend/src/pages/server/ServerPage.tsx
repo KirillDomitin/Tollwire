@@ -12,7 +12,9 @@ import i18n from "../../i18n";
 import { isUnfinished } from "../../lib/jobs";
 import { serverSignal } from "../../lib/serverSignal";
 import { exactTime, timeAgo } from "../../lib/time";
+import { AmneziaAppSection } from "./AmneziaAppSection";
 import { CredentialsDialog } from "./CredentialsDialog";
+import { isAppProtocol, type AppProtocol } from "./discovery";
 import { EditServerDialog } from "./EditServerDialog";
 import { HostKeyDialog } from "./HostKeyDialog";
 import { JobsLog } from "./JobsLog";
@@ -34,14 +36,17 @@ interface Setup {
   key: boolean;
   credential: boolean;
   installed: boolean;
+  /** Есть любой протокол в панели: свой или перенесённый из приложения AmneziaVPN. */
   protocol: boolean;
+  /** Есть собственный протокол панели (AmneziaWG) — только его можно снять и только он ставится из панели. */
+  ownProtocol: boolean;
 }
 
 export function ServerPage() {
   const { serverId = "" } = useParams();
   const { t } = useTranslation();
   const { can } = useAuth();
-  const { server, credential, protocols, jobs } = useServerData(serverId);
+  const { server, credential, protocols, discovery, jobs } = useServerData(serverId);
 
   if (server.isPending) return <p className={styles.hint}>{t("servers.card.loading")}</p>;
   if (server.isError) {
@@ -61,7 +66,11 @@ export function ServerPage() {
   const data = server.data;
   const jobList = jobs.data ?? [];
   const { signal, label } = serverSignal(data);
-  const protocol = protocols.data?.[0] ?? null;
+  const ownProtocol = protocols.data?.find((item) => item.type === "amnezia_wg") ?? null;
+  // Строка протокола приложения появляется после переноса клиентов; для панели это тоже «протокол есть».
+  const protocol = ownProtocol ?? protocols.data?.[0] ?? null;
+  // Найденные поиском установки приложения AmneziaVPN (отчёт читается только при SSH-учётке).
+  const found: AppProtocol[] = discovery.data?.protocols.filter(isAppProtocol) ?? [];
   const setup: Setup = {
     key: Boolean(data.ssh_host_key_fingerprint),
     credential: Boolean(credential.data),
@@ -69,8 +78,13 @@ export function ServerPage() {
     // доказательство установки: статус меняет только задача установки, а протокол могли поставить и без неё.
     installed: data.status === "ready" || data.status === "offline" || protocol !== null,
     protocol: protocol !== null,
+    ownProtocol: ownProtocol !== null,
   };
   const ready = setup.key && setup.credential && setup.installed && setup.protocol;
+  // Найденное приложение AmneziaVPN открывает «Обслуживание» (проверка, сверка) и без протокола в панели: иначе
+  // сервер, где подхватывать нечего, навсегда остался бы в чек-листе без единой рабочей кнопки.
+  const maintainable =
+    setup.key && setup.credential && setup.installed && (setup.protocol || found.length > 0);
   const manage = can("servers:manage");
 
   return (
@@ -116,14 +130,27 @@ export function ServerPage() {
         </div>
       </header>
 
-      {!ready && manage && <SetupChecklist server={data} setup={setup} jobs={jobList} />}
-      {!ready && !manage && <p className={styles.hint}>{t("servers.card.notPrepared")}</p>}
-      {ready && (
+      {!ready && manage && <SetupChecklist server={data} setup={setup} jobs={jobList} found={found} />}
+      {!ready && !manage && !maintainable && <p className={styles.hint}>{t("servers.card.notPrepared")}</p>}
+      {maintainable && (
         <Maintenance
           server={data}
           credential={credential.data ?? null}
-          port={protocol?.port ?? null}
+          port={protocol?.port ?? found[0]?.port ?? null}
+          appOnly={!setup.ownProtocol}
           jobs={jobList}
+          searched={discovery.data?.checked_at ?? null}
+          found={found.length > 0}
+        />
+      )}
+
+      {setup.credential && found.length > 0 && (
+        <AmneziaAppSection
+          serverId={data.id}
+          protocols={found}
+          checkedAt={discovery.data?.checked_at ?? null}
+          manage={manage}
+          importing={hasRunning(jobList, "import_clients")}
         />
       )}
 
@@ -205,7 +232,17 @@ function ConnectionTest({ serverId }: { serverId: string }) {
 }
 
 /** Подготовка сервера по шагам. Порядок — тот, что требует бэкенд: пароль уходит только на закреплённый ключ. */
-function SetupChecklist({ server, setup, jobs }: { server: Server; setup: Setup; jobs: Job[] }) {
+function SetupChecklist({
+  server,
+  setup,
+  jobs,
+  found,
+}: {
+  server: Server;
+  setup: Setup;
+  jobs: Job[];
+  found: AppProtocol[];
+}) {
   const { t } = useTranslation();
   const [keyOpen, setKeyOpen] = useState(false);
   const [credOpen, setCredOpen] = useState(false);
@@ -213,6 +250,10 @@ function SetupChecklist({ server, setup, jobs }: { server: Server; setup: Setup;
   const canInstall = setup.key && setup.credential;
   const installing = server.status === "installing" || hasRunning(jobs, "install_server");
   const addingProtocol = hasRunning(jobs, "install_protocol");
+  const searching = hasRunning(jobs, "discover_vpn");
+  // Контейнер v1 носит имя, под которым панель ставит свой протокол: рядом с приложением он не встанет.
+  const appV1 = found.find((item) => item.type === "amnezia_app_awg");
+  const appV2 = found.find((item) => item.type === "amnezia_app_awg2");
 
   return (
     <section className={styles.section} aria-labelledby="setup-title">
@@ -246,7 +287,7 @@ function SetupChecklist({ server, setup, jobs }: { server: Server; setup: Setup;
               )}
               <div className={styles.row}>
                 <Button
-                  busy={start.isPending}
+                  busy={start.isPending && start.variables === "install"}
                   busyLabel={t("servers.card.queueBusy")}
                   onClick={() => start.mutate("install")}
                 >
@@ -269,13 +310,39 @@ function SetupChecklist({ server, setup, jobs }: { server: Server; setup: Setup;
           {addingProtocol ? (
             <p className={styles.hint}>{t("servers.setup.protocol.running")}</p>
           ) : setup.installed && canInstall ? (
-            <Button
-              busy={start.isPending}
-              busyLabel={t("servers.card.queueBusy")}
-              onClick={() => start.mutate("protocol")}
-            >
-              {t("servers.setup.protocol.button")}
-            </Button>
+            <>
+              {appV1 ? (
+                <p className={styles.hint}>
+                  {t("servers.setup.protocol.appV1", { container: appV1.container })}
+                </p>
+              ) : (
+                <>
+                  {appV2 && (
+                    <p className={styles.hint}>
+                      {t("servers.setup.protocol.appV2", { container: appV2.container })}
+                    </p>
+                  )}
+                  <Button
+                    busy={start.isPending && start.variables === "protocol"}
+                    busyLabel={t("servers.card.queueBusy")}
+                    onClick={() => start.mutate("protocol")}
+                  >
+                    {t("servers.setup.protocol.button")}
+                  </Button>
+                </>
+              )}
+              {/* Когда приложение уже найдено, поиск повторяется кнопкой в «Обслуживании». */}
+              {found.length === 0 && (
+                <Button
+                  variant="quiet"
+                  busy={searching || (start.isPending && start.variables === "discover")}
+                  busyLabel={t("servers.maintenance.discovering")}
+                  onClick={() => start.mutate("discover")}
+                >
+                  {t("servers.maintenance.discover")}
+                </Button>
+              )}
+            </>
           ) : (
             <p className={styles.hint}>
               {setup.installed
@@ -297,12 +364,21 @@ function Maintenance({
   server,
   credential,
   port,
+  appOnly,
   jobs,
+  searched,
+  found,
 }: {
   server: Server;
   credential: Credential | null;
   port: number | null;
+  /** В панели есть только протокол, перенесённый из приложения AmneziaVPN, своего AmneziaWG нет. */
+  appOnly: boolean;
   jobs: Job[];
+  /** Время последнего поиска приложения AmneziaVPN, если он был. */
+  searched: string | null;
+  /** Поиск нашёл установку приложения. */
+  found: boolean;
 }) {
   const { t } = useTranslation();
   const { can } = useAuth();
@@ -312,6 +388,7 @@ function Maintenance({
   const [credOpen, setCredOpen] = useState(false);
   const checking = hasRunning(jobs, "health_check");
   const syncing = hasRunning(jobs, "sync_server");
+  const searching = hasRunning(jobs, "discover_vpn");
   const installingKey = hasRunning(jobs, "install_ssh_key");
 
   return (
@@ -336,13 +413,24 @@ function Maintenance({
           >
             {t("servers.maintenance.sync")}
           </Button>
+          <Button
+            variant="quiet"
+            busy={searching || (start.isPending && start.variables === "discover")}
+            busyLabel={t("servers.maintenance.discovering")}
+            onClick={() => start.mutate("discover")}
+          >
+            {t("servers.maintenance.discover")}
+          </Button>
           {manage && <ConnectionTest serverId={server.id} />}
         </div>
       )}
       {start.isError && <Notice>{start.error.message}</Notice>}
+      {searched && !found && !searching && (
+        <p className={styles.hint}>{t("servers.maintenance.discoverNone", { when: timeAgo(searched) })}</p>
+      )}
 
       <dl className={styles.facts}>
-        <dt>{t("servers.maintenance.amnezia")}</dt>
+        <dt>{appOnly ? t("servers.maintenance.amneziaApp") : t("servers.maintenance.amnezia")}</dt>
         <dd>{port ? t("servers.maintenance.port", { port }) : t("servers.maintenance.portUnknown")}</dd>
 
         <dt>{t("servers.maintenance.hostKey")}</dt>
@@ -426,7 +514,7 @@ function DangerZone({ server, setup }: { server: Server; setup: Setup }) {
         {t("servers.danger.title")}
       </h2>
       <ul className={styles.dangerList}>
-        {setup.protocol && (
+        {setup.ownProtocol && (
           <li>
             <ConfirmDialog
               trigger={<Button variant="quiet">{t("servers.danger.removeProtocol.trigger")}</Button>}

@@ -132,7 +132,9 @@
       "running": "Installing the protocol…",
       "button": "Install the protocol",
       "lockedNoAccess": "Available once the key is pinned and SSH access is set — the protocol is installed over SSH.",
-      "lockedNoInstall": "Available after Amnezia is installed."
+      "lockedNoInstall": "Available after Amnezia is installed.",
+      "appV1": "AmneziaVPN is already installed on this server (container {{container}}). The app owns that name, so the panel's own protocol cannot be installed here. You can take over the app's clients in the \"AmneziaVPN is already on this server\" block below.",
+      "appV2": "AmneziaVPN with the AWG 2.0 protocol is already installed on this server (container {{container}}). The panel's protocol goes into a separate container and leaves the app alone, but make sure you need both installations."
     }
   },
   "maintenance": {
@@ -160,7 +162,11 @@
       "switchConsequences": "The panel will sign in with the current access, install its own key on the server and, once the login is verified, use only that key. The saved password or key in the panel will be replaced. Your own keys in authorized_keys are not changed.",
       "renewAction": "Renew key",
       "switchAction": "Install key"
-    }
+    },
+    "amneziaApp": "AmneziaVPN (app)",
+    "discover": "Find existing Amnezia",
+    "discovering": "Searching…",
+    "discoverNone": "Searched {{when}}: no installed AmneziaVPN found."
   },
   "danger": {
     "title": "Danger zone",
@@ -279,5 +285,99 @@
       "clients": "Clients online",
       "disk": "Disk: read and write"
     }
+  },
+  "discovery": {
+    "title": "AmneziaVPN is already on this server",
+    "description": "The panel found an installation of the AmneziaVPN app. Its clients can be taken over by the panel: working configs stay as they are, while the access term and revocation move to the panel. The installation itself is not changed.",
+    "checked": "Found",
+    "protocols": {
+      "amnezia_app_awg": "AmneziaWG (app)",
+      "amnezia_app_awg2": "AmneziaWG 2.0 (app)"
+    },
+    "container": "Container",
+    "port": "Port",
+    "portValue": "{{port}}, UDP",
+    "portUnknown": "unknown",
+    "state": "State",
+    "states": {
+      "running": "running",
+      "stopped": "stopped"
+    },
+    "clients": "Clients",
+    "clientsValue": "{{total}} in total, {{fresh}} new",
+    "stoppedHint": "The container is stopped, so taking over clients may fail.",
+    "importButton": "Take over clients",
+    "importing": "Taking over clients…",
+    "nothingNew": "Nothing to take over: there are no new clients. Create a client in the AmneziaVPN app and search again."
+  },
+  "import": {
+    "title": "Take over AmneziaVPN clients",
+    "description": "Choose the app clients to add to the panel. For each one the panel creates a user and access to this server.",
+    "protocol": "Installation",
+    "warning": "Clients' working configs do not change. The panel cannot show a config or QR code: the private key exists only in the client's app. When the term ends, the panel revokes access and removes the client from the server. While clients are in the panel, do not manage them in the AmneziaVPN app.",
+    "validUntil": "Access valid until",
+    "validUntilHint": "The last day of access for all selected clients.",
+    "selectNew": "Select all new",
+    "clearSelection": "Clear selection",
+    "selected": "Selected: {{count}}",
+    "clients": "Server clients",
+    "pick": "Take over client {{address}}",
+    "appName": "in the app: {{name}}",
+    "noName": "no name",
+    "noAddress": "no address",
+    "handshake": "connected {{when}}",
+    "neverConnected": "never connected",
+    "username": "User name",
+    "email": "Email (optional)",
+    "defaultName": "Client {{number}}",
+    "status": {
+      "new": "new",
+      "in_panel": "already in the panel",
+      "revoked_in_panel": "was in the panel, revoked",
+      "unsupported": "not supported"
+    },
+    "why": {
+      "in_panel": "This client is already in the panel, there is no need to take it over again.",
+      "unsupported": "The panel takes over only clients with a single IPv4 address; this one has a different address."
+    },
+    "submit": "Take over",
+    "busy": "Queuing…",
+    "problems": {
+      "none": "Select at least one client.",
+      "tooMany": "At most {{max}} clients can be taken over at once.",
+      "date": "Enter the last day of access: tomorrow at the earliest and no more than 10 years ahead.",
+      "username": "Name: 1 to 100 characters, no control characters.",
+      "email": "Enter a full email such as name@example.com, or leave it empty.",
+      "emailDuplicate": "This email is already used for another client.",
+      "summary": "There are errors in {{count}} fields. Fix them and submit again."
+    },
+    "errors": {
+      "notFound": "Server not found — it may have been deleted.",
+      "conflict": "The takeover was not queued: one is already running on the server, SSH access is not set, or the client is no longer in the latest discovery report. Find existing Amnezia again and retry.",
+      "invalid": "Check the data: names up to 100 characters, a full email, a term in the future."
+    },
+    "progress": "Taking over clients…",
+    "failed": "The takeover failed: {{error}}",
+    "failedNoText": "The takeover failed. See the jobs log for details.",
+    "resultTitle": "Takeover finished",
+    "result": {
+      "imported": "Taken over: {{count}}",
+      "already": "Already in the panel: {{count}}",
+      "gone": "Gone from the server: {{count}}",
+      "unsupported": "Not supported: {{count}}",
+      "conflict": "Not taken over because of conflicts: {{count}}",
+      "nothing": "Nothing was taken over."
+    },
+    "reasons": {
+      "userHasAccess": "The user already has access to this server and protocol.",
+      "emailTaken": "A user with this email already exists.",
+      "userNotFound": "User not found.",
+      "notInEffect": "The user's access term is not in effect now.",
+      "inPast": "The access term is already in the past.",
+      "dataConflict": "Conflicts with existing data."
+    },
+    "done": "Done",
+    "close": "Close",
+    "limit": "At most {{max}} clients can be taken over at once. The first ones are selected; take over the rest in a separate run."
   }
 }

@@ -40,6 +40,12 @@ export const AUDIT_ACTIONS: Record<AuditAction, ActionInfo> = {
   server_sync_started: { group: "servers" },
   server_sync_completed: { group: "servers" },
   server_sync_failed: { group: "servers", tone: "down" },
+  server_discover_started: { group: "servers" },
+  server_discover_completed: { group: "servers" },
+  server_discover_failed: { group: "servers", tone: "down" },
+  clients_import_started: { group: "servers" },
+  clients_import_completed: { group: "servers" },
+  clients_import_failed: { group: "servers", tone: "down" },
   server_ssh_key_install_started: { group: "servers" },
   server_ssh_key_install_completed: { group: "servers" },
   server_ssh_key_install_failed: { group: "servers", tone: "down" },
@@ -64,6 +70,7 @@ export const AUDIT_ACTIONS: Record<AuditAction, ActionInfo> = {
   access_expired: { group: "access" },
   access_deleted: { group: "access" },
   credential_issued: { group: "configs" },
+  credential_imported: { group: "configs" },
   credential_issue_failed: { group: "configs", tone: "down" },
   credential_revoked: { group: "configs" },
   credential_revoke_failed: { group: "configs", tone: "down" },
@@ -172,6 +179,17 @@ const DETAIL_KEYS = [
   "lock_seconds",
   "panel_key_left_on_server",
   "sessions_revoked",
+  // Поиск и перенос клиентов AmneziaVPN: только счётчики и публичный ключ. Идентификаторы (protocol_id, user_id,
+  // access_grant_id, server_id) не выводятся: они нужны для ссылок на объекты, а не для чтения глазами.
+  "protocols",
+  "clients",
+  "imported",
+  "already",
+  "gone",
+  "unsupported",
+  "conflict",
+  "public_key",
+  "source",
 ] as const;
 
 const show = (value: unknown): string =>

@@ -67,6 +67,45 @@ describe("AUDIT_ACTIONS", () => {
   });
 });
 
+describe("AmneziaVPN discovery and takeover events", () => {
+  it("are grouped with servers, and a taken-over client with configs; failures are red", () => {
+    for (const action of [
+      "server_discover_started",
+      "server_discover_completed",
+      "server_discover_failed",
+      "clients_import_started",
+      "clients_import_completed",
+      "clients_import_failed",
+    ] as const) {
+      expect(AUDIT_ACTIONS[action].group).toBe("servers");
+    }
+    expect(AUDIT_ACTIONS.credential_imported.group).toBe("configs");
+    expect(AUDIT_ACTIONS.server_discover_failed.tone).toBe("down");
+    expect(AUDIT_ACTIONS.clients_import_failed.tone).toBe("down");
+    expect(actionsOfGroup("servers")).toContain("clients_import_completed");
+  });
+
+  it("have a text in both languages", async () => {
+    await i18n.changeLanguage("ru");
+    expect(auditActionText("credential_imported")).toBe("Клиент подхвачен из AmneziaVPN");
+    await i18n.changeLanguage("en");
+    expect(auditActionText("credential_imported")).toBe("Client taken over from AmneziaVPN");
+  });
+
+  it("link the taken-over client's record to its server", () => {
+    const subject = auditSubject(
+      log({
+        action: "credential_imported",
+        entity_type: "vpn_credential",
+        entity_id: crypto.randomUUID(),
+        metadata: { server_id: SERVER_ID },
+      }),
+      names({ servers: new Map([[SERVER_ID, "lab-1"]]) }),
+    );
+    expect(subject).toEqual({ label: "lab-1", to: `/servers/${SERVER_ID}` });
+  });
+});
+
 describe("actionsOfGroup", () => {
   it("lists the actions of one group", () => {
     const servers = actionsOfGroup("servers");
@@ -219,6 +258,48 @@ describe("auditDetails", () => {
     for (const secret of ["SECRET", "hunter2", "PrivateKey", "private_key", "[Interface]"]) {
       expect(text).not.toContain(secret);
     }
+  });
+
+  it("shows the counters of an AmneziaVPN discovery and takeover, but not the ids", () => {
+    const text = shown(
+      log({
+        action: "clients_import_completed",
+        metadata: {
+          protocol_id: "99999999-9999-4999-8999-999999999999",
+          protocols: 1,
+          clients: 4,
+          imported: 3,
+          already: 1,
+          gone: 2,
+          unsupported: 5,
+          conflict: 6,
+          user_id: USER_ID,
+          server_id: SERVER_ID,
+          access_grant_id: "88888888-8888-4888-8888-888888888888",
+        },
+      }),
+    );
+    for (const label of [
+      "Найдено установок",
+      "Клиентов",
+      "Подхвачено",
+      "Уже были в панели",
+      "Пропали с сервера",
+      "Не поддерживаются",
+      "Конфликтов",
+    ])
+      expect(text).toContain(label);
+    for (const hidden of ["99999999", USER_ID, SERVER_ID, "88888888"]) expect(text).not.toContain(hidden);
+  });
+
+  it("shows the public key of a client taken over, and where a user came from", () => {
+    const text = shown(
+      log({ action: "credential_imported", metadata: { public_key: "pubkey=", source: "import" } }),
+    );
+    expect(text).toContain("Публичный ключ клиента");
+    expect(text).toContain("pubkey=");
+    expect(text).toContain("Источник");
+    expect(text).toContain("import");
   });
 
   it("copes with a record that has no metadata", () => {

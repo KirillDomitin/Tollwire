@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { Job } from "../../api/client";
 import { isUnfinished, jobLabel, jobStatusLabel } from "../../lib/jobs";
 import { exactTime, timeAgo } from "../../lib/time";
+import { importSummary, type ImportResult } from "./discovery";
 import styles from "./ServerPage.module.css";
 
 interface Check {
@@ -27,6 +28,11 @@ export function JobsLog({ jobs }: { jobs: Job[] }) {
     <ol className={styles.jobs}>
       {jobs.map((job) => {
         const checks = (job.result?.checks as Check[] | undefined) ?? [];
+        // Итог переноса клиентов AmneziaVPN — сразу в строке задачи, без раскрытия.
+        const imported =
+          job.type === "import_clients" && job.status === "success"
+            ? importSummary(job.result as ImportResult | null)
+            : [];
         return (
           <li key={job.id} className={styles.job} data-status={job.status}>
             <div className={styles.jobHead}>
@@ -40,6 +46,7 @@ export function JobsLog({ jobs }: { jobs: Job[] }) {
               </time>
             </div>
             {job.error && <p className={styles.jobError}>{job.error}</p>}
+            {imported.length > 0 && <p className={styles.jobSummary}>{imported.join(" · ")}</p>}
             {checks.length > 0 && !isUnfinished(job) && (
               <details className={styles.report}>
                 <summary>{t("servers.jobsLog.report")}</summary>

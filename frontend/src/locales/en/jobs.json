@@ -9,7 +9,9 @@
     "health_check": "Health check",
     "create_user": "Client issue",
     "revoke_access": "Client revoke",
-    "delete_user": "User deletion"
+    "delete_user": "User deletion",
+    "discover_vpn": "AmneziaVPN discovery",
+    "import_clients": "AmneziaVPN clients takeover"
   },
   "statuses": {
     "pending": "Queued",

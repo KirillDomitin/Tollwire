@@ -370,6 +370,12 @@
   overflow-wrap: anywhere;
 }
 
+.jobSummary {
+  margin: 0;
+  font-size: var(--text-meta);
+  color: var(--pine-soft);
+}
+
 .report {
   font-size: var(--text-meta);
 }

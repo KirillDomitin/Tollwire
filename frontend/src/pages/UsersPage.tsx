@@ -101,7 +101,7 @@ function UserTable({ users }: { users: VPNUserListItem[] }) {
               <Link to={`/users/${user.id}`} className={styles.link}>
                 {user.username}
               </Link>
-              <span className={styles.address}>{user.email}</span>
+              <span className={styles.address}>{user.email ?? "—"}</span>
             </th>
             <td>
               <span className={styles.state} data-signal={signal}>
