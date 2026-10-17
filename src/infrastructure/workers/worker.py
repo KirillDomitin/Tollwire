@@ -16,6 +16,7 @@ from core.log import bind
 from core.ssh_exception import SSHServerError
 from infrastructure.vpn.provider import ProviderStatus
 from infrastructure.workers.locks import ServerLock
+from modules.access.import_service import ClientImportService
 from modules.access.models.vpn_credential import VPNCredential
 from modules.access.service import VPNCredentialService
 from modules.audit.actor import AuditActor
@@ -98,6 +99,7 @@ class JobWorker:
                 JobType.HEALTH_CHECK,
                 JobType.INSTALL_SSH_KEY,
                 JobType.DISCOVER_VPN,
+                JobType.IMPORT_CLIENTS,
             ]:
                 if not job.server_id:
                     await self._reject(session, job, f"Job with type '{job.type.value}' must have server_id")
@@ -137,6 +139,10 @@ class JobWorker:
 
                         case JobType.DISCOVER_VPN:
                             job.result = await ServerDiscoveryService(session).discover(server_id)
+
+                        case JobType.IMPORT_CLIENTS:
+                            async with ServerLock(server_id):
+                                job.result = await ClientImportService(session, actor).run(job)
 
                         case JobType.REVOKE_ACCESS:
                             async with ServerLock(server_id):

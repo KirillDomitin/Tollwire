@@ -6,9 +6,9 @@
 
 | Файл | Что внутри |
 |---|---|
-| `provider.py` | `VPNProvider` (ABC) и структуры: `ProviderState`, `ProviderStatus`, `VPNClientInfo`, `VPNClientConfig` (config с `repr=False`), `ProviderHealth`, `SyncResult`. Общая логика: `client_counts(now)` (всего / онлайн: рукопожатие за `ACTIVE_HANDSHAKE_WINDOW_SECONDS` = 180 с), `share_link`/`share_qr_codes` (по умолчанию None), `discover()` (по умолчанию None: тип не участвует в поиске), структуры `Discovery`/`DiscoveredClient`. |
+| `provider.py` | `VPNProvider` (ABC) и структуры: `ProviderState`, `ProviderStatus`, `VPNClientInfo`, `VPNClientConfig` (config с `repr=False`), `ProviderHealth`, `SyncResult`. Общая логика: `client_counts(now)` (всего / онлайн: рукопожатие за `ACTIVE_HANDSHAKE_WINDOW_SECONDS` = 180 с), `share_link`/`share_qr_codes` (по умолчанию None), `discover()` (по умолчанию None: тип не участвует в поиске), структуры `Discovery`/`DiscoveredClient`, `ImportablePeer` (клиент для импорта; PSK не в repr), `read_importable()` (по умолчанию `UnsupportedOperationError`). |
 | `amnezia.py` | `AmneziaInstaller` (готовность сервера: root + Linux + Docker, `ensure_ready`, версия Docker, задержка до интернета) и `AmneziaWGProvider` (протокол). |
-| `awg_config.py` | Чистые функции без SSH: ключи (X25519 + PSK, генерируются **локально**, не на сервере), порт, случайная обфускация, рендер `awg0.conf`, разбор секций, `[Peer]`-блоки, аллокатор адресов, NAT-хуки, конфиг клиента, разбор рукопожатий, разбор `clientsTable` и `[Peer]` для поиска (`discover_peers`). |
+| `awg_config.py` | Чистые функции без SSH: ключи (X25519 + PSK, генерируются **локально**, не на сервере), порт, случайная обфускация, рендер `awg0.conf`, разбор секций, `[Peer]`-блоки, аллокатор адресов, NAT-хуки, конфиг клиента, разбор рукопожатий, разбор `clientsTable`, `[Peer]` для поиска (`discover_peers`) и для импорта с PSK (`importable_peers`, `ImportedPeer`). |
 | `amnezia_app.py` | `AmneziaAppAWGProvider` и `AmneziaAppAWG2Provider` — установка приложения AmneziaVPN: чтение, отзыв клиента и возврат peer'а (см. раздел ниже). |
 | `amnezia_link.py` | Ссылка `vpn://` и серия QR в формате приложения AmneziaVPN. |
 | `config.py` | Константы: имя контейнера, образ по дайджесту, пути, подсеть, NAT, DNS клиента, шаблон конфига. |
@@ -50,13 +50,16 @@
   возврат — `restore_peer`. До этих операций API не доходит: эндпоинты протокола работают только с `AMNEZIA_WG`.
 - `list_clients()`, `sync()` и `discover()` читают через общий `_read()`. `discover()` возвращает `Discovery`
   (контейнер, состояние, образ, порт, клиенты: ключ, адрес, имя, последнее рукопожатие, `supported`).
+- `read_importable()` (импорт, только чтение): конфиг и `clientsTable` → `ImportablePeer` (ключ, адрес, PSK,
+  имя). Контейнера нет, он остановлен или не контейнер приложения, конфиг нечитаем — `CommandExecutionError`,
+  а не «клиентов нет». Нечитаемая таблица — клиенты без имён.
 - `clientsTable` — JSON в двух формах: список `{clientId, clientName}` или объект `{clientId: {clientName}}`; имя
   может лежать в `userData`. `parse_clients_table`: длиннее 1 МиБ (в символах) или не JSON → `{}`; из имени удаляются управляющие,
   невидимые и разделители строк (Unicode-категории Cc, Cs, Cf, Zl, Zp), длина ≤ 100.
 - `discover_peers` (`awg_config.py`) берёт из серверного конфига `[Peer]`-ы: `PublicKey` (невалидный — пропуск) и
   `AllowedIPs`. Один IPv4 `/32` — адрес; иначе адреса нет и `supported=False` (несколько адресов, IPv6, не `/32`).
-- Из серверного конфига берутся `ListenPort` и поля `[Peer]` выше. `PrivateKey` и `PresharedKey` в структуры,
-  `Discovery` и отчёт не попадают.
+- Из серверного конфига берутся `ListenPort` и поля `[Peer]` выше. `PrivateKey` не попадает никуда. `PresharedKey` — только в `ImportedPeer` / `ImportablePeer` (импорт);
+  в `Discovery` и отчёт поиска не попадает ни один из них.
 
 ### Запись: `revoke_client`, `restore_peer`
 

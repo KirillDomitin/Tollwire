@@ -32,7 +32,7 @@
 
 CRUD; `PUT/GET/DELETE /{id}/credentials`; `POST /{id}/test-connection`; `POST /{id}/host-key/scan`,
 `PUT/DELETE /{id}/host-key`; задачи (202 + `JobRead`): `POST /{id}/install`, `POST /{id}/ssh-key`,
-`POST/DELETE /{id}/protocol`, `POST /{id}/sync`, `POST /{id}/health`, `POST /{id}/discover`; `GET /{id}/protocols`; `GET /{id}/discovery` (отчёт поиска, не задача; 404 — сервера нет). `discover` — право
+`POST/DELETE /{id}/protocol`, `POST /{id}/sync`, `POST /{id}/health`, `POST /{id}/discover`, `POST /{id}/import` (`servers:manage`, тело — см. «Импорт клиентов»); `GET /{id}/protocols`; `GET /{id}/discovery` (отчёт поиска, не задача; 404 — сервера нет). `discover` — право
 `servers:check`, `discovery` — `servers:read`. Права —
 см. `modules/auth/CLAUDE.md`.
 
@@ -55,20 +55,21 @@ CRUD; `PUT/GET/DELETE /{id}/credentials`; `POST /{id}/test-connection`; `POST /{
 - Ключ панели (`ssh_key.py`): записать в authorized_keys → войти новым ключом отдельным соединением → под
   `FOR UPDATE` сверить `updated_at` учётки и заменить её → снять прежние ключи по метке. Сбой до замены снимает
   новый ключ (итог `rolled_back` в аудите); если замена в БД всё-таки прошла (потерян ответ commit) — ключ остаётся.
-- Sync чинит по БД: живых клиентов восстанавливает из сохранённого конфига, отозванных и «сирот» с именем
-  `grant-*` удаляет, чужие peer'ы — только в отчёт. Меняет статус сервера (OFFLINE/READY).
+- Sync чинит по БД: живых клиентов восстанавливает из сохранённого конфига (импортированных — `restore_peer` по PSK и
+  адресу; без PSK — в `issues`, peer не возвращается), отозванных и «сирот» с именем `grant-*` удаляет, чужие
+  peer'ы — только в отчёт. Меняет статус сервера (OFFLINE/READY).
 - Приложение AmneziaVPN (`APP_PROTOCOLS`): «сирот» не удаляет (имена клиентов приложения не доверенные, такой peer —
   в `foreign`). Отзыв по credential'ам БД (`revoked_keys`, `stale`) пишет в контейнер приложения (`revoke_client`).
-  `restore_client` для приложения → `UnsupportedOperationError`: клиент попадает в `issues`, sync не падает.
-  Строки APP-протокола и credential панель сама не создаёт (`install` для них не поддержан), поэтому этот путь
-  без них не срабатывает.
+  Восстановление: импортированные credential'ы — `restore_peer`; выданный конфиг (в норме таких нет) —
+  `restore_client` → `UnsupportedOperationError`: клиент попадает в `issues`, sync не падает. Строку APP-протокола
+  создаёт только импорт (`ClientImportService`), `install` для них не поддержан.
 - Health: SSH, Docker, контейнер, протокол, NAT, задержка до интернета. SSH недоступен → задача SUCCESS со
   статусом down.
 
 ## Поиск установки AmneziaVPN (`discovery.py`)
 
-Поиск только читает сервер. Найденное приложение панель не ставит, не удаляет и не меняет его клиентов; импорта
-клиентов пока нет.
+Поиск только читает сервер. Найденное приложение панель не ставит, не удаляет и не меняет его клиентов. Перенос
+клиентов в БД панели — отдельная задача импорта (раздел «Импорт клиентов» ниже); сервер при нём не меняется.
 
 - `POST /{id}/discover` → задача `DISCOVER_VPN` (без ServerLock). `discover()` спрашивает провайдер каждого
   `ProtocolType`; отвечают только классы приложения (`AmneziaWGProvider.discover()` — None, в отчёт не входит).
@@ -87,12 +88,30 @@ CRUD; `PUT/GET/DELETE /{id}/credentials`; `POST /{id}/test-connection`; `POST /{
   AmneziaVPN app, not managed». Сама установка приложения сервер в DEGRADED не переводит; остановленный контейнер
   или нечитаемый конфиг приложения переводят (их проверки ok=false). Контейнера нет — в отчёт не попадает.
 
+## Импорт клиентов AmneziaVPN (`POST /{id}/import`)
+
+Перенос клиентов установленной AmneziaVPN в БД панели делает `ClientImportService` (`modules/access/import_service.py`,
+логика — в `modules/access/CLAUDE.md`). Сервер не меняется.
+
+- Тело: `protocol_type` (только протокол приложения), `valid_until` (с часовым поясом, в будущем), `clients`
+  (1–250, ключи не повторяются). У клиента: `public_key`, `username` и либо `user_id` существующего пользователя,
+  либо необязательный `email` для нового. Лишние поля (в том числе PSK) игнорируются: PSK берётся с сервера.
+- Ответ — 202 с `JobRead`; итог — в `result` задачи `IMPORT_CLIENTS` (формат — `modules/jobs/CLAUDE.md`).
+- 422 — пустой или повторяющийся список, больше 250 клиентов, не протокол приложения, `valid_until` не в будущем,
+  `user_id` и `email` вместе, неверный ключ или имя.
+- 404 — сервера нет, `user_id` не найден. 409 — нет SSH-учётки; ключа нет в последнем отчёте поиска этого
+  протокола (`GET /{id}/discovery`) или клиент не поддерживается; на сервере уже идёт импорт.
+- `DELETE /{id}/protocol` при живых импортированных клиентах → 409 (`LiveCredentialExistsError`), как и для
+  обычных.
+
 ## Известные проблемы
 
 - Sync удаляет всех «сирот» `grant-*` (кроме APP-протоколов): если один сервер подключён к двум панелям (dev и prod), каждая удаляет
   клиентов другой. Решение-кандидат — метка панели в имени peer'а.
 - Health при незакреплённом ключе хоста пишет `down`, хотя сервер жив (не различает «недоступен» и «нельзя войти
   по правилам»).
+- Импортированный клиент без PSK (в конфиге сервера нет `PresharedKey`) sync не возвращает на сервер: без
+  `encrypted_psk` peer не восстанавливается, и в `issues` каждый раз попадает запись.
 
 ## Аудит
 

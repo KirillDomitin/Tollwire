@@ -16,6 +16,7 @@ class VPNUserStatus(enum.Enum):
 class VPNUser(UuidPkMixin, TimestampMixin, Base):
     __tablename__ = "vpn_users"
     username: Mapped[str] = mapped_column(String(100))
-    email: Mapped[str] = mapped_column(String(100), unique=True)
+    # NULL — у клиентов, подхваченных из AmneziaVPN (там email не было); unique допускает несколько NULL.
+    email: Mapped[str | None] = mapped_column(String(100), unique=True)
     description: Mapped[str | None] = mapped_column(String(300))
     status: Mapped[VPNUserStatus] = mapped_column(default=VPNUserStatus.DISABLED, server_default=text("'DISABLED'"))

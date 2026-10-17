@@ -7,7 +7,7 @@ from uuid import UUID
 from pydantic import AwareDatetime, BaseModel, ConfigDict, model_validator
 
 from core.schemas import PatchModel
-from modules.access.models import AccessGrantStatus
+from modules.access.models import AccessGrantStatus, CredentialSource
 
 
 # AwareDatetime — только с часовым поясом: «2026-10-01T00:00» без пояса непонятно чьё время, а сравнение
@@ -51,6 +51,8 @@ class VPNCredentialRead(BaseModel):
     access_grant_id: UUID
     revoked_at: datetime | None
     created_at: datetime
+    source: CredentialSource
+    external_name: str | None = None  # имя клиента в AmneziaVPN (у импортированного)
 
 
 class VPNCredentialConfigRead(BaseModel):

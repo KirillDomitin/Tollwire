@@ -10,10 +10,14 @@
   PENDING → RUNNING → SUCCESS/FAILED. Одна сессия БД на задачу; любая ошибка → FAILED с текстом
   (`job_error_text`: redact + обрезка), цикл живёт дальше.
 - Диспетчер `match JobType`: `CREATE_USER`, `REVOKE_ACCESS`, `SYNC_SERVER`, `HEALTH_CHECK`, `INSTALL_SERVER`,
-  `INSTALL_PROTOCOL`, `REMOVE_PROTOCOL`, `INSTALL_SSH_KEY`, `DISCOVER_VPN` (`DELETE_USER` — заглушка; `UNINSTALL_SERVER` не
+  `INSTALL_PROTOCOL`, `REMOVE_PROTOCOL`, `INSTALL_SSH_KEY`, `DISCOVER_VPN`, `IMPORT_CLIENTS` (`DELETE_USER` — заглушка; `UNINSTALL_SERVER` не
   обрабатывается → явный FAILED). Серверная задача без `server_id` → FAILED (`_reject`).
 - `DISCOVER_VPN` — без ServerLock, только чтение (`ServerDiscoveryService.discover`). `INSTALL_SERVER` после
   установки делает тот же поиск внутри своей задачи: сбой поиска логируется (warning), установка остаётся SUCCESS.
+- `IMPORT_CLIENTS` — под `ServerLock`: `ClientImportService.run(job)` (читает сервер, пишет в БД в той же
+  сессии). Commit делает воркер уже после снятия блокировки (статус задачи и данные импорта — одной
+  транзакцией). Окно между снятием и commit известно и безвредно: новый импорт на этом сервере не ставится,
+  пока задача не завершена (`has_unfinished_for_server`).
 - Серверные операции — под `ServerLock`; сервер занят → задача обратно в PENDING и в очередь с паузой.
 - Перед записью FAILED — `rollback` и перечитать Job (сессия могла сломаться).
 - Сбой Redis → backoff, не падение процесса. Логи с `bind(job_id, job_type, server_id)`.

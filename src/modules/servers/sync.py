@@ -11,6 +11,7 @@ from core.security import decrypt_secret
 from core.ssh_exception import CommandExecutionError, UnsupportedOperationError
 from infrastructure.vpn.amnezia import AmneziaInstaller
 from infrastructure.vpn.provider import ProviderState, VPNClientInfo, VPNProvider
+from modules.access.models import CredentialSource
 from modules.access.models.vpn_credential import VPNCredential
 from modules.access.repository import VPNCredentialRepository
 from modules.access.service import CLIENT_NAME_PREFIX, client_name, inactive_reason
@@ -169,10 +170,26 @@ class ServerSyncService:
         for public_key, (credential, access_grant_id) in live.items():
             if public_key in server_keys:
                 continue
-            # Конфиг расшифровывается только в памяти и уходит провайдеру; в отчёт и логи не попадает.
-            config = decrypt_secret(credential.encrypted_config)
+            # Секреты (конфиг, PSK) расшифровываются только в памяти и уходят провайдеру; в отчёт и логи не попадают.
             try:
-                await provider.restore_client(client_name(access_grant_id), config)
+                if credential.source == CredentialSource.IMPORTED:
+                    # Конфига нет (приватный ключ остался в приложении клиента): peer возвращается по PSK и адресу.
+                    if credential.encrypted_psk is None:
+                        issues.append(f"Credential {credential.id} was not restored: no PSK stored")
+                        continue
+                    await provider.restore_peer(
+                        client_name(access_grant_id),
+                        credential.client_public_key,
+                        decrypt_secret(credential.encrypted_psk),
+                        credential.client_address,
+                    )
+                else:
+                    if credential.encrypted_config is None:  # CHECK в БД этого не допускает; страховка от порчи данных
+                        issues.append(f"Credential {credential.id} was not restored: no config stored")
+                        continue
+                    await provider.restore_client(
+                        client_name(access_grant_id), decrypt_secret(credential.encrypted_config)
+                    )
             except (CommandExecutionError, UnsupportedOperationError, ValueError) as exc:
                 # Один битый клиент (адрес занят чужим peer'ом, повреждённый конфиг) не должен срывать весь sync.
                 issues.append(f"Credential {credential.id} was not restored: {exc}")

@@ -15,6 +15,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- Importing clients of an installed AmneziaVPN app into the panel: `POST /api/v1/servers/{id}/import` takes the chosen
+  clients from the last discovery report and gives each one a user (an existing one, or a new one whose email may be
+  empty), a subscription and an access grant. The admin sets the access period; the server does not change. The
+  panel holds no config for an imported client, because its private key stays in the app, so the config cannot be
+  shown. Issuing new clients in the app's container is not supported yet.
 - Removing a client of an AmneziaVPN app from the panel: its peer leaves the server and its name leaves the app's
   client list, applied to the running VPN without a restart. Before writing, the panel re-reads the app's config; if
   applying fails, it restores the previous config and re-aligns the interface with the file. Returning a client's peer
@@ -23,7 +28,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Finding an existing AmneziaVPN app on a server (read-only): `POST /api/v1/servers/{id}/discover` starts a job,
   `GET /api/v1/servers/{id}/discovery` returns the last report with each client's status (`new`, `in_panel`,
   `revoked_in_panel`, `unsupported`). Installing a server runs the search too. The panel does not change the app
-  or its clients; importing them is not implemented yet.
+  or its clients.
 - An AmneziaVPN install that the panel did not make does not, by itself, mark the server DEGRADED.
 - Changing your own password: `POST /api/v1/auth/change-password`, and a "Change password" button in the sidebar.
   It ends the other sessions and revokes access tokens issued before the change; wrong current passwords are

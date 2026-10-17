@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database.postgres import get_session
 from core.exceptions import AlreadyExistsError, CredentialNotFound, LiveCredentialExistsError, NotFoundError, SSHError
+from modules.access.import_service import ClientImportService
 from modules.audit.actor import AuditActor
 from modules.audit.dependencies import get_audit_actor
 from modules.auth.dependencies import get_current_admin, require
@@ -22,6 +23,7 @@ from modules.servers.host_key import ServerHostKeyService
 from modules.servers.models.credential import ServerCredential
 from modules.servers.models.server import VPNServer
 from modules.servers.schemas import (
+    ClientImportCreate,
     CredentialCreate,
     CredentialRead,
     DiscoveryRead,
@@ -278,6 +280,28 @@ async def server_discovery(server_id: UUID, session: Annotated[AsyncSession, Dep
         return await ServerDiscoveryService(session).latest(server_id)
     except NotFoundError:
         raise HTTPException(404, detail="Server not found")
+
+
+@router.post(
+    "/{server_id}/import",
+    dependencies=[Depends(require(Permission.SERVERS_MANAGE))],
+    response_model=JobRead,
+    status_code=202,
+)
+async def import_clients(
+    server_id: UUID,
+    body: ClientImportCreate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[AuditActor, Depends(get_audit_actor)],
+) -> Job:
+    """Переносит выбранных клиентов установленной AmneziaVPN в БД панели (сервер не меняется). Ключи берутся из
+    последнего отчёта поиска (GET /discovery); итог - в result задачи."""
+    try:
+        return await ClientImportService(session, actor).schedule(server_id, body)
+    except NotFoundError as exc:
+        raise HTTPException(404, detail=str(exc))
+    except CredentialNotFound:
+        raise HTTPException(409, detail="Credentials do not exist to perform this operation")
 
 
 @router.delete(

@@ -32,6 +32,7 @@ class JobType(enum.Enum):
     INSTALL_PROTOCOL = "install_protocol"
     INSTALL_SSH_KEY = "install_ssh_key"
     DISCOVER_VPN = "discover_vpn"
+    IMPORT_CLIENTS = "import_clients"
 
 
 class Job(UuidPkMixin, TimestampMixin, Base):
@@ -51,5 +52,8 @@ class Job(UuidPkMixin, TimestampMixin, Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     # Итог задачи, если он есть (отчёт sync/health). Без секретов — поле отдаётся в JobRead как есть.
     result: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
+    # Входные данные задачи, если они нужны (список клиентов для импорта). Без секретов, но с именами и email клиентов:
+    # поле пишется в БД открытым и наружу (JobRead) не отдаётся.
+    params: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, default=None)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, default=None)

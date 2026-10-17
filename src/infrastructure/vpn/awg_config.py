@@ -7,7 +7,7 @@ import random
 import re
 import secrets
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from cryptography.hazmat.primitives import serialization
@@ -437,6 +437,14 @@ def parse_clients_table(text: str) -> dict[str, str]:
 
 
 @dataclass(frozen=True)
+class ImportedPeer:
+    public_key: str
+    address: str | None
+    psk: str | None = field(repr=False)
+    supported: bool
+
+
+@dataclass(frozen=True)
 class DiscoveredPeer:
     public_key: str
     address: str | None
@@ -468,4 +476,21 @@ def discover_peers(server_config: str) -> list[DiscoveredPeer]:
             continue  # ключ попадёт в JSON и в БД: принимаем только настоящие ключи WireGuard
         address = _peer_address(values.get("AllowedIPs"))
         peers.append(DiscoveredPeer(public_key=public_key, address=address, supported=address is not None))
+    return peers
+
+
+def importable_peers(server_config: str) -> list[ImportedPeer]:
+    """Peer'ы серверного конфига вместе с PSK — для импорта. Ключи те же, что в discover_peers; пустой
+    PresharedKey считается отсутствующим."""
+    peers = []
+    for section in _split_sections(server_config):
+        if _section_name(section) != "[Peer]":
+            continue
+        values = _section_values(section)
+        public_key = values.get("PublicKey")
+        if not public_key or not is_valid_public_key(public_key):
+            continue
+        address = _peer_address(values.get("AllowedIPs"))
+        psk = values.get("PresharedKey") or None
+        peers.append(ImportedPeer(public_key=public_key, address=address, psk=psk, supported=address is not None))
     return peers

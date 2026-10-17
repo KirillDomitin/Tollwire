@@ -70,10 +70,15 @@ class AuditAction(enum.Enum):
     ACCESS_DELETED = "access_deleted"
     # Клиенты на серверах (credential'ы)
     CREDENTIAL_ISSUED = "credential_issued"
+    CREDENTIAL_IMPORTED = "credential_imported"
     CREDENTIAL_ISSUE_FAILED = "credential_issue_failed"
     CREDENTIAL_REVOKED = "credential_revoked"
     CREDENTIAL_REVOKE_FAILED = "credential_revoke_failed"
     CONFIG_VIEWED = "config_viewed"
+    # Импорт клиентов из установленной AmneziaVPN в БД панели
+    CLIENTS_IMPORT_STARTED = "clients_import_started"
+    CLIENTS_IMPORT_COMPLETED = "clients_import_completed"
+    CLIENTS_IMPORT_FAILED = "clients_import_failed"
 
 
 class AuditEntity:

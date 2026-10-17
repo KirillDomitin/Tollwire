@@ -25,6 +25,17 @@
 - Downgrade удаляет строки `protocols` с новыми типами и `jobs` с `DISCOVER_VPN`, затем пересоздаёт оба enum без
   новых значений. Значение из enum Postgres иначе не убрать.
 
+## Импорт клиентов (`f6b2d8a41c73`)
+
+- `jobtype` += `IMPORT_CLIENTS` — в `autocommit_block`, с `IF NOT EXISTS`.
+- `vpn_users.email` → NULL. `vpn_credentials`: `encrypted_config` → NULL; `source` (VARCHAR(16), не
+  Postgres-enum; `server_default 'ISSUED'` — старые строки становятся ISSUED), `encrypted_psk`,
+  `external_name`; CHECK `ck_vpn_credentials_issued_has_config`. `jobs.params` (JSONB, NULL).
+- Downgrade: удаляет гранты, у которых остались только `IMPORTED` credential'ы (вместе с ними), затем сами
+  `IMPORTED` credential'ы и задачи `IMPORT_CLIENTS`; пользователям без email ставит `<id>@imported.invalid`;
+  дальше возвращает NOT NULL и пересоздаёт `jobtype` без нового значения. Гранты с обычным credential'ом,
+  пользователи, подписки и peer'ы на сервере не трогаются.
+
 ## Частичные уникальные индексы
 
 Бизнес-правила «одна живая запись» держит БД (`postgresql_where=...`): одна незавершённая подписка на

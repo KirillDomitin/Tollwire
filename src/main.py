@@ -20,8 +20,10 @@ from core.exceptions import (
     AdminRuleError,
     AlreadyExistsError,
     AppError,
+    ConfigUnavailableError,
     CredentialChangedError,
     CredentialNotFound,
+    ImportNotAllowedError,
     InactiveAccessError,
     InvalidDataError,
     JobAlreadyRunningError,
@@ -79,6 +81,8 @@ _STATUS_BY_ERROR: dict[type[AppError], int] = {
     SSHHostKeyNotPinnedError: 409,  # сначала scan + pin ключа сервера
     JobAlreadyRunningError: 409,  # такая же задача по серверу ещё не завершена
     CredentialChangedError: 409,
+    ConfigUnavailableError: 409,  # импортированный клиент: конфига нет
+    ImportNotAllowedError: 409,  # ключа нет в отчёте поиска или peer не поддерживается
 }
 
 

@@ -27,6 +27,7 @@ _STARTED: dict[JobType, AuditAction] = {
     JobType.SYNC_SERVER: AuditAction.SERVER_SYNC_STARTED,
     JobType.INSTALL_SSH_KEY: AuditAction.SERVER_SSH_KEY_INSTALL_STARTED,
     JobType.DISCOVER_VPN: AuditAction.SERVER_DISCOVER_STARTED,
+    JobType.IMPORT_CLIENTS: AuditAction.CLIENTS_IMPORT_STARTED,
 }
 _COMPLETED: dict[JobType, AuditAction] = {
     JobType.INSTALL_SERVER: AuditAction.SERVER_INSTALL_COMPLETED,
@@ -35,6 +36,7 @@ _COMPLETED: dict[JobType, AuditAction] = {
     JobType.SYNC_SERVER: AuditAction.SERVER_SYNC_COMPLETED,
     JobType.INSTALL_SSH_KEY: AuditAction.SERVER_SSH_KEY_INSTALL_COMPLETED,
     JobType.DISCOVER_VPN: AuditAction.SERVER_DISCOVER_COMPLETED,
+    JobType.IMPORT_CLIENTS: AuditAction.CLIENTS_IMPORT_COMPLETED,
 }
 _FAILED: dict[JobType, AuditAction] = {
     JobType.INSTALL_SERVER: AuditAction.SERVER_INSTALL_FAILED,
@@ -45,9 +47,11 @@ _FAILED: dict[JobType, AuditAction] = {
     JobType.REVOKE_ACCESS: AuditAction.CREDENTIAL_REVOKE_FAILED,
     JobType.INSTALL_SSH_KEY: AuditAction.SERVER_SSH_KEY_INSTALL_FAILED,
     JobType.DISCOVER_VPN: AuditAction.SERVER_DISCOVER_FAILED,
+    JobType.IMPORT_CLIENTS: AuditAction.CLIENTS_IMPORT_FAILED,
 }
 # Задачи, чей result (без секретов) целиком попадает в meta аудита: итог виден в журнале, а не только в задаче.
 _RESULT_IN_AUDIT = frozenset({JobType.INSTALL_SSH_KEY})
+_IMPORT_COUNTED = ("imported", "already", "gone", "unsupported", "conflict")
 _ERROR_MAX_LENGTH = 500
 
 
@@ -68,8 +72,22 @@ class JobService:
         self.audit = AuditService(session, actor)
         self.actor = actor
 
-    async def create(self, job_type: JobType, server_id: UUID | None, access_grant_id: UUID | None = None) -> Job:
-        job = Job(type=job_type, server_id=server_id, access_grant_id=access_grant_id, admin_id=self.actor.admin_id)
+    async def create(
+        self,
+        job_type: JobType,
+        server_id: UUID | None,
+        access_grant_id: UUID | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> Job:
+        """params - входные данные задачи. Без секретов: хранятся в БД открытым текстом, в аудит не попадают,
+        JobRead их не отдаёт."""
+        job = Job(
+            type=job_type,
+            server_id=server_id,
+            access_grant_id=access_grant_id,
+            admin_id=self.actor.admin_id,
+            params=params,
+        )
         await self.jobs.create(job)
         await self.session.flush()
         if job_type in _STARTED:
@@ -145,6 +163,11 @@ class JobService:
             found = job.result.get("protocols", [])
             meta["protocols"] = len(found)
             meta["clients"] = sum(len(item["clients"]) for item in found)
+        if job.type == JobType.IMPORT_CLIENTS and job.result:
+            # Только id протокола и счётчики: имена и ключи клиентов в журнал не попадают.
+            meta["protocol_id"] = job.result.get("protocol_id")
+            for name in _IMPORT_COUNTED:
+                meta[name] = len(job.result.get(name, []))
         return meta
 
     async def get(self, job_id: UUID) -> Job:

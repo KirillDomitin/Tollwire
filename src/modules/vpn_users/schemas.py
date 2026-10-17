@@ -34,7 +34,7 @@ class VPNUserRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
     username: str
-    email: str
+    email: str | None  # None — пользователь создан импортом клиентов из AmneziaVPN
     status: VPNUserStatus
     description: str | None = None
     created_at: datetime

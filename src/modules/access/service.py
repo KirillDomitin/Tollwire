@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions import (
     AlreadyExistsError,
+    ConfigUnavailableError,
     InactiveAccessError,
     InvalidDataError,
     LiveCredentialExistsError,
@@ -463,11 +464,18 @@ class VPNCredentialService:
         return await self.credentials.list_by_access_grant_id(access_grant_id)
 
     async def reveal_config(self, credential_id: UUID) -> VPNCredentialConfigRead:
-        """Выдаёт расшифрованный конфиг админу. Сам конфиг не логировать — в журнал идёт только факт выдачи."""
+        """Выдаёт расшифрованный конфиг админу. Сам конфиг не логировать — в журнал идёт только факт выдачи.
+
+        У импортированного клиента конфига нет: ConfigUnavailableError (409), аудита не пишется."""
         credential = await self.get(credential_id)
         if credential.revoked_at is not None:
             raise InactiveAccessError("Credential is revoked")
         grant = await self._ensure_grant_is_live(credential.access_grant_id)
+        if credential.encrypted_config is None:
+            # До записи в аудит: ничего не показали, значит и «просмотра» не было.
+            raise ConfigUnavailableError(
+                "Config is not stored: the client was imported from AmneziaVPN, its private key stays in the app"
+            )
         self.audit.record(
             AuditAction.CONFIG_VIEWED,
             AuditEntity.VPN_CREDENTIAL,

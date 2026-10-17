@@ -12,6 +12,7 @@ from infrastructure.vpn.amnezia import validate_name
 from infrastructure.vpn.awg_config import (
     append_peer,
     discover_peers,
+    importable_peers,
     interface_values,
     is_valid_public_key,
     list_peers,
@@ -26,6 +27,7 @@ from infrastructure.vpn.provider import (
     DiscoveredClient,
     Discovery,
     HealthCheck,
+    ImportablePeer,
     ProviderHealth,
     ProviderState,
     ProviderStatus,
@@ -315,6 +317,21 @@ class AmneziaAppProvider(VPNProvider):
             return None
         status, clients = read
         return Discovery(self.container, status.server_status, status.version, status.port, clients)
+
+    async def read_importable(self) -> list[ImportablePeer]:
+        """Всех peer'ов конфига с PSK и именем из clientsTable. Только чтение; остановленный контейнер, не
+        контейнер приложения или нечитаемый конфиг - CommandExecutionError (не «клиентов нет»). Имя - удобство:
+        нечитаемая таблица даёт клиентов без имён. Сообщения ошибок без содержимого конфига."""
+        await self._require_running()
+        config = await self._cat(self.config_file)
+        if config is None:
+            raise CommandExecutionError(f"Config of '{self.container}' is not readable")
+        table_text = await self._cat(CLIENTS_TABLE)
+        names = parse_clients_table(table_text) if table_text is not None else {}
+        return [
+            ImportablePeer(p.public_key, p.address, p.psk, names.get(p.public_key), p.supported)
+            for p in importable_peers(config)
+        ]
 
     async def health_check(self) -> ProviderHealth:
         found = await self._container()

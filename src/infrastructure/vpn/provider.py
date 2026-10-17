@@ -75,6 +75,17 @@ class DiscoveredClient:
     supported: bool
 
 
+@dataclass(frozen=True)
+class ImportablePeer:
+    """Клиент чужой установки, которого можно перенести в БД панели. PSK — секрет: не в repr, не в логи и исключения."""
+
+    public_key: str
+    address: str | None  # IPv4 без маски; None, если peer панель не поддерживает (supported=False)
+    psk: str | None = field(repr=False)  # None — у peer'а PresharedKey нет
+    name: str | None
+    supported: bool
+
+
 @dataclass
 class Discovery:
     container: str
@@ -115,6 +126,11 @@ class VPNProvider(ABC):
     async def discover(self) -> Discovery | None:
         """Что провайдер видит на сервере в режиме «только чтение». None — к поиску не относится."""
         return None
+
+    async def read_importable(self) -> list[ImportablePeer]:
+        """Клиенты установки, которых можно импортировать в панель (только чтение). Не поддержано по умолчанию;
+        контейнер не готов или конфиг нечитаем — CommandExecutionError."""
+        raise UnsupportedOperationError(f"{type(self).__name__} does not support importing clients")
 
     async def client_counts(self, now: datetime) -> tuple[int, int]:
         """Клиентов на сервере всего и онлайн. «Онлайн» — было рукопожатие за последние

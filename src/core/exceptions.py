@@ -98,6 +98,14 @@ class LiveCredentialExistsError(AppError):
     """Удаление запрещено: на сервере есть живой клиент, его нужно сначала отозвать."""
 
 
+class ConfigUnavailableError(AppError):
+    """Конфига клиента в панели нет: клиент подхвачен из AmneziaVPN, приватный ключ остался в приложении."""
+
+
+class ImportNotAllowedError(AppError):
+    """Клиентов нельзя импортировать: их нет в последнем отчёте поиска или панель их не поддерживает."""
+
+
 class ProtocolError(AppError): ...
 
 

@@ -1,14 +1,18 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-from datetime import datetime
-from typing import Annotated
+import unicodedata
+from datetime import datetime, timezone
+from typing import Annotated, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from core.schemas import PatchModel
+from infrastructure.vpn.awg_config import is_valid_public_key
+from modules.protocols.models.protocol import APP_PROTOCOLS, ProtocolType
 from modules.servers.models.credential import AuthType
 from modules.servers.models.server import HealthStatus, ServerStatus
+from modules.vpn_users.schemas import Email
 
 # Имя хоста или IP (v4/v6): буквы, цифры, точка, дефис, двоеточие. Без пробелов и спецсимволов — адрес
 # уходит в SSH-подключение, логи и аудит.
@@ -122,3 +126,65 @@ class DiscoveredProtocolRead(BaseModel):
 class DiscoveryRead(BaseModel):
     checked_at: datetime | None
     protocols: list[DiscoveredProtocolRead]
+
+
+def _public_key(value: str) -> str:
+    if not is_valid_public_key(value):
+        raise ValueError("Not a WireGuard public key")
+    return value
+
+
+PublicKey = Annotated[str, AfterValidator(_public_key)]
+IMPORT_MAX_CLIENTS = 250
+
+
+class ImportClient(BaseModel):
+    """Один клиент установки AmneziaVPN для переноса в панель. Пользователь: существующий (user_id) или новый
+    (username и, если известен, email). PSK и прочие секреты в запросе не принимаются и в параметры задачи не идут."""
+
+    public_key: PublicKey
+    username: Name
+    email: Email | None = None
+    user_id: UUID | None = None
+
+    @field_validator("username")
+    @classmethod
+    def _printable_username(cls, value: str) -> str:
+        """Имя уходит в БД и в параметры задачи (JSONB): управляющие символы (в том числе NUL) недопустимы."""
+        if any(unicodedata.category(char) in {"Cc", "Cs"} for char in value):
+            raise ValueError("Username must not contain control characters")
+        return value
+
+    @model_validator(mode="after")
+    def _one_user_source(self) -> Self:
+        if self.user_id is not None and self.email is not None:
+            raise ValueError("Provide either user_id or email, not both")
+        return self
+
+
+class ClientImportParams(BaseModel):
+    """Параметры задачи IMPORT_CLIENTS (Job.params). Воркер разбирает ими сохранённый JSON, поэтому срок в
+    будущем здесь не проверяется: к моменту выполнения он мог пройти."""
+
+    protocol_type: ProtocolType
+    valid_until: AwareDatetime
+    clients: Annotated[list[ImportClient], Field(min_length=1, max_length=IMPORT_MAX_CLIENTS)]
+
+    @model_validator(mode="after")
+    def _check(self) -> Self:
+        if self.protocol_type not in APP_PROTOCOLS:
+            raise ValueError("Only AmneziaVPN application protocols can be imported")
+        keys = [client.public_key for client in self.clients]
+        if len(set(keys)) != len(keys):
+            raise ValueError("Duplicate public_key in clients")
+        return self
+
+
+class ClientImportCreate(ClientImportParams):
+    """Тело POST /servers/{id}/import."""
+
+    @model_validator(mode="after")
+    def _future(self) -> Self:
+        if self.valid_until <= datetime.now(timezone.utc):
+            raise ValueError("valid_until must be in the future")
+        return self
