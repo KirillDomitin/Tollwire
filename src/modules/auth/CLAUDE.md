@@ -41,7 +41,7 @@
 | Право | viewer | operator | superadmin |
 |---|---|---|---|
 | servers:read, vpn_users:read, access:read, jobs:read, audit:read | ✓ | ✓ | ✓ |
-| servers:check (sync/health), vpn_users:manage, access:manage, config:reveal | | ✓ | ✓ |
+| servers:check (sync/health/discover), vpn_users:manage, access:manage, config:reveal | | ✓ | ✓ |
 | servers:manage (сервер, SSH, ключ хоста, установка, протокол), admins:manage | | | ✓ |
 
 Новый эндпоинт — обязательно с `require(...)`; `tests/integration/test_rbac.py` обходит все маршруты и проверяет

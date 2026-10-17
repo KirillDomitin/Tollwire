@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.exceptions import NotFoundError, SSHConnectionError, SSHError, SSHTimeoutError
 from infrastructure.vpn.amnezia import AmneziaInstaller
 from infrastructure.vpn.provider import HealthCheck, VPNProvider
-from modules.protocols.models.protocol import ProtocolType, VPNProtocol
+from modules.protocols.models.protocol import APP_PROTOCOLS, ProtocolType, VPNProtocol
 from modules.protocols.repository import ProtocolRepository
 from modules.servers.models.server import HealthStatus, VPNServer
 from modules.servers.reachability import mark_reachable, mark_unreachable
@@ -80,7 +80,12 @@ class ServerHealthService:
         if protocol is None:
             if not health.installed:
                 return None  # протокол не ставили — проверять нечего
-            checks.append(HealthCheck("tracked_in_db", False, "installed on server but not tracked in DB"))
+            if protocol_type in APP_PROTOCOLS:
+                # Установка AmneziaVPN-приложения — не поломка: панель её не ставила и не отслеживает, пока клиентов
+                # не подхватили. Иначе сервер с приложением получал бы DEGRADED навсегда.
+                checks.append(HealthCheck("tracked_in_db", True, "installed by the AmneziaVPN app, not managed"))
+            else:
+                checks.append(HealthCheck("tracked_in_db", False, "installed on server but not tracked in DB"))
         elif health.port is not None:
             checks.append(
                 HealthCheck(

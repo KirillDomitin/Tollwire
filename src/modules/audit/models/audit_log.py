@@ -38,6 +38,9 @@ class AuditAction(enum.Enum):
     SERVER_SYNC_STARTED = "server_sync_started"
     SERVER_SYNC_COMPLETED = "server_sync_completed"
     SERVER_SYNC_FAILED = "server_sync_failed"
+    SERVER_DISCOVER_STARTED = "server_discover_started"
+    SERVER_DISCOVER_COMPLETED = "server_discover_completed"
+    SERVER_DISCOVER_FAILED = "server_discover_failed"
     SERVER_SSH_KEY_INSTALL_STARTED = "server_ssh_key_install_started"  # панель ставит свой SSH-ключ вместо пароля
     SERVER_SSH_KEY_INSTALL_COMPLETED = "server_ssh_key_install_completed"
     SERVER_SSH_KEY_INSTALL_FAILED = "server_ssh_key_install_failed"

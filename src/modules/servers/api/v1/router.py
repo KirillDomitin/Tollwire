@@ -17,12 +17,14 @@ from modules.jobs.models.job import Job, JobType
 from modules.jobs.schemas import JobRead
 from modules.protocols.models.protocol import VPNProtocol
 from modules.protocols.schemas import ProtocolRead
+from modules.servers.discovery import ServerDiscoveryService
 from modules.servers.host_key import ServerHostKeyService
 from modules.servers.models.credential import ServerCredential
 from modules.servers.models.server import VPNServer
 from modules.servers.schemas import (
     CredentialCreate,
     CredentialRead,
+    DiscoveryRead,
     HostKeyPin,
     HostKeyScan,
     ServerCreate,
@@ -254,6 +256,28 @@ async def server_sync(server_id: UUID, service: ServerService = Depends(get_serv
 async def server_health(server_id: UUID, service: ServerService = Depends(get_server_service)) -> Job:
     # Полный отчёт — в result задачи; сводка (health_status, last_health_at) — в GET /servers/{id}.
     return await schedule(service, server_id, JobType.HEALTH_CHECK)
+
+
+@router.post(
+    "/{server_id}/discover",
+    dependencies=[Depends(require(Permission.SERVERS_CHECK))],
+    response_model=JobRead,
+    status_code=202,
+)
+async def server_discover(server_id: UUID, service: ServerService = Depends(get_server_service)) -> Job:
+    return await schedule(service, server_id, JobType.DISCOVER_VPN)
+
+
+@router.get(
+    "/{server_id}/discovery",
+    dependencies=[Depends(require(Permission.SERVERS_READ))],
+    response_model=DiscoveryRead,
+)
+async def server_discovery(server_id: UUID, session: Annotated[AsyncSession, Depends(get_session)]) -> object:
+    try:
+        return await ServerDiscoveryService(session).latest(server_id)
+    except NotFoundError:
+        raise HTTPException(404, detail="Server not found")
 
 
 @router.delete(

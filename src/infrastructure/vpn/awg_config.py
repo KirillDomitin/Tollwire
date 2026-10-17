@@ -2,9 +2,11 @@
 # -*- coding: utf-8 -*-
 import base64
 import ipaddress
+import json
 import random
 import re
 import secrets
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -34,6 +36,7 @@ _CLIENT_INTERFACE_KEYS = frozenset(
     }
 )
 _PUBLIC_KEY_RE = re.compile(r"[A-Za-z0-9+/]{43}=")
+_UNIX_TIME_RE = re.compile(r"[0-9]{1,12}")
 # Комментарий с именем клиента в [Peer]: WireGuard его игнорирует, а мы по нему узнаём своих peer'ов.
 _PEER_NAME_PREFIX = "# client:"
 
@@ -341,10 +344,13 @@ def parse_latest_handshakes(output: str) -> dict[str, datetime | None]:
     handshakes: dict[str, datetime | None] = {}
     for line in output.splitlines():
         parts = line.split()
-        if len(parts) != 2 or not parts[1].isdigit():
+        if len(parts) != 2 or not _UNIX_TIME_RE.fullmatch(parts[1]):
             continue
         timestamp = int(parts[1])
-        handshakes[parts[0]] = datetime.fromtimestamp(timestamp, tz=timezone.utc) if timestamp else None
+        try:
+            handshakes[parts[0]] = datetime.fromtimestamp(timestamp, tz=timezone.utc) if timestamp else None
+        except (ValueError, OverflowError, OSError):
+            continue  # вывод пришёл с сервера: одна кривая строка не должна ронять весь разбор
     return handshakes
 
 
@@ -376,3 +382,85 @@ def render_client_config(
         f"PersistentKeepalive = {CLIENT_PERSISTENT_KEEPALIVE}",
     ]
     return "\n".join(lines) + "\n"
+
+
+_CLIENTS_TABLE_MAX_CHARS = 1024 * 1024
+_CLIENT_NAME_MAX = 100
+_NAME_DROPPED_CATEGORIES = frozenset({"Cc", "Cs", "Cf", "Zl", "Zp"})
+
+
+def _clean_name(value: str) -> str:
+    # Cc/Cs/Cf/Zl/Zp: управляющие, одиночные суррогаты (JSONB их не принимает), невидимые и разделители строк
+    # (в том числе U+202E, подменяющий порядок текста).
+    cleaned = "".join(ch for ch in value if unicodedata.category(ch) not in _NAME_DROPPED_CATEGORIES)
+    return cleaned.strip()[:_CLIENT_NAME_MAX]
+
+
+def _entry_name(entry: object) -> str | None:
+    if not isinstance(entry, dict):
+        return None
+    name = entry.get("clientName")
+    if name is None and isinstance(entry.get("userData"), dict):
+        name = entry["userData"].get("clientName")
+    return _clean_name(name) if isinstance(name, str) else None
+
+
+def parse_clients_table(text: str) -> dict[str, str]:
+    """clientId → имя клиента из clientsTable (список или объект). Недоверенный ввод: длиннее 1 МиБ или не JSON —
+    пусто; битые записи пропускаются."""
+    if len(text) > _CLIENTS_TABLE_MAX_CHARS:
+        return {}
+    try:
+        data = json.loads(text)
+    except (ValueError, RecursionError):
+        return {}
+    result: dict[str, str] = {}
+    if isinstance(data, list):
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            key = item.get("clientId")
+            name = _entry_name(item)
+            if isinstance(key, str) and key and name is not None:
+                result[key] = name
+    elif isinstance(data, dict):
+        for key, value in data.items():
+            name = _entry_name(value)
+            if key and name is not None:
+                result[key] = name
+    return result
+
+
+@dataclass(frozen=True)
+class DiscoveredPeer:
+    public_key: str
+    address: str | None
+    supported: bool
+
+
+def _peer_address(allowed_ips: str | None) -> str | None:
+    if not allowed_ips or "," in allowed_ips:
+        return None
+    try:
+        interface = ipaddress.ip_interface(allowed_ips.strip())
+    except ValueError:
+        return None
+    if not isinstance(interface, ipaddress.IPv4Interface) or interface.network.prefixlen != 32:
+        return None
+    return str(interface.ip)
+
+
+def discover_peers(server_config: str) -> list[DiscoveredPeer]:
+    """Peer'ы серверного конфига для поиска. Без валидного PublicKey — пропуск; `supported=False`, если AllowedIPs
+    не один IPv4 /32 (тогда адреса нет)."""
+    peers = []
+    for section in _split_sections(server_config):
+        if _section_name(section) != "[Peer]":
+            continue
+        values = _section_values(section)
+        public_key = values.get("PublicKey")
+        if not public_key or not is_valid_public_key(public_key):
+            continue  # ключ попадёт в JSON и в БД: принимаем только настоящие ключи WireGuard
+        address = _peer_address(values.get("AllowedIPs"))
+        peers.append(DiscoveredPeer(public_key=public_key, address=address, supported=address is not None))
+    return peers

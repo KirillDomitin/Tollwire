@@ -5,9 +5,10 @@ FakeSSHClient повторяет интерфейс infrastructure.ssh.client.SS
 AssertionError: если провайдер начнёт слать что-то новое, тест сразу это покажет, а не тихо получит пустой ответ.
 """
 
+import json
 import re
 import shlex
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 
 import asyncssh
@@ -15,7 +16,12 @@ import asyncssh
 from core.exceptions import SSHAuthError, SSHConnectionError
 from infrastructure.monitoring.host_metrics import HOST_METRICS_COMMAND
 from infrastructure.ssh.client import CommandResult
-from infrastructure.vpn.awg_config import interface_values, list_peers, public_key_from_private
+from infrastructure.vpn.awg_config import (
+    generate_secret_keys,
+    interface_values,
+    list_peers,
+    public_key_from_private,
+)
 from infrastructure.vpn.config import (
     CONFIG_FILE_NAME,
     CONTAINER_NAME,
@@ -27,8 +33,28 @@ from infrastructure.vpn.config import (
 )
 
 CONFIG_FILE = f"{HOST_CONFIG_DIR}/{CONFIG_FILE_NAME}"
-_PS_RE = re.compile(r"docker ps -a --filter (\S+) --format '\{\{\.(\w+)\}\}'")
+_PS_RE = re.compile(r"docker ps -a --filter (\S+) --format '([^']*)'")
+_PS_FIELD_RE = re.compile(r"\{\{\.(\w+)\}\}")
+_INSPECT_RUNNING_RE = re.compile(r"docker inspect (?:--type container )?-f '\{\{\.State\.Running\}\}' (\S+)")
+_INSPECT_MOUNTS_RE = re.compile(
+    r"docker inspect --type container -f '\{\{range \.Mounts\}\}\{\{\.Source\}\} \{\{end\}\}' (\S+)"
+)
 _EXEC = f"docker exec {CONTAINER_NAME} "
+
+# Приложение AmneziaVPN: контейнеры amnezia-awg (AWG v1, утилита wg) и amnezia-awg2 (AWG v2, утилита awg). Конфиг и
+# таблица клиентов лежат ВНУТРИ контейнера, на хосте ничего нет.
+APP_CONFIG_DIR = "/opt/amnezia/awg"
+APP_CLIENTS_TABLE = f"{APP_CONFIG_DIR}/clientsTable"
+APP_PRIVATE_KEY_FILE = f"{APP_CONFIG_DIR}/wireguard_server_private_key.key"  # секреты, которые читать нельзя
+APP_PSK_FILE = f"{APP_CONFIG_DIR}/wireguard_psk.key"
+APP_LAYOUT = {
+    "amnezia-awg": {"tool": "wg", "interface": "wg0", "image": "amneziavpn/amnezia-awg:latest"},
+    "amnezia-awg2": {"tool": "awg", "interface": "awg0", "image": "amneziavpn/amnezia-awg2:latest"},
+}
+# docker exec, которые только читают: файл приложения и рукопожатия. Любой иной docker exec — изменяющий.
+_READ_ONLY_EXEC = re.compile(
+    rf"docker exec \S+ (?:cat {re.escape(APP_CONFIG_DIR)}/[\w.-]+|(?:wg|awg) show \w+ latest-handshakes)"
+)
 
 
 FOREIGN_MOUNT_SOURCE = "/var/lib/docker/volumes/amnezia-awg/_data"  # том контейнера, созданного AmneziaVPN
@@ -65,6 +91,74 @@ def _ok(stdout: str = "") -> CommandResult:
 
 def _fail(stderr: str = "error", code: int = 1) -> CommandResult:
     return CommandResult(stdout="", stderr=stderr, exit_status=code)
+
+
+@dataclass
+class AppPeer:
+    """[Peer] конфига приложения AmneziaVPN. Комментариев `# client:` у приложения нет — имена в clientsTable."""
+
+    public_key: str
+    allowed_ips: str = "10.8.1.2/32"
+    psk: str = field(default_factory=lambda: generate_secret_keys().psk)
+    handshake: int = 0  # unix-время последнего рукопожатия, 0 — не было
+
+
+@dataclass
+class AmneziaApp:
+    """Контейнер приложения AmneziaVPN. `files` — файловая система ВНУТРИ контейнера (путь → текст)."""
+
+    container: str
+    image: str
+    tool: str  # wg / awg: другой утилиты в контейнере нет
+    interface: str
+    config_path: str
+    private_key: str
+    port: int
+    peers: list[AppPeer]
+    files: dict[str, str] = field(default_factory=dict)
+    interface_up: bool = True  # False — как контейнер, где интерфейс не поднялся: `<tool> show <iface>` падает
+
+    @property
+    def secrets(self) -> list[str]:
+        """Всё, что не должно попасть ни в результаты провайдера, ни в тексты ошибок, ни в логи."""
+        return [self.private_key, *(peer.psk for peer in self.peers)]
+
+    def render_config(self) -> str:
+        lines = [
+            "[Interface]",
+            f"PrivateKey = {self.private_key}",
+            "Address = 10.8.1.0/24",
+            f"ListenPort = {self.port}",
+            "Jc = 5",
+            "Jmin = 10",
+            "Jmax = 50",
+            "S1 = 60",
+            "S2 = 77",
+            "H1 = 1020325451",
+            "H2 = 3288052141",
+            "H3 = 1766607858",
+            "H4 = 2528465083",
+        ]
+        for peer in self.peers:
+            lines += ["", "[Peer]", f"PublicKey = {peer.public_key}", f"PresharedKey = {peer.psk}"]
+            if peer.allowed_ips:
+                lines.append(f"AllowedIPs = {peer.allowed_ips}")
+        return "\n".join(lines) + "\n"
+
+    def handshakes_output(self) -> str:
+        return "".join(f"{peer.public_key}\t{peer.handshake}\n" for peer in self.peers)
+
+
+def clients_table_json(names: dict[str, str], *, legacy: bool = False) -> str:
+    """clientsTable приложения: публичный ключ → имя. legacy=True — старый формат (объект, ключ — публичный ключ)."""
+    if legacy:
+        return json.dumps({key: {"clientName": name} for key, name in names.items()})
+    return json.dumps(
+        [
+            {"clientId": key, "userData": {"clientName": name, "creationDate": "Mon Jan 1 12:00:00 2024"}}
+            for key, name in names.items()
+        ]
+    )
 
 
 @dataclass
@@ -106,6 +200,57 @@ class FakeServer:
             "written_sectors": 0,
         }
     )
+    # Приложение AmneziaVPN: имя контейнера → его состояние (см. add_amnezia_app). Образы контейнеров по имени.
+    apps: dict[str, AmneziaApp] = field(default_factory=dict)
+    images: dict[str, str] = field(default_factory=dict)
+    container_reads: list[tuple[str, str]] = field(default_factory=list)  # (контейнер, путь) для каждого `cat`
+
+    def add_amnezia_app(
+        self,
+        container: str = "amnezia-awg2",
+        peers: Sequence[AppPeer | str] = (),
+        clients_table: str | dict[str, str] | None = None,
+        running: bool = True,
+        port: int = 34567,
+        image: str | None = None,
+    ) -> AmneziaApp:
+        """Контейнер приложения AmneziaVPN с конфигом и clientsTable внутри. peers: AppPeer или публичный ключ
+        (адреса выдаются подряд с 10.8.1.2). clients_table: готовый текст, словарь «ключ → имя» (формат-массив) или
+        None — пустая таблица `[]`. Незапущенный контейнер: docker exec в нём падает, как в настоящем Docker."""
+        layout = APP_LAYOUT[container]
+        app_peers = [
+            peer if isinstance(peer, AppPeer) else AppPeer(public_key=peer, allowed_ips=f"10.8.1.{index + 2}/32")
+            for index, peer in enumerate(peers)
+        ]
+        keys = generate_secret_keys()
+        config_path = f"{APP_CONFIG_DIR}/{layout['interface']}.conf"
+        app = AmneziaApp(
+            container=container,
+            image=image or layout["image"],
+            tool=layout["tool"],
+            interface=layout["interface"],
+            config_path=config_path,
+            private_key=keys.private_key,
+            port=port,
+            peers=app_peers,
+        )
+        if clients_table is None:
+            table = "[]"
+        elif isinstance(clients_table, dict):
+            table = clients_table_json(clients_table)
+        else:
+            table = clients_table
+        app.files = {
+            config_path: app.render_config(),
+            APP_CLIENTS_TABLE: table,
+            APP_PRIVATE_KEY_FILE: keys.private_key + "\n",
+            APP_PSK_FILE: keys.psk + "\n",
+        }
+        self.apps[container] = app
+        self.containers[container] = "running" if running else "exited"
+        self.mounts[container] = [f"/var/lib/docker/volumes/{container}/_data"]  # не папка панели
+        self.images[container] = app.image
+        return app
 
     def host_metrics_output(self) -> str:
         h = self.host_stats
@@ -141,6 +286,12 @@ class FakeServer:
         """Команды из журнала, которые меняют сервер (или исполняются внутри контейнера). Чтение — docker ps/inspect,
         test -f, grep, uname — сюда не входит."""
         return [c for c in self.commands if not " ".join(c.split()).startswith(_READ_ONLY_PREFIXES)]
+
+    def changing_commands(self) -> list[str]:
+        """Как mutating_commands, но чтение внутри контейнера не считается изменением: `docker exec <контейнер> cat
+        /opt/amnezia/awg/<файл>` и `docker exec <контейнер> wg|awg show <интерфейс> latest-handshakes`. Любой иной
+        docker exec остаётся изменяющим. Для провайдеров чужого контейнера (приложение AmneziaVPN)."""
+        return [c for c in self.mutating_commands() if not _READ_ONLY_EXEC.fullmatch(" ".join(c.split()))]
 
     @property
     def running(self) -> bool:
@@ -189,15 +340,22 @@ class FakeServer:
             if self.ps_fails:
                 return _fail("Cannot connect to the Docker daemon", 1)
             return self._docker_ps(match.group(1), match.group(2))
+        if match := _INSPECT_RUNNING_RE.fullmatch(cmd):
+            if match.group(1) not in self.containers:
+                return _fail("No such object", 1)
+            return _ok("true\n" if self.containers[match.group(1)] == "running" else "false\n")
+        if match := _INSPECT_MOUNTS_RE.fullmatch(cmd):
+            name = match.group(1)
+            if name not in self.containers:
+                return _fail("No such object", 1)
+            default = [HOST_CONFIG_DIR] if name == CONTAINER_NAME else []
+            # Формат шаблона `{{.Source}} ` на каждое монтирование: источники через пробел, с хвостовым пробелом.
+            return _ok("".join(f"{source} " for source in self.mounts.get(name, default)) + "\n")
         if match := re.fullmatch(r"grep 'ListenPort' (\S+) \| cut -d' ' -f3", cmd):
             # Как настоящий пайп: код возврата — от cut (0), даже если файла нет и вывод пустой.
             content = self.files.get(match.group(1), "")
             port = next((line.split()[2] for line in content.splitlines() if line.startswith("ListenPort")), "")
             return _ok(port + "\n" if port else "")
-        if cmd == f"docker inspect -f '{{{{.State.Running}}}}' {CONTAINER_NAME}":
-            if CONTAINER_NAME not in self.containers:
-                return _fail("No such object", 1)
-            return _ok("true\n" if self.running else "false\n")
         if cmd == f"docker inspect -f '{{{{.HostConfig.RestartPolicy.Name}}}}' {CONTAINER_NAME}":
             if CONTAINER_NAME not in self.containers:
                 return _fail("No such object", 1)
@@ -207,11 +365,6 @@ class FakeServer:
                 return _fail("No such container", 1)
             self.restart_policy = "unless-stopped"
             return _ok(f"{CONTAINER_NAME}\n")
-        if cmd == INSPECT_MOUNTS:
-            if CONTAINER_NAME not in self.containers:
-                return _fail("No such object", 1)
-            # Формат шаблона `{{.Source}} ` на каждое монтирование: источники через пробел, с хвостовым пробелом.
-            return _ok("".join(f"{source} " for source in self.mounts.get(CONTAINER_NAME, [HOST_CONFIG_DIR])) + "\n")
         if cmd.startswith(f"docker run -d --name {CONTAINER_NAME} "):
             if CONTAINER_NAME in self.containers:  # как настоящий docker: имя занято
                 return _fail(f'Conflict. The container name "/{CONTAINER_NAME}" is already in use', 125)
@@ -235,28 +388,60 @@ class FakeServer:
             if not self.port_published:
                 return _fail("no public port published", 1)
             return _ok(f"0.0.0.0:{match.group(1)}\n[::]:{match.group(1)}\n")
+        if match := re.fullmatch(r"docker exec (\S+) (.+)", cmd):
+            if (app := self.apps.get(match.group(1))) is not None:
+                return self._app_exec(app, match.group(2))
         if cmd.startswith(_EXEC):
             if not self.running:
                 return _fail(f"container {CONTAINER_NAME} is not running", 1)
             return self._exec(cmd.removeprefix(_EXEC))
         raise AssertionError(f"FakeServer: unexpected command: {command!r}")
 
-    def _docker_ps(self, filter_arg: str, field_name: str) -> CommandResult:
+    def _docker_ps(self, filter_arg: str, template: str) -> CommandResult:
         # Настоящая семантика фильтра docker: name=<регулярное выражение> ищется в имени с ведущим «/».
         key, _, pattern = shlex.split(filter_arg)[0].partition("=")
         assert key == "name", filter_arg
         lines = []
         for name, state in self.containers.items():
             if re.search(pattern, f"/{name}"):
-                value = {
+                values = {
                     "State": state,
                     "Status": "Up 5 minutes" if state == "running" else "Exited (0) 1 minute ago",
-                    "Image": "amneziavpn/amneziawg-go:latest",
-                }[field_name]
-                lines.append(value)
+                    "Image": self.images.get(name, "amneziavpn/amneziawg-go:latest"),
+                    "Names": name,
+                }
+
+                def substitute(match: re.Match[str], values: dict[str, str] = values) -> str:
+                    if match.group(1) not in values:
+                        raise AssertionError(f"FakeServer: unsupported docker ps field {match.group(0)!r}")
+                    return values[match.group(1)]
+
+                lines.append(_PS_FIELD_RE.sub(substitute, template.replace("\\t", "\t")))
         return _ok("".join(f"{line}\n" for line in lines))
 
+    def _app_exec(self, app: AmneziaApp, inner: str) -> CommandResult:
+        """docker exec в контейнере приложения AmneziaVPN. Отвечает только на чтение: файл и рукопожатия."""
+        if self.containers.get(app.container) != "running":
+            return _fail(f"Error response from daemon: container {app.container} is not running", 1)
+        if match := re.fullmatch(r"cat (\S+)", inner):
+            self.container_reads.append((app.container, match.group(1)))
+            if match.group(1) not in app.files:
+                return _fail(f"cat: can't open '{match.group(1)}': No such file or directory", 1)
+            return _ok(app.files[match.group(1)])
+        if match := re.fullmatch(r"(wg|awg) show (\S+) latest-handshakes", inner):
+            if match.group(1) != app.tool:  # в контейнере другой утилиты нет
+                return _fail(f'exec: "{match.group(1)}": executable file not found in $PATH', 126)
+            if match.group(2) != app.interface or not app.interface_up:
+                return _fail(f"Unable to access interface: No such device ({match.group(2)})", 1)
+            return _ok(app.handshakes_output())
+        raise AssertionError(f"FakeServer: unexpected docker exec in {app.container}: {inner!r}")
+
     def _exec(self, inner: str) -> CommandResult:
+        if match := re.fullmatch(r"cat (\S+)", inner):  # в нашем контейнере файлов приложения AmneziaVPN нет
+            self.container_reads.append((CONTAINER_NAME, match.group(1)))
+            return _fail(f"cat: can't open '{match.group(1)}': No such file or directory", 1)
+        if re.fullmatch(r"wg show \S+ latest-handshakes", inner):  # у нашего образа только awg
+            return _fail('exec: "wg": executable file not found in $PATH', 126)
         if inner == f"sh -c '{NAT_POST_UP}'":
             self.nat_rule = True
             return _ok()

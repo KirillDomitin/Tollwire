@@ -11,6 +11,12 @@ from core.database.base import Base, TimestampMixin, UuidPkMixin
 
 class ProtocolType(enum.Enum):
     AMNEZIA_WG = "amnezia_wg"
+    AMNEZIA_APP_AWG = "amnezia_app_awg"
+    AMNEZIA_APP_AWG2 = "amnezia_app_awg2"
+
+
+# Установки приложения AmneziaVPN: панель их только читает, а не ставит и не обслуживает.
+APP_PROTOCOLS = frozenset({ProtocolType.AMNEZIA_APP_AWG, ProtocolType.AMNEZIA_APP_AWG2})
 
 
 class VPNProtocol(UuidPkMixin, TimestampMixin, Base):

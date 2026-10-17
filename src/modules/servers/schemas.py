@@ -99,3 +99,26 @@ class HostKeyScan(BaseModel):
 class TestConnectionResult(BaseModel):
     success: bool
     message: str
+
+
+class DiscoveredClientRead(BaseModel):
+    public_key: str
+    address: str | None
+    name: str | None
+    latest_handshake: datetime | None
+    supported: bool
+    status: str
+
+
+class DiscoveredProtocolRead(BaseModel):
+    type: str
+    container: str
+    state: str
+    image: str | None
+    port: int | None
+    clients: list[DiscoveredClientRead]
+
+
+class DiscoveryRead(BaseModel):
+    checked_at: datetime | None
+    protocols: list[DiscoveredProtocolRead]

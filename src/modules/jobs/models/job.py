@@ -31,6 +31,7 @@ class JobType(enum.Enum):
     UNINSTALL_SERVER = "uninstall_server"
     INSTALL_PROTOCOL = "install_protocol"
     INSTALL_SSH_KEY = "install_ssh_key"
+    DISCOVER_VPN = "discover_vpn"
 
 
 class Job(UuidPkMixin, TimestampMixin, Base):

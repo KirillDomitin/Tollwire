@@ -15,6 +15,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- Finding an existing AmneziaVPN app on a server (read-only): `POST /api/v1/servers/{id}/discover` starts a job,
+  `GET /api/v1/servers/{id}/discovery` returns the last report with each client's status (`new`, `in_panel`,
+  `revoked_in_panel`, `unsupported`). Installing a server runs the search too. The panel does not change the app
+  or its clients; importing them is not implemented yet.
+- An AmneziaVPN install that the panel did not make does not, by itself, mark the server DEGRADED.
 - Changing your own password: `POST /api/v1/auth/change-password`, and a "Change password" button in the sidebar.
   It ends the other sessions and revokes access tokens issued before the change; wrong current passwords are
   rate-limited like sign-ins.

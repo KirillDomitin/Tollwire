@@ -18,6 +18,13 @@
 - Удалил файл применённой миграции → `alembic current` скажет «Can't locate revision». Сначала сверить
   `alembic_version` с файлами, руками ничего не чинить.
 
+## Новые значения enum (`d3a7c9e15b42`, поиск Amnezia)
+
+- `ADD VALUE` для `protocoltype` (`AMNEZIA_APP_AWG`, `AMNEZIA_APP_AWG2`) и `jobtype` (`DISCOVER_VPN`) — в
+  `op.get_context().autocommit_block()`, с `IF NOT EXISTS`.
+- Downgrade удаляет строки `protocols` с новыми типами и `jobs` с `DISCOVER_VPN`, затем пересоздаёт оба enum без
+  новых значений. Значение из enum Postgres иначе не убрать.
+
 ## Частичные уникальные индексы
 
 Бизнес-правила «одна живая запись» держит БД (`postgresql_where=...`): одна незавершённая подписка на

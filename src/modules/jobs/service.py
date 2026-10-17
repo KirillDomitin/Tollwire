@@ -26,6 +26,7 @@ _STARTED: dict[JobType, AuditAction] = {
     JobType.REMOVE_PROTOCOL: AuditAction.PROTOCOL_REMOVE_STARTED,
     JobType.SYNC_SERVER: AuditAction.SERVER_SYNC_STARTED,
     JobType.INSTALL_SSH_KEY: AuditAction.SERVER_SSH_KEY_INSTALL_STARTED,
+    JobType.DISCOVER_VPN: AuditAction.SERVER_DISCOVER_STARTED,
 }
 _COMPLETED: dict[JobType, AuditAction] = {
     JobType.INSTALL_SERVER: AuditAction.SERVER_INSTALL_COMPLETED,
@@ -33,6 +34,7 @@ _COMPLETED: dict[JobType, AuditAction] = {
     JobType.REMOVE_PROTOCOL: AuditAction.PROTOCOL_REMOVE_COMPLETED,
     JobType.SYNC_SERVER: AuditAction.SERVER_SYNC_COMPLETED,
     JobType.INSTALL_SSH_KEY: AuditAction.SERVER_SSH_KEY_INSTALL_COMPLETED,
+    JobType.DISCOVER_VPN: AuditAction.SERVER_DISCOVER_COMPLETED,
 }
 _FAILED: dict[JobType, AuditAction] = {
     JobType.INSTALL_SERVER: AuditAction.SERVER_INSTALL_FAILED,
@@ -42,6 +44,7 @@ _FAILED: dict[JobType, AuditAction] = {
     JobType.CREATE_USER: AuditAction.CREDENTIAL_ISSUE_FAILED,
     JobType.REVOKE_ACCESS: AuditAction.CREDENTIAL_REVOKE_FAILED,
     JobType.INSTALL_SSH_KEY: AuditAction.SERVER_SSH_KEY_INSTALL_FAILED,
+    JobType.DISCOVER_VPN: AuditAction.SERVER_DISCOVER_FAILED,
 }
 # Задачи, чей result (без секретов) целиком попадает в meta аудита: итог виден в журнале, а не только в задаче.
 _RESULT_IN_AUDIT = frozenset({JobType.INSTALL_SSH_KEY})
@@ -138,6 +141,10 @@ class JobService:
         meta: dict[str, Any] = {"job_id": job.id}
         if job.type in _RESULT_IN_AUDIT and job.result:
             meta.update(job.result)
+        if job.type == JobType.DISCOVER_VPN and job.result:
+            found = job.result.get("protocols", [])
+            meta["protocols"] = len(found)
+            meta["clients"] = sum(len(item["clients"]) for item in found)
         return meta
 
     async def get(self, job_id: UUID) -> Job:

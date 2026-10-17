@@ -23,6 +23,7 @@ from modules.jobs.models.job import Job, JobStatus, JobType
 from modules.jobs.queue import JobQueue
 from modules.jobs.service import JobService, job_error_text
 from modules.protocols.models.protocol import ProtocolType, VPNProtocol
+from modules.servers.discovery import ServerDiscoveryService
 from modules.servers.health import ServerHealthService
 from modules.servers.service import ServerConnectionService
 from modules.servers.ssh_key import ServerSshKeyService
@@ -96,6 +97,7 @@ class JobWorker:
                 JobType.SYNC_SERVER,
                 JobType.HEALTH_CHECK,
                 JobType.INSTALL_SSH_KEY,
+                JobType.DISCOVER_VPN,
             ]:
                 if not job.server_id:
                     await self._reject(session, job, f"Job with type '{job.type.value}' must have server_id")
@@ -133,6 +135,9 @@ class JobWorker:
                             # Без ServerLock: health только читает и не должен ждать выдачу/отзыв клиентов.
                             job.result = await self.health_check(session, server_id)
 
+                        case JobType.DISCOVER_VPN:
+                            job.result = await ServerDiscoveryService(session).discover(server_id)
+
                         case JobType.REVOKE_ACCESS:
                             async with ServerLock(server_id):
                                 await self.revoke_access(session, access_grant_id, actor)
@@ -140,6 +145,14 @@ class JobWorker:
                         case JobType.INSTALL_SERVER:
                             async with ServerLock(server_id):
                                 await self.install_server(session, server_id)
+                                try:
+                                    job.result = await ServerDiscoveryService(session).discover(server_id)
+                                except Exception as discovery_error:
+                                    await session.rollback()  # установка уже закоммичена; сбой поиска её не отменяет
+                                    await session.refresh(job)  # rollback сбросил состояние объекта: перечитываем
+                                    logger.warning(
+                                        "discovery after install failed", extra={"error": str(discovery_error)[:300]}
+                                    )
 
                         case JobType.REMOVE_PROTOCOL:
                             async with ServerLock(server_id):

@@ -4,10 +4,13 @@
 безымянный внешний ключ, который downgrade не может удалить (12.3, 14.1).
 """
 
+from uuid import UUID
+
 from sqlalchemy import text
 
 from core.database.postgres import engine, session_factory
 from modules.jobs.models.job import Job, JobStatus, JobType
+from modules.servers.models.server import VPNServer
 from tests.conftest import run_alembic
 
 LEFTOVERS_SQL = text(
@@ -157,3 +160,108 @@ async def test_password_change_migration_keeps_existing_admins_unflagged_and_dow
     finally:
         await _alembic("upgrade", "head")
     assert await _query(text("SELECT must_change_password, password_changed_at FROM admins")) == [(False, None)]
+
+
+# --- поиск Amnezia (23.2): protocoltype.{AMNEZIA_APP_AWG, AMNEZIA_APP_AWG2} и jobtype.DISCOVER_VPN ---
+
+# Ревизия перед миграцией поиска (прежняя голова): откатываем именно к ней, а не «на одну назад».
+BEFORE_DISCOVERY = "e4f1a7b39c20"
+PROTOCOL_TYPES_SQL = text(
+    "SELECT enumlabel FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid WHERE t.typname = 'protocoltype'"
+)
+NEW_PROTOCOL_TYPES = {"AMNEZIA_APP_AWG", "AMNEZIA_APP_AWG2"}
+
+
+async def _labels(sql: object) -> set[object]:
+    return {row[0] for row in await _query(sql)}
+
+
+async def _add_server() -> UUID:
+    async with session_factory() as session:
+        server = VPNServer(name="migration-srv", host="203.0.113.10")
+        session.add(server)
+        await session.commit()
+        return server.id
+
+
+async def test_discovery_migration_adds_protocol_and_job_types() -> None:
+    assert NEW_PROTOCOL_TYPES | {"AMNEZIA_WG"} <= await _labels(PROTOCOL_TYPES_SQL)
+    assert "DISCOVER_VPN" in await _labels(JOB_TYPES_SQL)
+    assert "INSTALL_SSH_KEY" in await _labels(JOB_TYPES_SQL)  # прежние значения на месте
+
+
+async def test_discovery_migration_new_types_are_usable_by_the_orm() -> None:
+    """Значения enum в БД совпадают с теми, что пишет код (ORM хранит ИМЕНА членов enum)."""
+    from modules.protocols.models.protocol import ProtocolType, VPNProtocol
+
+    server_id = await _add_server()
+    async with session_factory() as session:
+        session.add(VPNProtocol(server_id=server_id, type=ProtocolType("amnezia_app_awg2"), port=1))
+        session.add(Job(type=JobType("discover_vpn"), status=JobStatus.SUCCESS, server_id=server_id))
+        await session.commit()
+    assert await _query(text("SELECT type::text FROM protocols")) == [("AMNEZIA_APP_AWG2",)]
+    assert await _query(text("SELECT type::text FROM jobs")) == [("DISCOVER_VPN",)]
+
+
+async def test_discovery_migration_downgrade_removes_new_values_then_upgrade_restores() -> None:
+    await _alembic("downgrade", BEFORE_DISCOVERY)
+    try:
+        assert await _labels(PROTOCOL_TYPES_SQL) == {"AMNEZIA_WG"}
+        assert "DISCOVER_VPN" not in await _labels(JOB_TYPES_SQL)
+        assert "INSTALL_SSH_KEY" in await _labels(JOB_TYPES_SQL)
+    finally:
+        await _alembic("upgrade", "head")
+    assert NEW_PROTOCOL_TYPES <= await _labels(PROTOCOL_TYPES_SQL)
+    assert "DISCOVER_VPN" in await _labels(JOB_TYPES_SQL)
+
+
+async def test_discovery_migration_downgrade_deletes_rows_of_new_types_and_keeps_others() -> None:
+    """Значение enum нельзя убрать, пока есть строки с ним: откат сначала удаляет протоколы и задачи новых типов
+    (что панель «подключила» из найденного — теряется), остальное цело."""
+    server_id = await _add_server()
+    async with engine.begin() as conn:
+        for protocol_type in ("AMNEZIA_WG", "AMNEZIA_APP_AWG", "AMNEZIA_APP_AWG2"):
+            await conn.execute(
+                text("INSERT INTO protocols (id, server_id, type) VALUES (gen_random_uuid(), :sid, :type)"),
+                {"sid": server_id, "type": protocol_type},
+            )
+        for job_type in ("DISCOVER_VPN", "HEALTH_CHECK", "INSTALL_SSH_KEY"):
+            await conn.execute(
+                text("INSERT INTO jobs (id, type, status) VALUES (gen_random_uuid(), :type, 'SUCCESS')"),
+                {"type": job_type},
+            )
+    await _alembic("downgrade", BEFORE_DISCOVERY)
+    try:
+        assert await _query(text("SELECT type::text FROM protocols")) == [("AMNEZIA_WG",)]
+        assert sorted(row[0] for row in await _query(text("SELECT type::text FROM jobs"))) == [
+            "HEALTH_CHECK",
+            "INSTALL_SSH_KEY",
+        ]
+        assert await _labels(PROTOCOL_TYPES_SQL) == {"AMNEZIA_WG"}
+    finally:
+        await _alembic("upgrade", "head")
+    assert NEW_PROTOCOL_TYPES <= await _labels(PROTOCOL_TYPES_SQL)
+
+
+async def test_discovery_migration_downgrade_keeps_protocols_table_defaults() -> None:
+    """Пересоздание enum не должно потерять уникальность (server_id, type) и значение по умолчанию."""
+    await _alembic("downgrade", BEFORE_DISCOVERY)
+    try:
+        server_id = await _add_server()
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("INSERT INTO protocols (id, server_id, type) VALUES (gen_random_uuid(), :sid, 'AMNEZIA_WG')"),
+                {"sid": server_id},
+            )
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(
+                    text("INSERT INTO protocols (id, server_id, type) VALUES (gen_random_uuid(), :sid, 'AMNEZIA_WG')"),
+                    {"sid": server_id},
+                )
+        except Exception as exc:  # noqa: BLE001 — нужен именно отказ БД по уникальному ограничению
+            assert "unique" in str(exc).lower()
+        else:
+            raise AssertionError("UniqueConstraint(server_id, type) was lost by the downgrade")
+    finally:
+        await _alembic("upgrade", "head")

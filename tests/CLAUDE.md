@@ -15,9 +15,9 @@
 
 | Папка | Что |
 |---|---|
-| `unit/` | Чистые функции: awg_config, amnezia_link, host_metrics, host_keys, authorized_keys (текст файла), логи, правила, провайдер на фейке; `test_ssh_real_server.py` — настоящий AsyncSSH-сервер в процессе. |
+| `unit/` | Чистые функции: awg_config (в т.ч. `test_awg_discovery.py` — clientsTable и peer'ы чужой установки), amnezia_link, host_metrics, host_keys, authorized_keys (текст файла), логи, правила, провайдеры на фейке (`test_provider.py`; `test_amnezia_app.py` — только чтение приложения AmneziaVPN, `test_fake_amnezia_app.py` — страховка фейка); `test_ssh_real_server.py` — настоящий AsyncSSH-сервер в процессе. |
 | `services/` | Сервисы с настоящей БД и Redis: доступы, sync/health, ключ хоста, ключ панели, миграции (upgrade/downgrade), мониторинг. |
-| `integration/` | Через HTTP (`httpx.ASGITransport`, `base_url=http://testserver` для cookie), настоящий login, RBAC-матрица по всем маршрутам, сценарий DoD целиком (`test_mvp_flow.py`), воркер через `process_next()`/`drain(worker)`, установка SSH-ключа панели. |
+| `integration/` | Через HTTP (`httpx.ASGITransport`, `base_url=http://testserver` для cookie), настоящий login, RBAC-матрица по всем маршрутам, сценарий DoD целиком (`test_mvp_flow.py`), воркер через `process_next()`/`drain(worker)`, установка SSH-ключа панели, поиск Amnezia (`test_discovery_job.py` — задача и автопоиск после установки, `test_discovery_api.py` — API и статусы клиентов; общее — `discovery_support.py`). |
 
 ## Установщик и `./panel` (`unit/test_install_*.py`, `unit/test_panel.py`, `unit/test_ship_images.py`, `unit/test_letsencrypt.py`, `install_support.py`)
 
@@ -39,6 +39,14 @@ git (локальный «сервер» + второй клон, из кото�
 - Подмена — monkeypatch `ServerConnectionService.create_ssh_client`; в integration — autouse-фикстура
   `_no_real_ssh` (настоящий SSH в тестах невозможен).
 - Новая SSH-команда в провайдере → научить ей `FakeServer`.
+- Приложение AmneziaVPN (контейнеры `amnezia-awg` с `wg`/`wg0` и `amnezia-awg2` с `awg`/`awg0`, конфиг и `clientsTable`
+  внутри контейнера, монтирование не из папки панели): `add_amnezia_app(container, peers, clients_table, running, port)`
+  возвращает `AmneziaApp` (`secrets` — серверный приватный ключ и PSK для проверок «не утекло», `files`, `interface_up`).
+  Чтение внутри контейнера — только `docker exec <к> cat /opt/amnezia/awg/<файл>` и `<wg|awg> show <интерфейс>
+  latest-handshakes`; чужая утилита → код 126, остановленный контейнер → ошибка Docker, прочее → `AssertionError`.
+  `changing_commands()` — как `mutating_commands()`, но эти два чтения изменением не считаются (для провайдеров
+  чужого контейнера; `mutating_commands()` остаётся строгим — любой docker exec там изменение). `container_reads` —
+  журнал прочитанных внутри контейнеров файлов (проверка «секретные файлы не читали»).
 
 ## Правила
 

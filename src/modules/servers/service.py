@@ -20,6 +20,7 @@ from core.security import decrypt_secret, encrypt_secret
 from infrastructure.ssh.client import SSHClient, private_key_fingerprint
 from infrastructure.ssh.host_keys import HostKey
 from infrastructure.vpn.amnezia import AmneziaInstaller, AmneziaWGProvider
+from infrastructure.vpn.amnezia_app import AmneziaAppAWG2Provider, AmneziaAppAWGProvider
 from infrastructure.vpn.provider import ProviderStatus, VPNProvider
 from modules.access.repository import VPNCredentialRepository
 from modules.audit.actor import SYSTEM_ACTOR, AuditActor
@@ -42,6 +43,10 @@ def provider_class(protocol_type: ProtocolType) -> type[VPNProvider]:
     match protocol_type:
         case ProtocolType.AMNEZIA_WG:
             return AmneziaWGProvider
+        case ProtocolType.AMNEZIA_APP_AWG:
+            return AmneziaAppAWGProvider
+        case ProtocolType.AMNEZIA_APP_AWG2:
+            return AmneziaAppAWG2Provider
         case _:
             raise UnsupportedProtocolError(f"Unsupported protocol '{protocol_type}'")
 

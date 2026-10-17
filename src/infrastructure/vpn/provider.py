@@ -65,6 +65,24 @@ class SyncResult:
     client_list: list[VPNClientInfo]
 
 
+@dataclass(frozen=True)
+class DiscoveredClient:
+    public_key: str
+    address: str | None
+    name: str | None
+    latest_handshake: datetime | None
+    supported: bool
+
+
+@dataclass
+class Discovery:
+    container: str
+    state: ProviderState
+    image: str | None
+    port: int | None
+    clients: list[DiscoveredClient]
+
+
 class VPNProvider(ABC):
     def __init__(self, ssh_client: SSHClient):
         self.ssh_client = ssh_client
@@ -87,6 +105,10 @@ class VPNProvider(ABC):
     async def sync(self) -> SyncResult: ...
     @abstractmethod
     async def health_check(self) -> ProviderHealth: ...
+
+    async def discover(self) -> Discovery | None:
+        """Что провайдер видит на сервере в режиме «только чтение». None — к поиску не относится."""
+        return None
 
     async def client_counts(self, now: datetime) -> tuple[int, int]:
         """Клиентов на сервере всего и онлайн. «Онлайн» — было рукопожатие за последние

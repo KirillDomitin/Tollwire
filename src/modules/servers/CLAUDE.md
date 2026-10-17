@@ -19,11 +19,12 @@
 
 | Файл | Что внутри |
 |---|---|
-| `service.py` | `ServerService` (CRUD, `schedule(job_type)` — поставить серверную задачу), `CredentialService`, `ServerConnectionService` (`create_ssh_client` с опц. `private_key`), `provider_class(ProtocolType)`. `panel_key_warning()` — предупреждение о ключе панели при удалении учётки/сервера. |
+| `service.py` | `ServerService` (CRUD, `schedule(job_type)` — поставить серверную задачу), `CredentialService`, `ServerConnectionService` (`create_ssh_client` с опц. `private_key`), `provider_class(ProtocolType)` (`AMNEZIA_APP_AWG*` — классы приложения). `panel_key_warning()` — предупреждение о ключе панели при удалении учётки/сервера. |
 | `ssh_key.py` | `ServerSshKeyService`: `schedule_install(server_id, credential)` — поставить задачу; `install(server_id)` — из воркера, генерирует ключ, ставит его, переходит на вход, меняет учётку. |
 | `host_key.py` | `ServerHostKeyService`: scan (без входа), pin, reset, `learned`, `mismatch` (аудит + статус ERROR). Пишет в своей транзакции. |
 | `sync.py` | `ServerSyncService` — сверка сервера с БД под ServerLock, отчёт в `Job.result`. |
 | `health.py` | `ServerHealthService` — только чтение, без ServerLock; отчёт в `Job.result` + сводка на сервере. |
+| `discovery.py` | `ServerDiscoveryService` — поиск уже установленной AmneziaVPN (только чтение): `discover(server_id)` (задача `DISCOVER_VPN`), `latest(server_id)` (отчёт и статусы клиентов). |
 | `maintenance.py` | Плановые health/sync для планировщика. |
 | `reachability.py` | `mark_unreachable` / `mark_reachable`. |
 
@@ -31,7 +32,8 @@
 
 CRUD; `PUT/GET/DELETE /{id}/credentials`; `POST /{id}/test-connection`; `POST /{id}/host-key/scan`,
 `PUT/DELETE /{id}/host-key`; задачи (202 + `JobRead`): `POST /{id}/install`, `POST /{id}/ssh-key`,
-`POST/DELETE /{id}/protocol`, `POST /{id}/sync`, `POST /{id}/health`; `GET /{id}/protocols`. Права —
+`POST/DELETE /{id}/protocol`, `POST /{id}/sync`, `POST /{id}/health`, `POST /{id}/discover`; `GET /{id}/protocols`; `GET /{id}/discovery` (отчёт поиска, не задача; 404 — сервера нет). `discover` — право
+`servers:check`, `discovery` — `servers:read`. Права —
 см. `modules/auth/CLAUDE.md`.
 
 ## Правила
@@ -58,6 +60,28 @@ CRUD; `PUT/GET/DELETE /{id}/credentials`; `POST /{id}/test-connection`; `POST /{
 - Health: SSH, Docker, контейнер, протокол, NAT, задержка до интернета. SSH недоступен → задача SUCCESS со
   статусом down.
 
+## Поиск установки AmneziaVPN (`discovery.py`)
+
+Поиск только читает сервер. Найденное приложение панель не ставит, не удаляет и не меняет его клиентов; импорта
+клиентов пока нет.
+
+- `POST /{id}/discover` → задача `DISCOVER_VPN` (без ServerLock). `discover()` спрашивает провайдер каждого
+  `ProtocolType`; отвечают только классы приложения (`AmneziaWGProvider.discover()` — None, в отчёт не входит).
+  Результат: `{"protocols": [{type, container, state, image, port, clients: [{public_key, address, name,
+  latest_handshake, supported}]}]}`. В БД ничего не пишется.
+- `GET /{id}/discovery` — отчёт последней успешной задачи `DISCOVER_VPN` или `INSTALL_SERVER` с непустым result;
+  `checked_at` — время её окончания. Отчёта нет → `checked_at: null`, `protocols: []`.
+- Статус клиента в `GET /discovery`: `unsupported` (`supported=false`) → `in_panel` (ключ — живой `VPNCredential`
+  этого сервера) → `revoked_in_panel` (ключ — отозванный) → `new`.
+- Автопоиск после `INSTALL_SERVER`: тот же поиск внутри задачи установки, его отчёт становится её `result`. Сбой
+  поиска откатывает сессию, пишет warning в лог; установка остаётся успешной (отчёта в ней нет).
+- Sync (`_sync_protocol`): для `APP_PROTOCOLS` без записи в БД и без контейнера в отчёт ничего не попадает.
+  Найденный контейнер (в том числе остановленный) — запись с `in_db: false` и issue «Installed on server but not
+  tracked in DB». Клиенты не трогаются.
+- Health (`_check_protocol`): у app-типа без записи в БД проверка `tracked_in_db` = ok, текст «installed by the
+  AmneziaVPN app, not managed». Сама установка приложения сервер в DEGRADED не переводит; остановленный контейнер
+  или нечитаемый конфиг приложения переводят (их проверки ok=false). Контейнера нет — в отчёт не попадает.
+
 ## Известные проблемы
 
 - Sync удаляет всех «сирот» `grant-*`: если один сервер подключён к двум панелям (dev и prod), каждая удаляет
@@ -68,5 +92,6 @@ CRUD; `PUT/GET/DELETE /{id}/credentials`; `POST /{id}/test-connection`; `POST /{
 ## Аудит
 
 `server_created/updated/deleted`, `server_credentials_set/deleted`, `server_host_key_pinned/reset/mismatch`,
-`server_install_*`, `server_sync_*`, `server_ssh_key_install_*` (started/completed/failed), `protocol_install_*`,
-`protocol_remove_*`. Meta: `panel_key_left_on_server: <fingerprint>` при удалении учётки или сервера с ключом панели.
+`server_install_*`, `server_sync_*`, `server_discover_*`, `server_ssh_key_install_*` (started/completed/failed), `protocol_install_*`,
+`protocol_remove_*`. Meta: `panel_key_left_on_server: <fingerprint>` при удалении учётки или сервера с ключом панели. У `server_discover_*` meta — счётчики `protocols` и `clients`
+(без ключей и адресов).

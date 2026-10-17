@@ -67,7 +67,9 @@ class ServerSyncService:
                 tracked = {protocol.type: protocol for protocol in await self.protocols.list_by_server_id(server_id)}
                 for protocol_type in ProtocolType:
                     provider = self.connections.build_provider(ssh_client, protocol_type)
-                    protocols.append(await self._sync_protocol(provider, protocol_type, tracked.get(protocol_type)))
+                    report = await self._sync_protocol(provider, protocol_type, tracked.get(protocol_type))
+                    if report is not None:
+                        protocols.append(report)
             await self.session.commit()
 
         return {
@@ -80,9 +82,11 @@ class ServerSyncService:
 
     async def _sync_protocol(
         self, provider: VPNProvider, protocol_type: ProtocolType, protocol: VPNProtocol | None
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | None:
         snapshot = await provider.sync()
         state = snapshot.provider_status.server_status
+        if protocol is None and state == ProviderState.NOT_INSTALLED and protocol_type != ProtocolType.AMNEZIA_WG:
+            return None
         report: dict[str, Any] = {
             "type": protocol_type.value,
             "in_db": protocol is not None,
