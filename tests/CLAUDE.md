@@ -25,7 +25,7 @@ already/conflict, savepoint на клиента, аудит, секреты), `t
 клиента, 409 на конфиг, `source`/`external_name` в API, пользователи без email, `DELETE /protocol` не трогает приложение);
 общее — `tests/import_support.py` (сцена «сервер с приложением», импортированный credential в БД). |
 
-## Установщик и `./panel` (`unit/test_install_*.py`, `unit/test_panel.py`, `unit/test_ship_images.py`, `unit/test_letsencrypt.py`, `install_support.py`)
+## Установщик и `./panel` (`unit/test_install_*.py`, `unit/test_panel.py`, `unit/test_provider_layout.py` (раскладка контейнера: подкласс с другим именем/папкой/подсетью не касается ничего «обычного», golden-журнал команд — `unit/golden/provider_default_commands.json`; `FakeServer(layout=...)`), `unit/test_ship_images.py`, `unit/test_letsencrypt.py`, `install_support.py`)
 
 `install.sh` запускается по-настоящему (bash) в копии каталога во временной папке; Docker и curl — заглушки в `PATH`
 (`FakeDocker` пишет вызовы в журнал, поведением управляют переменные `FAKE_*`). Настоящий `.env.prod`, `certs/` и

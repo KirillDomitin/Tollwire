@@ -144,13 +144,13 @@ class VPNProvider(ABC):
         )
         return len(clients), online
 
-    @staticmethod
-    def share_link(client_config: str, display_name: str) -> str | None:
+    @classmethod
+    def share_link(cls, client_config: str, display_name: str) -> str | None:
         """Конфиг клиента в формате «своего» приложения протокола (импорт одной строкой/QR) с именем сервера.
         Без SSH — только из готового конфига. None: у протокола такого формата нет, клиенту отдаётся сам конфиг."""
         return None
 
-    @staticmethod
-    def share_qr_codes(client_config: str, display_name: str) -> list[str] | None:
+    @classmethod
+    def share_qr_codes(cls, client_config: str, display_name: str) -> list[str] | None:
         """Тот же конфиг серией QR-кодов в формате сканера приложения. None — сканер читает обычный QR с конфигом."""
         return None

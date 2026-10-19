@@ -18,9 +18,10 @@ from infrastructure.vpn.config import (
     CLIENT_ALLOWED_IPS,
     CLIENT_DNS,
     CLIENT_PERSISTENT_KEEPALIVE,
-    DEFAULT_AWG_CONFIG,
-    NAT_POST_DOWN,
-    NAT_POST_UP,
+    TUNNEL_SUBNET,
+    awg_config_template,
+    nat_post_down,
+    nat_post_up,
 )
 
 # Ключи серверного [Interface], которые КОПИРУЮТСЯ в конфиг клиента: параметры обфускации AmneziaWG — они обязаны
@@ -129,10 +130,21 @@ def random_obfuscation() -> Obfuscation:
     )
 
 
-def render_awg_config(private_key_str: str, udp_port: int, obfuscation: Obfuscation | None = None) -> str:
-    """Серверный конфиг новой установки. Без obfuscation — случайные параметры (для каждого сервера свои)."""
+def render_awg_config(
+    private_key_str: str,
+    udp_port: int,
+    obfuscation: Obfuscation | None = None,
+    *,
+    tunnel_subnet: str = TUNNEL_SUBNET,
+    address: str | None = None,
+) -> str:
+    """Серверный конфиг новой установки. Без obfuscation — случайные параметры (для каждого сервера свои).
+
+    tunnel_subnet — подсеть клиентов (по ней NAT-хуки); address — Address интерфейса, по умолчанию сама подсеть.
+    """
     chosen = obfuscation or random_obfuscation()
-    return DEFAULT_AWG_CONFIG.format(private_key=private_key_str, port=udp_port, obfuscation=chosen.lines())
+    template = awg_config_template(address or tunnel_subnet, tunnel_subnet)
+    return template.format(private_key=private_key_str, port=udp_port, obfuscation=chosen.lines())
 
 
 def is_valid_public_key(value: str) -> bool:
@@ -183,22 +195,23 @@ def _join_sections(sections: list[list[str]]) -> str:
     return "\n".join(line for section in sections for line in section).rstrip("\n") + "\n"
 
 
-def ensure_nat_hooks(server_config: str) -> tuple[str, bool]:
+def ensure_nat_hooks(server_config: str, tunnel_subnet: str = TUNNEL_SUBNET) -> tuple[str, bool]:
     """Дописывает в серверный [Interface] хуки NAT, если их там нет (конфиги, созданные до фикса NAT).
 
     Возвращает новый текст и флаг «что-то изменилось». Чужие PostUp не трогаются — wg-quick
     выполняет все PostUp по порядку.
     """
+    post_up, post_down = nat_post_up(tunnel_subnet), nat_post_down(tunnel_subnet)
     sections = _split_sections(server_config)
     for section in sections:
         if _section_name(section) != "[Interface]":
             continue
         post_ups = [p[1] for line in section[1:] if (p := _parse_line(line)) and p[0] == "PostUp"]
-        if NAT_POST_UP in post_ups:
+        if post_up in post_ups:
             return server_config, False
         # Вставляем после последней содержательной строки секции, чтобы пустые строки-разделители остались ниже.
         insert_at = max(i for i, line in enumerate(section) if line.strip()) + 1
-        section[insert_at:insert_at] = [f"PostUp = {NAT_POST_UP}", f"PostDown = {NAT_POST_DOWN}"]
+        section[insert_at:insert_at] = [f"PostUp = {post_up}", f"PostDown = {post_down}"]
         return _join_sections(sections), True
     raise ValueError("Server config has no [Interface] section")
 
@@ -228,8 +241,9 @@ def used_peer_addresses(server_config: str) -> set[ipaddress.IPv4Address]:
 def pick_free_address(server_config: str) -> ipaddress.IPv4Address:
     """Первый свободный адрес в подсети туннеля сервера.
 
-    Подсеть берётся из Address серверного [Interface] (у нас 10.8.1.0/24, сервер сам занимает .0),
-    занятые — из AllowedIPs всех [Peer]. Вызывающий обязан держать блокировку сервера, иначе два
+    Подсеть берётся из Address серверного [Interface] (у обычного протокола 10.8.1.0/24, сервер сам занимает .0; у
+    шлюза, например, 10.77.0.1/22 — клиенты с 10.77.0.2), занятые — из AllowedIPs всех [Peer]. Размер подсети любой:
+    адрес сети, broadcast и адрес интерфейса не выдаются. Вызывающий обязан держать блокировку сервера, иначе два
     одновременных создания клиента получат один и тот же адрес.
     """
     server_address = ipaddress.ip_interface(interface_values(server_config)["Address"].split(",")[0].strip())
@@ -367,6 +381,7 @@ def render_client_config(
     psk: str,
     server_public_key: str,
     endpoint_host: str,
+    dns: str = CLIENT_DNS,
 ) -> str:
     """Конфиг для приложения клиента. Параметры обфускации копируются из серверного [Interface]."""
     server_interface = interface_values(server_config)
@@ -376,7 +391,7 @@ def render_client_config(
         "[Interface]",
         f"PrivateKey = {client_private_key}",
         f"Address = {client_address}/32",
-        f"DNS = {CLIENT_DNS}",
+        f"DNS = {dns}",
         *obfuscation,
         "",
         "[Peer]",

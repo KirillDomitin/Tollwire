@@ -4,6 +4,7 @@ import asyncio
 import logging
 import re
 from datetime import datetime, timezone
+from typing import ClassVar
 
 from core.ssh_exception import (
     CommandExecutionError,
@@ -34,17 +35,11 @@ from infrastructure.vpn.awg_config import (
 from infrastructure.vpn.config import (
     ACTIVE_HANDSHAKE_WINDOW_SECONDS,
     AMNEZIAWG_IMAGE,
-    CONFIG_FILE_NAME,
-    CONTAINER_CONFIG_DIR,
-    CONTAINER_NAME,
-    CONTAINER_NAME_FILTER,
-    HOST_CONFIG_DIR,
-    INTERFACE_NAME,
+    DEFAULT_LAYOUT,
     INTERNET_PROBE_COMMAND,
-    NAT_POST_UP,
-    NAT_RULE,
     RESTART_POLICY,
     RESTARTING_POLICIES,
+    ContainerLayout,
 )
 from infrastructure.vpn.provider import (
     HealthCheck,
@@ -62,9 +57,6 @@ logger = logging.getLogger("vpn.amnezia")
 # fullmatch (см. validate_name): у re.match «$» пропускает завершающий \n, а имя пишется в awg0.conf.
 _ALLOWED = re.compile(r"[a-zA-Z0-9_-]{1,32}")
 
-CONFIG_PATH = HOST_CONFIG_DIR
-HOST_CONFIG_FILE = f"{HOST_CONFIG_DIR}/{CONFIG_FILE_NAME}"
-CONTAINER_CONFIG_FILE = f"{CONTAINER_CONFIG_DIR}/{CONFIG_FILE_NAME}"
 # apt-get update + install на свежем сервере — минуты (с общим SSH_COMMAND_TIMEOUT установка падала, а apt на
 # сервере продолжал работу и доставлял Docker уже без панели).
 DOCKER_INSTALL_TIMEOUT = 600
@@ -143,56 +135,69 @@ class AmneziaInstaller:
 
 
 class AmneziaWGProvider(VPNProvider):
+    # Раскладка контейнера на сервере: имя, папки, интерфейс, подсеть, DNS. Все команды собираются только из неё;
+    # подкласс (например, шлюз) переопределяет её целиком и получает всю логику провайдера с другими именами.
+    layout: ClassVar[ContainerLayout] = DEFAULT_LAYOUT
+
     def __init__(self, ssh_client: SSHClient):
         super().__init__(ssh_client)
         self.ssh_client = ssh_client
         self.installer = AmneziaInstaller(ssh_client)
 
-    @staticmethod
-    def share_link(client_config: str, display_name: str) -> str | None:
+    @classmethod
+    def share_link(cls, client_config: str, display_name: str) -> str | None:
         """Строка vpn:// для приложения AmneziaVPN; display_name приложение покажет как имя сервера."""
-        return amnezia_share_link(client_config, display_name)
+        return amnezia_share_link(
+            client_config, display_name, subnet=cls.layout.tunnel_subnet, dns=cls.layout.client_dns
+        )
 
-    @staticmethod
-    def share_qr_codes(client_config: str, display_name: str) -> list[str] | None:
+    @classmethod
+    def share_qr_codes(cls, client_config: str, display_name: str) -> list[str] | None:
         """Серия QR в формате экспорта AmneziaVPN: одиночный код со всей строкой vpn:// камера не читает."""
-        return amnezia_qr_codes(client_config, display_name)
+        return amnezia_qr_codes(client_config, display_name, subnet=cls.layout.tunnel_subnet, dns=cls.layout.client_dns)
+
+    def _ps(self, field: str) -> str:
+        """`docker ps` по точному имени нашего контейнера; field — State / Status / Image."""
+        return f"docker ps -a --filter {self.layout.container_filter} --format '{{{{.{field}}}}}'"
 
     async def _is_foreign(self) -> bool:
         """Контейнер с нашим именем есть, но создан не панелью.
 
-        Имя `amnezia-awg` у приложения AmneziaVPN то же самое. Свой контейнер всегда монтирует HOST_CONFIG_DIR
+        Имя `amnezia-awg` у приложения AmneziaVPN то же самое. Свой контейнер всегда монтирует layout.host_config_dir
         (см. _run_container), у чужого такого монтирования нет. Источники сравниваются точно, не по префиксу.
         Любое изменение (остановка, удаление, правка конфига) чужого контейнера уничтожило бы чужой VPN.
         Сбой самой проверки — ошибка, а не «контейнера нет»: решать вслепую нельзя. Остаточное окно между проверкой
         и действием (контейнер подменили посреди операции) принято: от панели оно закрыто ServerLock, а
         деструктивные _run_container/_rm_container перепроверяют сами непосредственно перед docker run/start/rm.
         """
-        state = await self.ssh_client.execute(
-            "docker ps -a --filter " + CONTAINER_NAME_FILTER + " --format '{{.State}}'"
-        )
+        layout = self.layout
+        state = await self.ssh_client.execute(self._ps("State"))
         if state.exit_status != 0:
             raise CommandExecutionError(f"Failed to list containers: {state.stderr.strip()}")
         if not state.stdout.strip():
             return False
         # --type container: без него inspect мог бы вернуть образ или том с таким же именем.
+        mounts_format = "'{{range .Mounts}}{{.Source}} {{end}}'"
         mounts = await self.ssh_client.execute(
-            f"docker inspect --type container -f '{{{{range .Mounts}}}}{{{{.Source}}}} {{{{end}}}}' {CONTAINER_NAME}"
+            f"docker inspect --type container -f {mounts_format} {layout.container_name}"
         )
         if mounts.exit_status != 0:
-            raise CommandExecutionError(f"Failed to inspect container '{CONTAINER_NAME}': {mounts.stderr.strip()}")
-        return HOST_CONFIG_DIR not in mounts.stdout.split()
+            raise CommandExecutionError(
+                f"Failed to inspect container '{layout.container_name}': {mounts.stderr.strip()}"
+            )
+        return layout.host_config_dir not in mounts.stdout.split()
 
     async def _require_own_container(self) -> None:
         if await self._is_foreign():
             raise ForeignContainerError(
-                f"Container '{CONTAINER_NAME}' on this server was not created by the panel "
+                f"Container '{self.layout.container_name}' on this server was not created by the panel "
                 "(probably by the AmneziaVPN application); the panel does not touch it"
             )
 
     async def install(self) -> ProviderStatus:
         await self._require_own_container()
-        test = await self.ssh_client.execute(f"test -f {CONFIG_PATH}/awg0.conf")
+        layout = self.layout
+        test = await self.ssh_client.execute(f"test -f {layout.host_config_file}")
         if test.exit_status == 0:
             # Повторная установка чинит серверы, поставленные до появления NAT-хуков.
             await self._ensure_nat()
@@ -200,8 +205,10 @@ class AmneziaWGProvider(VPNProvider):
             return await self.get_status()
         port = pick_udp_port()
         keys = generate_secret_keys()
-        config = render_awg_config(keys.private_key, port)
-        await self.ssh_client.write_file(f"{CONFIG_PATH}/awg0.conf", config)
+        config = render_awg_config(
+            keys.private_key, port, tunnel_subnet=layout.tunnel_subnet, address=layout.interface_address
+        )
+        await self.ssh_client.write_file(layout.host_config_file, config)
         await self._run_container(port)
         return await self.get_status()
 
@@ -214,9 +221,8 @@ class AmneziaWGProvider(VPNProvider):
     async def get_status(self) -> ProviderStatus:
         if await self._is_foreign():
             return ProviderStatus(server_status=ProviderState.NOT_INSTALLED, version=None, port=None, uptime=None)
-        status = await self.ssh_client.execute(
-            "docker ps -a --filter " + CONTAINER_NAME_FILTER + " --format '{{.State}}'"
-        )
+        layout = self.layout
+        status = await self.ssh_client.execute(self._ps("State"))
         if status.exit_status == 0 and status.stdout.strip():
             raw_state = status.stdout.strip().lower()
 
@@ -230,7 +236,7 @@ class AmneziaWGProvider(VPNProvider):
             status_result = ProviderState.NOT_INSTALLED
             return ProviderStatus(server_status=status_result, version=None, port=None, uptime=None)
 
-        port = await self.ssh_client.execute(f"grep 'ListenPort' {CONFIG_PATH}/awg0.conf | cut -d' ' -f3")
+        port = await self.ssh_client.execute(f"grep 'ListenPort' {layout.host_config_file} | cut -d' ' -f3")
         if port.exit_status == 0:
             port_str = port.stdout.strip()
             port_result = int(port_str)
@@ -239,26 +245,26 @@ class AmneziaWGProvider(VPNProvider):
             raise CommandExecutionError("Error: 'ListenPort' key not found in the configuration file.")
 
         elif port.exit_status == 2:
-            raise CommandExecutionError(f"Error: Configuration file at {CONFIG_PATH}/awg0.conf does not exist.")
+            raise CommandExecutionError(f"Error: Configuration file at {layout.host_config_file} does not exist.")
 
         else:
             raise CommandExecutionError(f"Unexpected error (Code {port.exit_status}): {port.stderr.strip()}")
 
-        uptime = await self.ssh_client.execute(
-            "docker ps -a --filter " + CONTAINER_NAME_FILTER + " --format '{{.Status}}'"
-        )
-        version = await self.ssh_client.execute(
-            "docker ps -a --filter " + CONTAINER_NAME_FILTER + " --format '{{.Image}}'"
-        )
+        uptime = await self.ssh_client.execute(self._ps("Status"))
+        version = await self.ssh_client.execute(self._ps("Image"))
         if uptime.exit_status == 0 and uptime.stdout.strip():
             uptime_result = uptime.stdout.strip()
         else:
-            raise CommandExecutionError(f"Error or Container '{CONTAINER_NAME}' not found while checking uptime.")
+            raise CommandExecutionError(
+                f"Error or Container '{layout.container_name}' not found while checking uptime."
+            )
 
         if version.exit_status == 0 and version.stdout.strip():
             version_result = version.stdout.strip()
         else:
-            raise CommandExecutionError(f"Error or Container '{CONTAINER_NAME}' not found while checking version.")
+            raise CommandExecutionError(
+                f"Error or Container '{layout.container_name}' not found while checking version."
+            )
 
         return ProviderStatus(
             server_status=status_result, version=version_result, port=port_result, uptime=uptime_result
@@ -271,13 +277,13 @@ class AmneziaWGProvider(VPNProvider):
         """
         validate_name(name)
         await self._require_own_container()
-        server_config = await self.ssh_client.read_file(HOST_CONFIG_FILE)
+        server_config = await self.ssh_client.read_file(self.layout.host_config_file)
         address = pick_free_address(server_config)
         keys = generate_secret_keys()
         server_public_key = await self._server_public_key()
 
         updated = append_peer(server_config, render_peer_block(name, keys.public_key, keys.psk, address))
-        await self.ssh_client.write_file(HOST_CONFIG_FILE, updated)
+        await self.ssh_client.write_file(self.layout.host_config_file, updated)
         await self._apply_config()
 
         client_config = render_client_config(
@@ -287,6 +293,7 @@ class AmneziaWGProvider(VPNProvider):
             psk=keys.psk,
             server_public_key=server_public_key,
             endpoint_host=self.ssh_client.host,
+            dns=self.layout.client_dns,
         )
         return VPNClientConfig(name=name, public_key=keys.public_key, address=str(address), config=client_config)
 
@@ -298,11 +305,11 @@ class AmneziaWGProvider(VPNProvider):
         if not is_valid_public_key(public_key):
             raise ValueError("Invalid WireGuard public key")
         await self._require_own_container()
-        server_config = await self.ssh_client.read_file(HOST_CONFIG_FILE)
+        server_config = await self.ssh_client.read_file(self.layout.host_config_file)
         updated, removed = remove_peer(server_config, public_key)
         if not removed:
             return
-        await self.ssh_client.write_file(HOST_CONFIG_FILE, updated)
+        await self.ssh_client.write_file(self.layout.host_config_file, updated)
         await self._apply_config()
 
     async def _ensure_nat(self) -> None:
@@ -311,22 +318,23 @@ class AmneziaWGProvider(VPNProvider):
         Хуки сработают при следующем старте контейнера; чтобы не перезапускать его (и не рвать
         соединения клиентов), правило дополнительно применяется сразу. Обе операции идемпотентны.
         """
-        server_config = await self.ssh_client.read_file(HOST_CONFIG_FILE)
-        updated, changed = ensure_nat_hooks(server_config)
+        layout = self.layout
+        server_config = await self.ssh_client.read_file(layout.host_config_file)
+        updated, changed = ensure_nat_hooks(server_config, layout.tunnel_subnet)
         if changed:
-            await self.ssh_client.write_file(HOST_CONFIG_FILE, updated)
+            await self.ssh_client.write_file(layout.host_config_file, updated)
 
-        running = await self.ssh_client.execute(f"docker inspect -f '{{{{.State.Running}}}}' {CONTAINER_NAME}")
+        running = await self.ssh_client.execute(f"docker inspect -f '{{{{.State.Running}}}}' {layout.container_name}")
         if running.stdout.strip() != "true":
             return
-        result = await self.ssh_client.execute(f"docker exec {CONTAINER_NAME} sh -c '{NAT_POST_UP}'")
+        result = await self.ssh_client.execute(f"docker exec {layout.container_name} sh -c '{layout.nat_post_up}'")
         if result.exit_status != 0:
             raise CommandExecutionError(f"Failed to apply NAT rule: {result.stderr.strip()}")
 
     async def _restart_policy(self) -> str | None:
         """Политика перезапуска нашего контейнера или None, если контейнера нет."""
         result = await self.ssh_client.execute(
-            f"docker inspect -f '{{{{.HostConfig.RestartPolicy.Name}}}}' {CONTAINER_NAME}"
+            f"docker inspect -f '{{{{.HostConfig.RestartPolicy.Name}}}}' {self.layout.container_name}"
         )
         return result.stdout.strip() if result.exit_status == 0 else None
 
@@ -337,13 +345,16 @@ class AmneziaWGProvider(VPNProvider):
         policy = await self._restart_policy()
         if policy is None or policy in RESTARTING_POLICIES:
             return
-        result = await self.ssh_client.execute(f"docker update --restart {RESTART_POLICY} {CONTAINER_NAME}")
+        result = await self.ssh_client.execute(f"docker update --restart {RESTART_POLICY} {self.layout.container_name}")
         if result.exit_status != 0:
             raise CommandExecutionError(f"Failed to set restart policy: {result.stderr.strip()}")
 
     async def _server_public_key(self) -> str:
         # Берём публичный ключ у живого интерфейса — приватный ключ сервера не покидает сервер.
-        result = await self.ssh_client.execute(f"docker exec {CONTAINER_NAME} awg show {INTERFACE_NAME} public-key")
+        layout = self.layout
+        result = await self.ssh_client.execute(
+            f"docker exec {layout.container_name} awg show {layout.interface_name} public-key"
+        )
         public_key = result.stdout.strip()
         if result.exit_status != 0 or not is_valid_public_key(public_key):
             raise CommandExecutionError(f"Failed to read server public key: {result.stderr.strip()}")
@@ -353,12 +364,13 @@ class AmneziaWGProvider(VPNProvider):
         # awg-quick strip убирает строки, которых не понимает awg (Address, DNS…), а syncconf применяет
         # конфиг к живому интерфейсу без перезапуска: существующие клиенты не отключаются.
         # Временный файл содержит приватный ключ сервера — удаляем при любом исходе.
-        stripped = "/tmp/awg0.stripped"
+        layout = self.layout
+        stripped = f"/tmp/{layout.interface_name}.stripped"
         script = (
-            f"awg-quick strip {CONTAINER_CONFIG_FILE} > {stripped}"
-            f" && awg syncconf {INTERFACE_NAME} {stripped}; rc=$?; rm -f {stripped}; exit $rc"
+            f"awg-quick strip {layout.container_config_file} > {stripped}"
+            f" && awg syncconf {layout.interface_name} {stripped}; rc=$?; rm -f {stripped}; exit $rc"
         )
-        result = await self.ssh_client.execute(f"docker exec {CONTAINER_NAME} sh -c '{script}'")
+        result = await self.ssh_client.execute(f"docker exec {layout.container_name} sh -c '{script}'")
         if result.exit_status != 0:
             raise CommandExecutionError(f"Failed to apply AmneziaWG config: {result.stderr.strip()}")
 
@@ -371,7 +383,7 @@ class AmneziaWGProvider(VPNProvider):
         validate_name(name)
         params = parse_client_config(client_config)
         await self._require_own_container()
-        server_config = await self.ssh_client.read_file(HOST_CONFIG_FILE)
+        server_config = await self.ssh_client.read_file(self.layout.host_config_file)
         peers = list_peers(server_config)
         if any(peer.public_key == params.public_key for peer in peers):
             return False
@@ -379,7 +391,7 @@ class AmneziaWGProvider(VPNProvider):
             raise CommandExecutionError(f"Address {params.address} is already taken by another peer")
 
         updated = append_peer(server_config, render_peer_block(name, params.public_key, params.psk, params.address))
-        await self.ssh_client.write_file(HOST_CONFIG_FILE, updated)
+        await self.ssh_client.write_file(self.layout.host_config_file, updated)
         await self._apply_config()
         return True
 
@@ -387,10 +399,11 @@ class AmneziaWGProvider(VPNProvider):
         """Peer'ы из awg0.conf (источник правды о том, кого сервер пустит) + время последнего рукопожатия."""
         if await self._is_foreign() or not await self._config_exists():
             return []
-        peers = list_peers(await self.ssh_client.read_file(HOST_CONFIG_FILE))
+        layout = self.layout
+        peers = list_peers(await self.ssh_client.read_file(layout.host_config_file))
         handshakes: dict[str, datetime | None] = {}
         result = await self.ssh_client.execute(
-            f"docker exec {CONTAINER_NAME} awg show {INTERFACE_NAME} latest-handshakes"
+            f"docker exec {layout.container_name} awg show {layout.interface_name} latest-handshakes"
         )
         if result.exit_status == 0:
             handshakes = parse_latest_handshakes(result.stdout)
@@ -411,13 +424,12 @@ class AmneziaWGProvider(VPNProvider):
 
     async def health_check(self) -> ProviderHealth:
         """Проверки протокола на сервере: контейнер, перезапуск, конфиг, интерфейс, порт, NAT, клиенты. Не меняет."""
+        layout = self.layout
         checks: list[HealthCheck] = []
         if await self._is_foreign():
-            checks.append(HealthCheck("container", False, f"{CONTAINER_NAME} belongs to another application"))
+            checks.append(HealthCheck("container", False, f"{layout.container_name} belongs to another application"))
             return ProviderHealth(installed=False, checks=checks, port=None, clients_total=0, clients_active=0)
-        state = await self.ssh_client.execute(
-            "docker ps -a --filter " + CONTAINER_NAME_FILTER + " --format '{{.State}}'"
-        )
+        state = await self.ssh_client.execute(self._ps("State"))
         raw_state = state.stdout.strip()
         running = raw_state == "running"
         checks.append(HealthCheck("container", running, raw_state or "container not found"))
@@ -428,12 +440,12 @@ class AmneziaWGProvider(VPNProvider):
         installed = bool(raw_state) or config_exists
         if config_exists:
             try:
-                port = int(interface_values(await self.ssh_client.read_file(HOST_CONFIG_FILE))["ListenPort"])
+                port = int(interface_values(await self.ssh_client.read_file(layout.host_config_file))["ListenPort"])
                 checks.append(HealthCheck("config", True, f"ListenPort {port}"))
             except (KeyError, ValueError):
                 checks.append(HealthCheck("config", False, "ListenPort is missing or invalid"))
         else:
-            checks.append(HealthCheck("config", False, f"{HOST_CONFIG_FILE} not found"))
+            checks.append(HealthCheck("config", False, f"{layout.host_config_file} not found"))
 
         if policy is not None:
             checks.append(
@@ -447,22 +459,26 @@ class AmneziaWGProvider(VPNProvider):
         if not running:
             return ProviderHealth(installed=installed, checks=checks, port=port, clients_total=0, clients_active=0)
 
-        listen = await self.ssh_client.execute(f"docker exec {CONTAINER_NAME} awg show {INTERFACE_NAME} listen-port")
+        listen = await self.ssh_client.execute(
+            f"docker exec {layout.container_name} awg show {layout.interface_name} listen-port"
+        )
         interface_up = listen.exit_status == 0
         checks.append(
-            HealthCheck("interface", interface_up, f"{INTERFACE_NAME} is up" if interface_up else "interface is down")
+            HealthCheck(
+                "interface", interface_up, f"{layout.interface_name} is up" if interface_up else "interface is down"
+            )
         )
         if interface_up and port is not None:
             listen_port = listen.stdout.strip()
             checks.append(HealthCheck("listen_port", listen_port == str(port), f"interface listens on {listen_port}"))
         if port is not None:
             # port — число из конфига, а не пользовательский ввод: подставлять в команду безопасно.
-            published = await self.ssh_client.execute(f"docker port {CONTAINER_NAME} {port}/udp")
+            published = await self.ssh_client.execute(f"docker port {layout.container_name} {port}/udp")
             mapping = published.stdout.strip()
             checks.append(
                 HealthCheck("port_published", published.exit_status == 0 and bool(mapping), mapping or "not published")
             )
-        nat = await self.ssh_client.execute(f"docker exec {CONTAINER_NAME} iptables -t nat -C {NAT_RULE}")
+        nat = await self.ssh_client.execute(f"docker exec {layout.container_name} iptables -t nat -C {layout.nat_rule}")
         checks.append(
             HealthCheck("nat", nat.exit_status == 0, "masquerade rule present" if nat.exit_status == 0 else "no rule")
         )
@@ -480,58 +496,52 @@ class AmneziaWGProvider(VPNProvider):
         )
 
     async def _config_exists(self) -> bool:
-        result = await self.ssh_client.execute(f"test -f {HOST_CONFIG_FILE}")
+        result = await self.ssh_client.execute(f"test -f {self.layout.host_config_file}")
         return result.exit_status == 0
 
     async def _run_container(self, port: int) -> None:
+        layout = self.layout
         await self._require_own_container()
-        container_state = await self.ssh_client.execute(
-            "docker ps -a --filter " + CONTAINER_NAME_FILTER + " --format '{{.State}}'"
-        )
+        container_state = await self.ssh_client.execute(self._ps("State"))
 
         if not container_state.stdout:
             container_run = await self.ssh_client.execute(
-                f"docker run -d --name {CONTAINER_NAME} --restart {RESTART_POLICY} \
+                f"docker run -d --name {layout.container_name} --restart {RESTART_POLICY} \
                   --cap-add=NET_ADMIN --device=/dev/net/tun \
                   -p {port}:{port}/udp \
-                  -v {CONFIG_PATH}:/etc/amnezia/awg \
+                  -v {layout.host_config_dir}:{layout.container_config_dir} \
                   {AMNEZIAWG_IMAGE} \
-                  sh -c 'awg-quick up /etc/amnezia/awg/awg0.conf && tail -f /dev/null'",
+                  sh -c 'awg-quick up {layout.container_config_file} && tail -f /dev/null'",
                 timeout=300,
             )
             if container_run.exit_status != 0:
                 raise DockerError(f"Failed to start container. Error: {container_run.stderr}")
         elif container_state.stdout.strip() == "exited":
-            container_start = await self.ssh_client.execute(f"docker start {CONTAINER_NAME}")
+            container_start = await self.ssh_client.execute(f"docker start {layout.container_name}")
             if container_start.exit_status != 0:
                 raise DockerError(f"Failed to start container. Error: {container_start.stderr}")
 
         await asyncio.sleep(5)
-        container_state = await self.ssh_client.execute(
-            "docker ps -a --filter " + CONTAINER_NAME_FILTER + " --format '{{.State}}'"
-        )
+        container_state = await self.ssh_client.execute(self._ps("State"))
         if container_state.stdout.strip() != "running":
             raise DockerError("Failed to start container.")
 
     async def _rm_container(self) -> None:
+        layout = self.layout
         await self._require_own_container()
-        container_state = await self.ssh_client.execute(
-            "docker ps -a --filter " + CONTAINER_NAME_FILTER + " --format '{{.State}}'"
-        )
+        container_state = await self.ssh_client.execute(self._ps("State"))
         if container_state.stdout:
             container_stop = await self.ssh_client.execute(
-                f"docker stop {CONTAINER_NAME} && docker rm {CONTAINER_NAME}"
+                f"docker stop {layout.container_name} && docker rm {layout.container_name}"
             )
-            rm_config = await self.ssh_client.execute(f"rm -rf {CONFIG_PATH}")
+            rm_config = await self.ssh_client.execute(f"rm -rf {layout.host_config_dir}")
 
             if container_stop.exit_status != 0:
                 raise DockerError(f"Failed to stop container. Error: {container_stop.stderr}")
             if rm_config.exit_status != 0:
                 raise OSError(f"Error deleting directory: {rm_config.stderr} (Code: {rm_config.exit_status})")
 
-            container_state = await self.ssh_client.execute(
-                "docker ps -a --filter " + CONTAINER_NAME_FILTER + " --format '{{.State}}'"
-            )
+            container_state = await self.ssh_client.execute(self._ps("State"))
 
             if container_state.stdout:
                 raise DockerError("Failed to remove container.")

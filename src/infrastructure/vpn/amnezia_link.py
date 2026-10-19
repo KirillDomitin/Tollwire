@@ -41,12 +41,20 @@ def _with_dns_placeholders(client_config: str) -> str:
     return "\n".join(lines) + "\n"
 
 
-def amnezia_share_link(client_config: str, description: str) -> str:
-    """Строка vpn:// для импорта в AmneziaVPN. ValueError — если конфиг неполный."""
-    return "vpn://" + _b64url(_app_payload(client_config, description))
+def amnezia_share_link(
+    client_config: str, description: str, *, subnet: str = TUNNEL_SUBNET, dns: str | None = None
+) -> str:
+    """Строка vpn:// для импорта в AmneziaVPN. ValueError — если конфиг неполный.
+
+    subnet — подсеть туннеля сервера (поле subnet_address), dns — «основной, запасной» для dns1/dns2; без dns берётся
+    строка DNS из самого конфига клиента.
+    """
+    return "vpn://" + _b64url(_app_payload(client_config, description, subnet, dns))
 
 
-def amnezia_qr_codes(client_config: str, description: str) -> list[str]:
+def amnezia_qr_codes(
+    client_config: str, description: str, *, subnet: str = TUNNEL_SUBNET, dns: str | None = None
+) -> list[str]:
     """Тот же конфиг серией QR-кодов — в формате, который печатает экспорт самого AmneziaVPN (qrCodeUtils).
 
     Один код со всей строкой vpn:// получается слишком плотным (~130×130 модулей) — камера его не читает.
@@ -54,7 +62,7 @@ def amnezia_qr_codes(client_config: str, description: str) -> list[str]:
         qint16 1984 (метка) | quint8 число кусков | quint8 номер куска | QByteArray (quint32 длина + байты)
     и в base64url без «=». Сканер AmneziaVPN собирает куски сам, в любом порядке.
     """
-    payload = _app_payload(client_config, description)
+    payload = _app_payload(client_config, description, subnet, dns)
     parts = [payload[start : start + QR_CHUNK_SIZE] for start in range(0, len(payload), QR_CHUNK_SIZE)]
     if len(parts) > 255:  # число и номер куска — по одному байту
         raise ValueError("Config is too large for a QR series")
@@ -67,7 +75,7 @@ def _b64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
 
 
-def _app_payload(client_config: str, description: str) -> bytes:
+def _app_payload(client_config: str, description: str, subnet: str, dns_override: str | None) -> bytes:
     """Документ AmneziaVPN, сжатый как Qt qCompress: 4 байта длины (big-endian) + zlib."""
     interface, peer = client_config_sections(client_config)
     try:
@@ -82,7 +90,8 @@ def _app_payload(client_config: str, description: str) -> bytes:
 
     client_public_key = public_key_from_private(private_key)
     params = obfuscation_params(interface)
-    dns = [server.strip() for server in interface.get("DNS", "").split(",") if server.strip()]
+    dns_line = dns_override if dns_override is not None else interface.get("DNS", "")
+    dns = [server.strip() for server in dns_line.split(",") if server.strip()]
 
     last_config = {
         **params,
@@ -104,7 +113,7 @@ def _app_payload(client_config: str, description: str) -> bytes:
         "last_config": json.dumps(last_config, ensure_ascii=False, separators=(",", ":"), sort_keys=True),
         "port": str(port),
         "protocol_version": APP_PROTOCOL_VERSION,
-        "subnet_address": str(ipaddress.ip_network(TUNNEL_SUBNET).network_address),
+        "subnet_address": str(ipaddress.ip_network(subnet).network_address),
         "transport_proto": "udp",
     }
     document = {

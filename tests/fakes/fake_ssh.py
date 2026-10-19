@@ -29,11 +29,10 @@ from infrastructure.vpn.awg_config import (
 from infrastructure.vpn.config import (
     CONFIG_FILE_NAME,
     CONTAINER_NAME,
+    DEFAULT_LAYOUT,
     HOST_CONFIG_DIR,
-    INTERFACE_NAME,
     INTERNET_PROBE_COMMAND,
-    NAT_POST_UP,
-    NAT_RULE,
+    ContainerLayout,
 )
 
 CONFIG_FILE = f"{HOST_CONFIG_DIR}/{CONFIG_FILE_NAME}"
@@ -43,7 +42,6 @@ _INSPECT_RUNNING_RE = re.compile(r"docker inspect (?:--type container )?-f '\{\{
 _INSPECT_MOUNTS_RE = re.compile(
     r"docker inspect --type container -f '\{\{range \.Mounts\}\}\{\{\.Source\}\} \{\{end\}\}' (\S+)"
 )
-_EXEC = f"docker exec {CONTAINER_NAME} "
 
 # Приложение AmneziaVPN: контейнеры amnezia-awg (AWG v1, утилита wg) и amnezia-awg2 (AWG v2, утилита awg). Конфиг и
 # таблица клиентов лежат ВНУТРИ контейнера, на хосте ничего нет.
@@ -277,6 +275,9 @@ class FakeServer:
     interface_peers: set[str] = field(default_factory=set)  # ключи, применённые к живому интерфейсу
     handshakes: dict[str, int] = field(default_factory=dict)  # ключ → unix-время последнего рукопожатия
     commands: list[str] = field(default_factory=list)
+    # Раскладка контейнера панели на этом «сервере»: по умолчанию как у обычного протокола; шлюз и другие подклассы
+    # провайдера с иной раскладкой — свой FakeServer(layout=...). Все ответы фейка собираются только из неё.
+    layout: ContainerLayout = DEFAULT_LAYOUT
     # Журнал файловых операций клиента (SFTP): пути, которые прочитали / записали. Тесты «не трогаем чужое».
     reads: list[str] = field(default_factory=list)
     writes: list[str] = field(default_factory=list)
@@ -383,8 +384,8 @@ class FakeServer:
     def add_foreign_container(self, state: str = "running", source: str = FOREIGN_MOUNT_SOURCE) -> None:
         """Контейнер `amnezia-awg`, созданный не панелью (приложением AmneziaVPN): конфиг внутри тома Docker,
         папки панели среди монтирований нет."""
-        self.containers[CONTAINER_NAME] = state
-        self.mounts[CONTAINER_NAME] = [source]
+        self.containers[self.layout.container_name] = state
+        self.mounts[self.layout.container_name] = [source]
 
     def mutating_commands(self) -> list[str]:
         """Команды из журнала, которые меняют сервер (или исполняются внутри контейнера). Чтение — docker ps/inspect,
@@ -407,22 +408,28 @@ class FakeServer:
         return sorted(path for path in self.files if path.startswith(f"{STAGE_DIR}/"))
 
     @property
+    def config_file(self) -> str:
+        return self.layout.host_config_file
+
+    @property
     def running(self) -> bool:
-        return self.containers.get(CONTAINER_NAME) == "running"
+        return self.containers.get(self.layout.container_name) == "running"
 
     def config_peer_keys(self) -> set[str]:
-        return {peer.public_key for peer in list_peers(self.files[CONFIG_FILE])}
+        return {peer.public_key for peer in list_peers(self.files[self.config_file])}
 
     def _port(self) -> str:
-        return interface_values(self.files[CONFIG_FILE])["ListenPort"]
+        return interface_values(self.files[self.config_file])["ListenPort"]
 
     def _start(self) -> None:
         # Как awg-quick up: поднимает интерфейс по конфигу и выполняет PostUp.
-        self.containers[CONTAINER_NAME] = "running"
+        self.containers[self.layout.container_name] = "running"
         self.interface_peers = self.config_peer_keys()
-        self.nat_rule = NAT_POST_UP in self.files.get(CONFIG_FILE, "")
+        self.nat_rule = self.layout.nat_post_up in self.files.get(self.config_file, "")
 
     def run(self, command: str) -> CommandResult:
+        layout = self.layout
+        container = layout.container_name
         self.commands.append(command)
         cmd = " ".join(command.split())  # docker run в коде многострочный — схлопываем пробелы
         if cmd == "uname -s":
@@ -461,7 +468,7 @@ class FakeServer:
             name = match.group(1)
             if name not in self.containers:
                 return _fail("No such object", 1)
-            default = [HOST_CONFIG_DIR] if name == CONTAINER_NAME else []
+            default = [layout.host_config_dir] if name == container else []
             # Формат шаблона `{{.Source}} ` на каждое монтирование: источники через пробел, с хвостовым пробелом.
             return _ok("".join(f"{source} " for source in self.mounts.get(name, default)) + "\n")
         if match := re.fullmatch(r"grep 'ListenPort' (\S+) \| cut -d' ' -f3", cmd):
@@ -469,35 +476,37 @@ class FakeServer:
             content = self.files.get(match.group(1), "")
             port = next((line.split()[2] for line in content.splitlines() if line.startswith("ListenPort")), "")
             return _ok(port + "\n" if port else "")
-        if cmd == f"docker inspect -f '{{{{.HostConfig.RestartPolicy.Name}}}}' {CONTAINER_NAME}":
-            if CONTAINER_NAME not in self.containers:
+        if cmd == f"docker inspect -f '{{{{.HostConfig.RestartPolicy.Name}}}}' {container}":
+            if container not in self.containers:
                 return _fail("No such object", 1)
             return _ok(f"{self.restart_policy}\n")
-        if cmd == f"docker update --restart unless-stopped {CONTAINER_NAME}":
-            if CONTAINER_NAME not in self.containers:
+        if cmd == f"docker update --restart unless-stopped {container}":
+            if container not in self.containers:
                 return _fail("No such container", 1)
             self.restart_policy = "unless-stopped"
-            return _ok(f"{CONTAINER_NAME}\n")
-        if cmd.startswith(f"docker run -d --name {CONTAINER_NAME} "):
-            if CONTAINER_NAME in self.containers:  # как настоящий docker: имя занято
-                return _fail(f'Conflict. The container name "/{CONTAINER_NAME}" is already in use', 125)
-            self.mounts[CONTAINER_NAME] = re.findall(r" -v (\S+?):\S+", cmd)
+            return _ok(f"{container}\n")
+        if cmd.startswith(f"docker run -d --name {container} "):
+            if container in self.containers:  # как настоящий docker: имя занято
+                return _fail(f'Conflict. The container name "/{container}" is already in use', 125)
+            self.mounts[container] = re.findall(r" -v (\S+?):\S+", cmd)
             self.restart_policy = "unless-stopped" if " --restart unless-stopped " in cmd else "no"
             self._start()
             return _ok("container-id\n")
-        if cmd == f"docker start {CONTAINER_NAME}":
+        if cmd == f"docker start {container}":
             self._start()
             return _ok()
-        if cmd == f"docker stop {CONTAINER_NAME} && docker rm {CONTAINER_NAME}":
-            self.containers.pop(CONTAINER_NAME, None)
-            self.mounts.pop(CONTAINER_NAME, None)
+        if cmd == f"docker stop {container} && docker rm {container}":
+            self.containers.pop(container, None)
+            self.mounts.pop(container, None)
             self.interface_peers = set()
             self.nat_rule = False
             return _ok()
-        if cmd == f"rm -rf {HOST_CONFIG_DIR}":
-            self.files = {path: text for path, text in self.files.items() if not path.startswith(HOST_CONFIG_DIR)}
+        if cmd == f"rm -rf {layout.host_config_dir}":
+            self.files = {
+                path: text for path, text in self.files.items() if not path.startswith(layout.host_config_dir)
+            }
             return _ok()
-        if match := re.fullmatch(rf"docker port {CONTAINER_NAME} (\d+)/udp", cmd):
+        if match := re.fullmatch(rf"docker port {container} (\d+)/udp", cmd):
             if not self.port_published:
                 return _fail("no public port published", 1)
             return _ok(f"0.0.0.0:{match.group(1)}\n[::]:{match.group(1)}\n")
@@ -516,10 +525,10 @@ class FakeServer:
         if match := re.fullmatch(r"docker exec (\S+) (.+)", cmd):
             if (app := self.apps.get(match.group(1))) is not None:
                 return self._app_exec(app, match.group(2))
-        if cmd.startswith(_EXEC):
+        if cmd.startswith(f"docker exec {container} "):
             if not self.running:
-                return _fail(f"container {CONTAINER_NAME} is not running", 1)
-            return self._exec(cmd.removeprefix(_EXEC))
+                return _fail(f"container {container} is not running", 1)
+            return self._exec(cmd.removeprefix(f"docker exec {container} "))
         raise AssertionError(f"FakeServer: unexpected command: {command!r}")
 
     def _docker_ps(self, filter_arg: str, template: str) -> CommandResult:
@@ -609,25 +618,31 @@ class FakeServer:
         raise AssertionError(f"FakeServer: unexpected docker exec in {app.container}: {inner!r}")
 
     def _exec(self, inner: str) -> CommandResult:
+        layout = self.layout
+        iface = layout.interface_name
         if match := re.fullmatch(r"cat (\S+)", inner):  # в нашем контейнере файлов приложения AmneziaVPN нет
-            self.container_reads.append((CONTAINER_NAME, match.group(1)))
+            self.container_reads.append((layout.container_name, match.group(1)))
             return _fail(f"cat: can't open '{match.group(1)}': No such file or directory", 1)
         if re.fullmatch(r"wg show \S+ latest-handshakes", inner):  # у нашего образа только awg
             return _fail('exec: "wg": executable file not found in $PATH', 126)
-        if inner == f"sh -c '{NAT_POST_UP}'":
+        if inner == f"sh -c '{layout.nat_post_up}'":
             self.nat_rule = True
             return _ok()
-        if inner == f"awg show {INTERFACE_NAME} public-key":
-            private_key = interface_values(self.files[CONFIG_FILE])["PrivateKey"]
+        if inner == f"awg show {iface} public-key":
+            private_key = interface_values(self.files[self.config_file])["PrivateKey"]
             return _ok(public_key_from_private(private_key) + "\n")
-        if inner == f"awg show {INTERFACE_NAME} listen-port":
+        if inner == f"awg show {iface} listen-port":
             return _ok(self._port() + "\n")
-        if inner == f"awg show {INTERFACE_NAME} latest-handshakes":
+        if inner == f"awg show {iface} latest-handshakes":
             return _ok("".join(f"{key}\t{self.handshakes.get(key, 0)}\n" for key in sorted(self.interface_peers)))
-        if inner.startswith("sh -c 'awg-quick strip ") and "awg syncconf" in inner:
+        stripped = f"/tmp/{iface}.stripped"
+        if inner == (
+            f"sh -c 'awg-quick strip {layout.container_config_file} > {stripped}"
+            f" && awg syncconf {iface} {stripped}; rc=$?; rm -f {stripped}; exit $rc'"
+        ):
             self.interface_peers = self.config_peer_keys()
             return _ok()
-        if inner == f"iptables -t nat -C {NAT_RULE}":
+        if inner == f"iptables -t nat -C {layout.nat_rule}":
             return _ok() if self.nat_rule else _fail("Bad rule (does a matching rule exist in that chain?)", 1)
         raise AssertionError(f"FakeServer: unexpected docker exec: {inner!r}")
 
