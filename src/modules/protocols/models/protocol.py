@@ -13,10 +13,14 @@ class ProtocolType(enum.Enum):
     AMNEZIA_WG = "amnezia_wg"
     AMNEZIA_APP_AWG = "amnezia_app_awg"
     AMNEZIA_APP_AWG2 = "amnezia_app_awg2"
+    # «Шлюз»: свой контейнер панели на российском сервере, завершает клиентский AWG и пересылает трафик на выходы.
+    AMNEZIA_GATEWAY = "amnezia_gateway"
 
 
 # Установки приложения AmneziaVPN: панель их не ставит и не удаляет, клиентов в них только отзывает и возвращает.
 APP_PROTOCOLS = frozenset({ProtocolType.AMNEZIA_APP_AWG, ProtocolType.AMNEZIA_APP_AWG2})
+# Протоколы, которые панель ставит и снимает сама (тело POST/DELETE /servers/{id}/protocol).
+INSTALLABLE_PROTOCOLS = frozenset({ProtocolType.AMNEZIA_WG, ProtocolType.AMNEZIA_GATEWAY})
 
 
 class VPNProtocol(UuidPkMixin, TimestampMixin, Base):

@@ -524,3 +524,84 @@ async def test_client_import_migration_downgrade_keeps_a_grant_that_also_has_an_
         assert await _query(text("SELECT id FROM access_grants")) == [(grant,)]
     finally:
         await _alembic("upgrade", "head")
+
+
+# --- шлюз (24.1): protocoltype.AMNEZIA_GATEWAY ---
+
+# Ревизия перед миграцией шлюза (прежняя голова): откатываем именно к ней.
+BEFORE_GATEWAY = "f6b2d8a41c73"
+PROTOCOL_TYPES_BEFORE_GATEWAY = {"AMNEZIA_WG", "AMNEZIA_APP_AWG", "AMNEZIA_APP_AWG2"}
+
+
+async def test_gateway_migration_adds_the_protocol_type() -> None:
+    assert await _labels(PROTOCOL_TYPES_SQL) == PROTOCOL_TYPES_BEFORE_GATEWAY | {"AMNEZIA_GATEWAY"}
+
+
+async def test_gateway_migration_new_type_is_usable_by_the_orm() -> None:
+    from modules.protocols.models.protocol import ProtocolType, VPNProtocol
+
+    server_id = await _add_server()
+    async with session_factory() as session:
+        session.add(VPNProtocol(server_id=server_id, type=ProtocolType("amnezia_gateway"), port=1))
+        await session.commit()
+    assert await _query(text("SELECT type::text FROM protocols")) == [("AMNEZIA_GATEWAY",)]
+
+
+async def test_gateway_migration_downgrade_removes_the_value_then_upgrade_restores() -> None:
+    await _alembic("downgrade", BEFORE_GATEWAY)
+    try:
+        assert await _labels(PROTOCOL_TYPES_SQL) == PROTOCOL_TYPES_BEFORE_GATEWAY
+    finally:
+        await _alembic("upgrade", "head")
+    assert "AMNEZIA_GATEWAY" in await _labels(PROTOCOL_TYPES_SQL)
+
+
+async def test_gateway_migration_downgrade_deletes_gateway_rows_with_their_grants_and_keeps_others() -> None:
+    """Значение enum нельзя убрать, пока есть строки с ним: откат удаляет протоколы шлюза (каскадом - их доступы и
+    credential'ы); обычные и приложения остаются со своими клиентами."""
+    server_id = await _add_server()
+    async with engine.begin() as conn:
+        # Одна живая подписка на пользователя: у каждого доступа свой пользователь.
+        users = [await _insert_user(conn, f"gw{index}@example.com", f"gw{index}") for index in range(3)]
+        kept_grants = [
+            await _insert_grant(conn, server_id, users[0], "AMNEZIA_WG"),
+            await _insert_grant(conn, server_id, users[1], "AMNEZIA_APP_AWG2"),
+        ]
+        gateway_grant = await _insert_grant(conn, server_id, users[2], "AMNEZIA_GATEWAY")
+        await _insert_credential(conn, kept_grants[0], "k-wg")
+        await _insert_credential(conn, gateway_grant, "k-gateway")
+    await _alembic("downgrade", BEFORE_GATEWAY)
+    try:
+        assert sorted(row[0] for row in await _query(text("SELECT type::text FROM protocols"))) == [
+            "AMNEZIA_APP_AWG2",
+            "AMNEZIA_WG",
+        ]
+        assert sorted(row[0] for row in await _query(text("SELECT id FROM access_grants"))) == sorted(kept_grants)
+        assert await _query(text("SELECT client_public_key FROM vpn_credentials")) == [("k-wg",)]
+        assert await _labels(PROTOCOL_TYPES_SQL) == PROTOCOL_TYPES_BEFORE_GATEWAY
+    finally:
+        await _alembic("upgrade", "head")
+    assert "AMNEZIA_GATEWAY" in await _labels(PROTOCOL_TYPES_SQL)
+    assert await _query(text("SELECT count(*) FROM protocols")) == [(2,)]
+
+
+async def test_gateway_migration_downgrade_keeps_the_unique_constraint_and_stays_idempotent() -> None:
+    """Пересоздание enum не теряет уникальность (server_id, type); upgrade → downgrade → upgrade не падает."""
+    await _alembic("downgrade", BEFORE_GATEWAY)
+    try:
+        server_id = await _add_server()
+        insert = text("INSERT INTO protocols (id, server_id, type) VALUES (gen_random_uuid(), :sid, 'AMNEZIA_WG')")
+        async with engine.begin() as conn:
+            await conn.execute(insert, {"sid": server_id})
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(insert, {"sid": server_id})
+        except Exception as exc:  # noqa: BLE001 - нужен именно отказ БД по уникальному ограничению
+            assert "unique" in str(exc).lower()
+        else:
+            raise AssertionError("UniqueConstraint(server_id, type) was lost by the downgrade")
+    finally:
+        await _alembic("upgrade", "head")
+    await _alembic("downgrade", BEFORE_GATEWAY)
+    await _alembic("upgrade", "head")
+    assert "AMNEZIA_GATEWAY" in await _labels(PROTOCOL_TYPES_SQL)

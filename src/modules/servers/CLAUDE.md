@@ -32,7 +32,7 @@
 
 CRUD; `PUT/GET/DELETE /{id}/credentials`; `POST /{id}/test-connection`; `POST /{id}/host-key/scan`,
 `PUT/DELETE /{id}/host-key`; задачи (202 + `JobRead`): `POST /{id}/install`, `POST /{id}/ssh-key`,
-`POST/DELETE /{id}/protocol`, `POST /{id}/sync`, `POST /{id}/health`, `POST /{id}/discover`, `POST /{id}/import` (`servers:manage`, тело — см. «Импорт клиентов»); `GET /{id}/protocols`; `GET /{id}/discovery` (отчёт поиска, не задача; 404 — сервера нет). `discover` — право
+`POST/DELETE /{id}/protocol` (тип: необязательное тело `{"type": "amnezia_wg" | "amnezia_gateway"}` и/или query `?type=...` - у DELETE тело нередко отбрасывает прокси или клиент, поэтому query надёжнее; оба и разные - 422; ни одного - `amnezia_wg`; приложение-типы и неизвестные - 422), `POST /{id}/sync`, `POST /{id}/health`, `POST /{id}/discover`, `POST /{id}/import` (`servers:manage`, тело — см. «Импорт клиентов»); `GET /{id}/protocols`; `GET /{id}/discovery` (отчёт поиска, не задача; 404 — сервера нет). `discover` — право
 `servers:check`, `discovery` — `servers:read`. Права —
 см. `modules/auth/CLAUDE.md`.
 
@@ -65,6 +65,20 @@ CRUD; `PUT/GET/DELETE /{id}/credentials`; `POST /{id}/test-connection`; `POST /{
   создаёт только импорт (`ClientImportService`), `install` для них не поддержан.
 - Health: SSH, Docker, контейнер, протокол, NAT, задержка до интернета. SSH недоступен → задача SUCCESS со
   статусом down.
+
+## Шлюз (`amnezia_gateway`, этап 24.1)
+
+- Установка и снятие - те же `POST/DELETE /{id}/protocol` с телом `{"type": "amnezia_gateway"}` или `?type=amnezia_gateway`
+  (`requested_protocol` в роутере: пустое тело `{}` тип не задаёт). Тип не обычный
+  кладётся в `Job.params` (`{"protocol_type": "amnezia_gateway"}`); у обычного протокола `params` нет, задачи без
+  `params` воркер читает как `amnezia_wg`. `ServerService.schedule(server_id, job_type, protocol_type)`.
+- Обычный протокол и шлюз живут на одном сервере независимо: разные контейнеры, порты и подсети; `protocols` уникальна
+  по `(server_id, type)`. Живые клиенты блокируют снятие (409) так: шлюз - только клиенты шлюза; обычный протокол -
+  клиенты всех остальных типов, кроме шлюза (прежнее поведение, в том числе для импортированных); удаление сервера -
+  любые.
+- Sync и health перебирают все `ProtocolType`: у сервера без шлюза запись для него не создаётся (нет контейнера и
+  записи в БД - в отчёт не попадает). Шлюз без выходов даёт проверку `exits` = false и сервер DEGRADED. Поиск Amnezia
+  (`discover`) шлюз игнорирует. Мониторинг суммирует клиентов всех протоколов сервера.
 
 ## Поиск установки AmneziaVPN (`discovery.py`)
 

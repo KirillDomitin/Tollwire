@@ -23,7 +23,7 @@ from modules.audit.actor import AuditActor
 from modules.jobs.models.job import Job, JobStatus, JobType
 from modules.jobs.queue import JobQueue
 from modules.jobs.service import JobService, job_error_text
-from modules.protocols.models.protocol import ProtocolType, VPNProtocol
+from modules.protocols.models.protocol import INSTALLABLE_PROTOCOLS, ProtocolType, VPNProtocol
 from modules.servers.discovery import ServerDiscoveryService
 from modules.servers.health import ServerHealthService
 from modules.servers.service import ServerConnectionService
@@ -161,12 +161,14 @@ class JobWorker:
                                     )
 
                         case JobType.REMOVE_PROTOCOL:
+                            protocol_type = self._protocol_type(job)
                             async with ServerLock(server_id):
-                                await self.remove_protocol(session, server_id)
+                                await self.remove_protocol(session, server_id, protocol_type)
 
                         case JobType.INSTALL_PROTOCOL:
+                            protocol_type = self._protocol_type(job)
                             async with ServerLock(server_id):
-                                await self.install_protocol(session, server_id, ProtocolType.AMNEZIA_WG)
+                                await self.install_protocol(session, server_id, protocol_type)
 
                         case JobType.INSTALL_SSH_KEY:
                             async with ServerLock(server_id):
@@ -241,8 +243,22 @@ class JobWorker:
     async def install_server(self, session: AsyncSession, server_id: UUID) -> None:
         return await ServerConnectionService(session).server_install(server_id)
 
-    async def remove_protocol(self, session: AsyncSession, server_id: UUID) -> ProviderStatus:
-        return await ServerConnectionService(session).protocol_uninstall(server_id)
+    async def remove_protocol(
+        self, session: AsyncSession, server_id: UUID, protocol_type: ProtocolType = ProtocolType.AMNEZIA_WG
+    ) -> ProviderStatus:
+        return await ServerConnectionService(session).protocol_uninstall(server_id, protocol_type)
+
+    @staticmethod
+    def _protocol_type(job: Job) -> ProtocolType:
+        """Какой протокол ставить/снимать: `Job.params["protocol_type"]`, без params - обычный (AMNEZIA_WG)."""
+        value = (job.params or {}).get("protocol_type", ProtocolType.AMNEZIA_WG.value)
+        try:
+            protocol_type = ProtocolType(value)
+        except ValueError:
+            raise JobTypeError(f"Unknown protocol type {str(value)[:50]!r}") from None
+        if protocol_type not in INSTALLABLE_PROTOCOLS:
+            raise JobTypeError(f"Protocol '{protocol_type.value}' cannot be installed or removed by the panel")
+        return protocol_type
 
     async def install_protocol(
         self, session: AsyncSession, server_id: UUID, protocol_type: ProtocolType

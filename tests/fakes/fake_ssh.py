@@ -34,6 +34,15 @@ from infrastructure.vpn.config import (
     INTERNET_PROBE_COMMAND,
     ContainerLayout,
 )
+from infrastructure.vpn.gateway_config import (
+    AWG_SHOW_INTERFACES,
+    DOCKER_PUBLISHED_PORTS,
+    IP_RULE_SHOW,
+    KILL_SWITCH_PRIORITY,
+    RU_RULE_PRIORITY,
+    RU_TABLE,
+    render_start_script,
+)
 
 CONFIG_FILE = f"{HOST_CONFIG_DIR}/{CONFIG_FILE_NAME}"
 _PS_RE = re.compile(r"docker ps -a --filter (\S+) --format '([^']*)'")
@@ -146,6 +155,7 @@ _READ_ONLY_PREFIXES = (
     "docker port",
     "docker --version",
     "test -f",
+    "test -d",
     "grep ",
     "uname",
     "id -u",
@@ -309,6 +319,16 @@ class FakeServer:
     write_fails: set[str] = field(default_factory=set)  # SFTP-запись в эти пути хоста падает, файл не появляется
     write_attempts: list[str] = field(default_factory=list)  # все попытки SFTP-записи, в том числе неудачные
     copies: list["CopyRecord"] = field(default_factory=list)  # успешные `docker cp` в контейнеры
+    # Контейнер шлюза (этап 24.1). Фейк не исполняет bash: start.sh «выполняется» как действие, если файл на хосте
+    # равен тексту, который панель генерирует для раскладки (иначе контейнер падает, как от битого скрипта).
+    container_commands: dict[str, str] = field(default_factory=dict)  # имя -> команда после образа в `docker run`
+    container_sysctls: dict[str, list[str]] = field(default_factory=dict)  # имя -> флаги --sysctl
+    container_ports: dict[str, list[int]] = field(default_factory=dict)  # имя -> опубликованные UDP-порты хоста
+    host_busy_ports: set[int] = field(default_factory=set)  # порты, занятые процессами вне Docker (docker run падает)
+    ip_rules: list[str] = field(default_factory=list)  # правила `ip rule show` в контейнере шлюза, по строке на правило
+    firewall: set[str] = field(default_factory=set)  # правила iptables шлюза: "mss", "isolation"
+    exit_interfaces: list[str] = field(default_factory=list)  # поднятые туннели выходов (кроме клиентского)
+    start_script_runs: list[str] = field(default_factory=list)  # режимы запусков start.sh: "run" / "apply"
 
     def add_amnezia_app(
         self,
@@ -423,9 +443,37 @@ class FakeServer:
 
     def _start(self) -> None:
         # Как awg-quick up: поднимает интерфейс по конфигу и выполняет PostUp.
-        self.containers[self.layout.container_name] = "running"
+        name = self.layout.container_name
+        self.containers[name] = "running"
         self.interface_peers = self.config_peer_keys()
         self.nat_rule = self.layout.nat_post_up in self.files.get(self.config_file, "")
+        if self.container_commands.get(name, "").endswith("/start.sh"):  # контейнер шлюза: bash <путь>/start.sh
+            if not self._run_start_script("run"):
+                self.containers[name] = "exited"  # скрипт упал - контейнер вышел (restart policy в фейке не крутится)
+                self.interface_peers, self.nat_rule = set(), False
+
+    def _published(self, name: str) -> str:
+        """Поле Ports из `docker ps`: порты работающего контейнера (у остановленного поле пустое, как в Docker)."""
+        if self.containers.get(name) != "running":
+            return ""
+        ports = self.container_ports.get(name, [])
+        return ", ".join(f"0.0.0.0:{port}->{port}/udp, [::]:{port}->{port}/udp" for port in ports)
+
+    def _run_start_script(self, mode: str) -> bool:
+        """start.sh шлюза: правила маршрутизации и экрана. False - скрипт не выполнился (нет файла или он не тот)."""
+        layout = self.layout
+        script = self.files.get(f"{layout.host_config_dir}/start.sh")
+        if script is None or script != render_start_script(layout):
+            return False
+        self.start_script_runs.append(mode)
+        subnet = layout.tunnel_subnet
+        rules = (
+            f"{RU_RULE_PRIORITY}:\tfrom {subnet} lookup {RU_TABLE}",
+            f"{KILL_SWITCH_PRIORITY}:\tfrom {subnet} prohibit",
+        )
+        self.ip_rules += [rule for rule in rules if rule not in self.ip_rules]
+        self.firewall |= {"isolation", "mss"}
+        return True
 
     def run(self, command: str) -> CommandResult:
         layout = self.layout
@@ -454,8 +502,16 @@ class FakeServer:
             return _ok("0.042000") if self.internet else _fail(code=28)
         if cmd == " ".join(HOST_METRICS_COMMAND.split()):
             return _ok(self.host_metrics_output())
+        if match := re.fullmatch(r"test -d (\S+)", cmd):
+            path = match.group(1)
+            exists = path in self.dirs or any(name.startswith(f"{path}/") for name in self.files)
+            return _ok() if exists else _fail(code=1)
         if match := re.fullmatch(r"test -f (\S+)", cmd):
             return _ok() if match.group(1) in self.files else _fail(code=1)
+        if cmd == DOCKER_PUBLISHED_PORTS:
+            if self.ps_fails:
+                return _fail("Cannot connect to the Docker daemon", 1)
+            return _ok("".join(f"{self._published(name)}\n" for name in self.containers))
         if match := _PS_RE.fullmatch(cmd):
             if self.ps_fails:
                 return _fail("Cannot connect to the Docker daemon", 1)
@@ -488,8 +544,20 @@ class FakeServer:
         if cmd.startswith(f"docker run -d --name {container} "):
             if container in self.containers:  # как настоящий docker: имя занято
                 return _fail(f'Conflict. The container name "/{container}" is already in use', 125)
+            requested = {int(port) for port in re.findall(r" -p (\d+):\d+/udp", cmd)}
+            taken = {
+                port
+                for name, state in self.containers.items()
+                if state == "running"
+                for port in self.container_ports.get(name, [])
+            } | self.host_busy_ports
+            if requested & taken:  # как настоящий docker: порт хоста уже опубликован другим контейнером
+                return _fail("Bind for 0.0.0.0:%d failed: port is already allocated" % min(requested & taken), 125)
             self.mounts[container] = re.findall(r" -v (\S+?):\S+", cmd)
             self.restart_policy = "unless-stopped" if " --restart unless-stopped " in cmd else "no"
+            self.container_sysctls[container] = re.findall(r" --sysctl (\S+)", cmd)
+            self.container_ports[container] = [int(port) for port in re.findall(r" -p (\d+):\d+/udp", cmd)]
+            self.container_commands[container] = cmd.split(" amneziavpn/amneziawg-go@", 1)[-1].split(" ", 1)[-1]
             self._start()
             return _ok("container-id\n")
         if cmd == f"docker start {container}":
@@ -498,13 +566,18 @@ class FakeServer:
         if cmd == f"docker stop {container} && docker rm {container}":
             self.containers.pop(container, None)
             self.mounts.pop(container, None)
+            self.container_commands.pop(container, None)
+            self.container_sysctls.pop(container, None)
+            self.container_ports.pop(container, None)
             self.interface_peers = set()
             self.nat_rule = False
+            self.ip_rules, self.firewall, self.exit_interfaces = [], set(), []
             return _ok()
         if cmd == f"rm -rf {layout.host_config_dir}":
             self.files = {
                 path: text for path, text in self.files.items() if not path.startswith(layout.host_config_dir)
             }
+            self.dirs = {path: mode for path, mode in self.dirs.items() if not path.startswith(layout.host_config_dir)}
             return _ok()
         if match := re.fullmatch(rf"docker port {container} (\d+)/udp", cmd):
             if not self.port_published:
@@ -515,7 +588,9 @@ class FakeServer:
         if cmd == f"mkdir -p {_STAGE_PARENT}":
             return _ok()
         if match := re.fullmatch(r"rm -f (\S+)", cmd):
-            if not _STAGE_FILE.fullmatch(match.group(1)):  # удалять можно только промежуточные файлы панели
+            gateway_files = {layout.host_config_file, f"{layout.host_config_dir}/start.sh"}
+            if not _STAGE_FILE.fullmatch(match.group(1)) and match.group(1) not in gateway_files:
+                # удалять можно только промежуточные файлы панели и файлы шлюза (откат первой установки)
                 raise AssertionError(f"FakeServer: rm -f outside the stage folder: {command!r}")
             pattern = match.group(1)  # как настоящий rm -f: нет файла — не ошибка; `*` раскрывает оболочка
             for path in [p for p in self.files if fnmatch.fnmatchcase(p, pattern)]:
@@ -631,6 +706,13 @@ class FakeServer:
         if inner == f"awg show {iface} public-key":
             private_key = interface_values(self.files[self.config_file])["PrivateKey"]
             return _ok(public_key_from_private(private_key) + "\n")
+        if inner == IP_RULE_SHOW:
+            rules = "".join(f"{rule}\n" for rule in self.ip_rules)
+            return _ok(f"0:\tfrom all lookup local\n{rules}32766:\tfrom all lookup main\n")
+        if inner == AWG_SHOW_INTERFACES:
+            return _ok(" ".join([iface, *self.exit_interfaces]) + "\n")
+        if inner == f"bash {layout.container_config_dir}/start.sh apply":
+            return _ok() if self._run_start_script("apply") else _fail("bash: start.sh: No such file", 127)
         if inner == f"awg show {iface} listen-port":
             return _ok(self._port() + "\n")
         if inner == f"awg show {iface} latest-handshakes":

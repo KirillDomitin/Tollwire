@@ -15,6 +15,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- Gateway protocol (`amnezia_gateway`), first step: a separate `vpn-admin-gw` container next to the regular protocol,
+  with its own port, `gw0` interface and `10.77.0.0/22` client subnet. `POST/DELETE /api/v1/servers/{id}/protocol`
+  take an optional body `{"type": "amnezia_wg" | "amnezia_gateway"}` (without it nothing changes). The container runs a
+  panel-generated `start.sh`: a kill-switch rule so client traffic never leaks out of the server's own address or
+  reaches the host, client isolation, TCP MSS clamping. Health reports "no exit tunnels" until exits arrive in the
+  next steps. Clients are issued as for the regular protocol.
 - Web interface for taking over the clients of an installed AmneziaVPN app: a server card with a found app shows an
   "AmneziaVPN is already on this server" block (container, port, state, clients and how many are new) and, with the
   `servers:manage` permission, a "Take over clients" button. The dialog picks the clients (new ones are selected;

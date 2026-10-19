@@ -499,21 +499,23 @@ class AmneziaWGProvider(VPNProvider):
         result = await self.ssh_client.execute(f"test -f {self.layout.host_config_file}")
         return result.exit_status == 0
 
+    def _docker_run_command(self, port: int) -> str:
+        """Команда создания контейнера. Подкласс с другим устройством контейнера (шлюз) переопределяет её целиком."""
+        layout = self.layout
+        return f"docker run -d --name {layout.container_name} --restart {RESTART_POLICY} \
+                  --cap-add=NET_ADMIN --device=/dev/net/tun \
+                  -p {port}:{port}/udp \
+                  -v {layout.host_config_dir}:{layout.container_config_dir} \
+                  {AMNEZIAWG_IMAGE} \
+                  sh -c 'awg-quick up {layout.container_config_file} && tail -f /dev/null'"
+
     async def _run_container(self, port: int) -> None:
         layout = self.layout
         await self._require_own_container()
         container_state = await self.ssh_client.execute(self._ps("State"))
 
         if not container_state.stdout:
-            container_run = await self.ssh_client.execute(
-                f"docker run -d --name {layout.container_name} --restart {RESTART_POLICY} \
-                  --cap-add=NET_ADMIN --device=/dev/net/tun \
-                  -p {port}:{port}/udp \
-                  -v {layout.host_config_dir}:{layout.container_config_dir} \
-                  {AMNEZIAWG_IMAGE} \
-                  sh -c 'awg-quick up {layout.container_config_file} && tail -f /dev/null'",
-                timeout=300,
-            )
+            container_run = await self.ssh_client.execute(self._docker_run_command(port), timeout=300)
             if container_run.exit_status != 0:
                 raise DockerError(f"Failed to start container. Error: {container_run.stderr}")
         elif container_state.stdout.strip() == "exited":

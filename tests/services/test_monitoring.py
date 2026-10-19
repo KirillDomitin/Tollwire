@@ -3,11 +3,14 @@
 import time
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from sqlalchemy import select
 
+from infrastructure.vpn.gateway import AmneziaGatewayProvider
 from modules.monitoring.models.metrics import ServerMetric, ServerMetricHourly
 from modules.monitoring.schemas import MetricsRange
 from modules.monitoring.service import MetricsCollector, MetricsService, rollup_and_prune
+from modules.protocols.models.protocol import ProtocolType, VPNProtocol
 from tests.fixtures import World
 
 
@@ -99,3 +102,26 @@ async def test_old_history_is_pruned(world: World) -> None:
     summary = await rollup_and_prune()
     assert "pruned 1 samples" in summary
     assert await samples(world) == []
+
+
+async def test_client_counts_sum_over_all_protocols_of_the_server(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Обычный протокол и шлюз бывают на одном сервере: в замер идут клиенты обоих, а не первого из списка."""
+    server, protocol, fake = await world.server()
+    server_id = server.id
+    assert protocol is not None
+    _, _, _, online = await world.issued(protocol)
+    await world.issued(protocol)
+    fake.handshakes[online.client_public_key] = int(time.time()) - 30
+    world.session.add(VPNProtocol(server_id=server_id, type=ProtocolType.AMNEZIA_GATEWAY, port=40000))
+    await world.session.commit()
+
+    async def gateway_counts(self: AmneziaGatewayProvider, now: datetime) -> tuple[int, int]:
+        return 3, 2
+
+    monkeypatch.setattr(AmneziaGatewayProvider, "client_counts", gateway_counts)
+
+    assert await MetricsCollector().collect(server_id)
+    (sample,) = await samples(world)
+    assert (sample.clients_total, sample.clients_online) == (2 + 3, 1 + 2)

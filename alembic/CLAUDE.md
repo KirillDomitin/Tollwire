@@ -25,6 +25,12 @@
 - Downgrade удаляет строки `protocols` с новыми типами и `jobs` с `DISCOVER_VPN`, затем пересоздаёт оба enum без
   новых значений. Значение из enum Postgres иначе не убрать.
 
+## Шлюз (`a8c4e1f7b925`)
+
+- `protocoltype` += `AMNEZIA_GATEWAY` - в `autocommit_block`, с `IF NOT EXISTS`.
+- Downgrade удаляет строки `protocols` шлюза (каскадом уходят их гранты и credential'ы) и пересоздаёт enum из трёх
+  прежних значений (как `d3a7c9e15b42`); уникальность `(server_id, type)` сохраняется.
+
 ## Импорт клиентов (`f6b2d8a41c73`)
 
 - `jobtype` += `IMPORT_CLIENTS` — в `autocommit_block`, с `IF NOT EXISTS`.

@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database.postgres import get_session
@@ -16,8 +16,8 @@ from modules.auth.dependencies import get_current_admin, require
 from modules.auth.permissions import Permission
 from modules.jobs.models.job import Job, JobType
 from modules.jobs.schemas import JobRead
-from modules.protocols.models.protocol import VPNProtocol
-from modules.protocols.schemas import ProtocolRead
+from modules.protocols.models.protocol import INSTALLABLE_PROTOCOLS, ProtocolType, VPNProtocol
+from modules.protocols.schemas import ProtocolRead, ProtocolRequest
 from modules.servers.discovery import ServerDiscoveryService
 from modules.servers.host_key import ServerHostKeyService
 from modules.servers.models.credential import ServerCredential
@@ -53,15 +53,27 @@ def get_credential_service(
     return CredentialService(session, actor)
 
 
-async def schedule(service: ServerService, server_id: UUID, job_type: JobType) -> Job:
+async def schedule(
+    service: ServerService, server_id: UUID, job_type: JobType, protocol_type: ProtocolType = ProtocolType.AMNEZIA_WG
+) -> Job:
     try:
-        return await service.schedule(server_id, job_type)
+        return await service.schedule(server_id, job_type, protocol_type)
     except NotFoundError:
         raise HTTPException(404, detail="Server not found")
     except CredentialNotFound:
         raise HTTPException(409, detail="Credentials do not exist to perform this operation")
     except LiveCredentialExistsError as exc:
         raise HTTPException(409, detail=str(exc))
+
+
+def requested_protocol(body: ProtocolRequest | None, query_type: ProtocolType | None) -> ProtocolType:
+    """Тип протокола из query и/или тела. Оба и разные - 422; ни одного - обычный (старое поведение)."""
+    body_type = body.type if body is not None and "type" in body.model_fields_set else None
+    if query_type is not None and query_type not in INSTALLABLE_PROTOCOLS:
+        raise HTTPException(422, detail="Only protocols installed by the panel can be installed or removed")
+    if body_type is not None and query_type is not None and body_type != query_type:
+        raise HTTPException(422, detail="Protocol type in the query and in the body differ")
+    return body_type or query_type or ProtocolType.AMNEZIA_WG
 
 
 def get_host_key_service(
@@ -220,8 +232,15 @@ async def install_ssh_key(
     response_model=JobRead,
     status_code=202,
 )
-async def protocol_install(server_id: UUID, service: ServerService = Depends(get_server_service)) -> Job:
-    return await schedule(service, server_id, JobType.INSTALL_PROTOCOL)
+async def protocol_install(
+    server_id: UUID,
+    service: ServerService = Depends(get_server_service),
+    body: ProtocolRequest | None = None,
+    query_type: Annotated[ProtocolType | None, Query(alias="type")] = None,
+) -> Job:
+    """Ставит протокол панели: без типа - обычный (`amnezia_wg`), шлюз - `{"type": "amnezia_gateway"}` в теле или
+    `?type=amnezia_gateway` в адресе (если прокси отбрасывает тело); оба и разные - 422."""
+    return await schedule(service, server_id, JobType.INSTALL_PROTOCOL, requested_protocol(body, query_type))
 
 
 @router.get(
@@ -310,8 +329,15 @@ async def import_clients(
     response_model=JobRead,
     status_code=202,
 )
-async def protocol_uninstall(server_id: UUID, service: ServerService = Depends(get_server_service)) -> Job:
-    return await schedule(service, server_id, JobType.REMOVE_PROTOCOL)
+async def protocol_uninstall(
+    server_id: UUID,
+    service: ServerService = Depends(get_server_service),
+    body: ProtocolRequest | None = None,
+    query_type: Annotated[ProtocolType | None, Query(alias="type")] = None,
+) -> Job:
+    """Снимает протокол панели: без типа - обычный, шлюз - `{"type": "amnezia_gateway"}` в теле или
+    `?type=amnezia_gateway` (у DELETE тело нередко отбрасывают клиент или прокси - тогда снялся бы не тот протокол)."""
+    return await schedule(service, server_id, JobType.REMOVE_PROTOCOL, requested_protocol(body, query_type))
 
 
 @router.post(

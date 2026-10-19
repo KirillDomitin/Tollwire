@@ -68,6 +68,29 @@ git (локальный «сервер» + второй клон, из кото�
   конфиг). Сбой `strip` фейк не моделирует (`<утилита>-quick strip` в фейке всегда успешен), как и пустой конфиг,
   сносящий peer'ов: это проверено только на живом контейнере (см. «Грабли» в `src/infrastructure/vpn/CLAUDE.md`).
 
+## Шлюз (этап 24.1)
+
+- `unit/test_gateway_provider.py` - провайдер шлюза на `FakeServer(layout=GATEWAY_LAYOUT)`: allowlist всех SSH-команд
+  регулярками, флаги `--sysctl` и `bash .../start.sh` в `docker run`, порядок записи (конфиг, скрипт, затем контейнер),
+  права 0700/0600, идемпотентность и починка, откат первой установки, чужой контейнер, порт не совпадает с занятым,
+  health (нет выходов / kill-switch), клиент из `10.77.0.0/22`, `vpn://`. Текст `start.sh` проверяется по ключевым
+  строкам и порядку, плюс `bash -n` (пропускается без bash). Само действие скрипта - только живым прогоном
+  (см. `src/infrastructure/vpn/CLAUDE.md`).
+- `integration/test_gateway_api.py` - тело POST/DELETE `/protocol`, `Job.params`, воркер (установка, повтор, снятие,
+  чужой контейнер, неверный тип в params), клиент на шлюзе, блокировка снятия при живых клиентах (шлюз и обычный
+  независимы), sync/health. Фейк с шлюзом: `world.fakes[server.id] = FakeServer(host=..., layout=GATEWAY_LAYOUT)`
+  после `world.server(install=False)`. На одном `FakeServer` бывает только одна раскладка «своего» контейнера:
+  обычный протокол и шлюз вместе в фейке не моделируются (рядом можно положить лишь чужой контейнер вручную).
+- Фейк умеет для шлюза: `docker ps -a --format '{{.Ports}}'` (порты запущенных контейнеров, `container_ports`,
+  `host_busy_ports` для процессов вне Docker; `docker run` на занятый порт падает), `--sysctl` (`container_sysctls`),
+  команду контейнера (`container_commands`), `start.sh` как действие (`ip_rules`, `firewall`, `start_script_runs`;
+  скрипт «выполняется», только если файл равен `render_start_script`, иначе контейнер выходит), `ip rule show`,
+  `awg show interfaces` (`exit_interfaces`), `start.sh apply`. Прочее - `AssertionError`.
+- Откат первой установки, контейнер без конфига, query `?type=` (согласие/расхождение/мусор), `protocol_type` в аудите
+  - в тех же двух файлах (`test_gateway_provider.py`, `test_gateway_api.py`); фейк понимает `test -d` и `rm -f` файлов
+  шлюза.
+- `services/test_migrations.py` - миграция шлюза (значение enum, ORM, downgrade с данными и каскадом, уникальность).
+
 ## Правила
 
 - Гонки проверять детерминированно (окно через monkeypatch), а не через `asyncio.gather` по ASGI.

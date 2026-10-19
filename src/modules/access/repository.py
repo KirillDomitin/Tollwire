@@ -1,5 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
+from collections.abc import Collection
 from datetime import datetime
 from typing import Sequence
 from uuid import UUID
@@ -11,6 +12,7 @@ from modules.access.models import AccessGrantStatus
 from modules.access.models.access_grant import AccessGrant
 from modules.access.models.subscription import Subscription
 from modules.access.models.vpn_credential import VPNCredential
+from modules.protocols.models.protocol import ProtocolType, VPNProtocol
 
 _ACTIVE_STATUSES = (AccessGrantStatus.PENDING, AccessGrantStatus.ACTIVE)
 
@@ -167,13 +169,22 @@ class VPNCredentialRepository:
         )
         return (await self.session.execute(sql_request)).first() is not None
 
-    async def has_live_for_server(self, server_id: UUID) -> bool:
+    async def has_live_for_server(
+        self, server_id: UUID, *, only: ProtocolType | None = None, exclude: Collection[ProtocolType] = ()
+    ) -> bool:
+        """Есть живой credential на сервере. only - только на протоколе этого типа, exclude - кроме этих типов."""
         sql_request = (
             select(VPNCredential.id)
             .join(AccessGrant, VPNCredential.access_grant_id == AccessGrant.id)
             .where(AccessGrant.server_id == server_id, VPNCredential.revoked_at.is_(None))
             .limit(1)
         )
+        if only is not None or exclude:
+            sql_request = sql_request.join(VPNProtocol, AccessGrant.protocol_id == VPNProtocol.id)
+            if only is not None:
+                sql_request = sql_request.where(VPNProtocol.type == only)
+            if exclude:
+                sql_request = sql_request.where(VPNProtocol.type.not_in(exclude))
         return (await self.session.execute(sql_request)).first() is not None
 
     async def has_live_for_user(self, user_id: UUID) -> bool:

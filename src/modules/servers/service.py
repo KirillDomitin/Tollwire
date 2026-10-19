@@ -21,6 +21,7 @@ from infrastructure.ssh.client import SSHClient, private_key_fingerprint
 from infrastructure.ssh.host_keys import HostKey
 from infrastructure.vpn.amnezia import AmneziaInstaller, AmneziaWGProvider
 from infrastructure.vpn.amnezia_app import AmneziaAppAWG2Provider, AmneziaAppAWGProvider
+from infrastructure.vpn.gateway import AmneziaGatewayProvider
 from infrastructure.vpn.provider import ProviderStatus, VPNProvider
 from modules.access.repository import VPNCredentialRepository
 from modules.audit.actor import SYSTEM_ACTOR, AuditActor
@@ -47,6 +48,8 @@ def provider_class(protocol_type: ProtocolType) -> type[VPNProvider]:
             return AmneziaAppAWGProvider
         case ProtocolType.AMNEZIA_APP_AWG2:
             return AmneziaAppAWG2Provider
+        case ProtocolType.AMNEZIA_GATEWAY:
+            return AmneziaGatewayProvider
         case _:
             raise UnsupportedProtocolError(f"Unsupported protocol '{protocol_type}'")
 
@@ -122,19 +125,38 @@ class ServerService:
         await self.session.commit()
         return server
 
-    async def schedule(self, server_id: UUID, job_type: JobType) -> Job:
+    async def schedule(
+        self, server_id: UUID, job_type: JobType, protocol_type: ProtocolType = ProtocolType.AMNEZIA_WG
+    ) -> Job:
         """Поставить серверную задачу (установка, протокол, sync, health). Без SSH-учётки — CredentialNotFound:
-        задача всё равно упала бы в воркере. Снять протокол с живыми клиентами нельзя (как и удалить сервер)."""
+        задача всё равно упала бы в воркере. Снять протокол с живыми клиентами нельзя (как и удалить сервер).
+
+        protocol_type - для INSTALL_PROTOCOL/REMOVE_PROTOCOL: какой протокол ставить или снимать. Не обычный
+        (шлюз) уходит воркеру в Job.params; у обычного params нет - так задача выглядит, как до появления шлюза.
+        """
         await self.get(server_id)
         if not await self.credentials.get_by_server_id(server_id):
             raise CredentialNotFound("SSH credentials are not set for this server")
         if job_type == JobType.REMOVE_PROTOCOL:
-            await self._ensure_no_live_clients(server_id)
-        return await JobService(self.session, self.actor).create(job_type, server_id=server_id)
+            await self._ensure_no_live_clients(server_id, protocol_type)
+        params = None
+        if job_type in (JobType.INSTALL_PROTOCOL, JobType.REMOVE_PROTOCOL) and protocol_type != ProtocolType.AMNEZIA_WG:
+            params = {"protocol_type": protocol_type.value}
+        return await JobService(self.session, self.actor).create(job_type, server_id=server_id, params=params)
 
-    async def _ensure_no_live_clients(self, server_id: UUID) -> None:
-        # Каскад в БД молча удалил бы гранты и credential'ы, а peer'ы остались бы на сервере — сначала отзыв.
-        if await VPNCredentialRepository(self.session).has_live_for_server(server_id):
+    async def _ensure_no_live_clients(self, server_id: UUID, protocol_type: ProtocolType | None = None) -> None:
+        """Каскад в БД молча удалил бы гранты и credential'ы, а peer'ы остались бы на сервере — сначала отзыв.
+
+        protocol_type: шлюз смотрит только своих клиентов (он живёт рядом с обычным протоколом независимо), обычный
+        протокол - клиентов всех остальных, как и раньше. None (удаление сервера) - любых.
+        """
+        only: ProtocolType | None = None
+        exclude: tuple[ProtocolType, ...] = ()
+        if protocol_type == ProtocolType.AMNEZIA_GATEWAY:
+            only = protocol_type
+        elif protocol_type is not None:
+            exclude = (ProtocolType.AMNEZIA_GATEWAY,)
+        if await VPNCredentialRepository(self.session).has_live_for_server(server_id, only=only, exclude=exclude):
             raise LiveCredentialExistsError("Server has live VPN clients, revoke access first")
 
     async def delete(self, server_id: UUID) -> None:

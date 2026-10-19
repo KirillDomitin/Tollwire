@@ -64,7 +64,7 @@ class MetricsCollector:
         async with session_factory() as session:
             ssh_client = await ServerConnectionService(session).create_ssh_client(server_id)
             protocols = await ProtocolRepository(session).list_by_server_id(server_id)
-            protocol_type = protocols[0].type if protocols else None
+            protocol_types = [protocol.type for protocol in protocols]  # обычный протокол и шлюз бывают рядом
             previous = await MetricsRepository(session).latest(server_id)
             previous_counters = _counters(previous) if previous else None
             # Всё прочитано — соединение с БД обратно в пул до похода по сети. После отката объекты из БД
@@ -75,8 +75,9 @@ class MetricsCollector:
         clients: tuple[int, int] | None = None
         async with ssh_client:
             sample = await read_host_sample(ssh_client)
-            if protocol_type is not None:
-                clients = await provider_class(protocol_type)(ssh_client).client_counts(now)
+            if protocol_types:
+                counts = [await provider_class(item)(ssh_client).client_counts(now) for item in protocol_types]
+                clients = (sum(total for total, _ in counts), sum(online for _, online in counts))
 
         rates = compute_rates(previous_counters, sample.counters) if previous_counters else None
         counters = sample.counters

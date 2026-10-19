@@ -16,6 +16,7 @@ from modules.audit.service import AuditService
 from modules.jobs.models.job import Job, JobStatus, JobType
 from modules.jobs.queue import JobQueue
 from modules.jobs.repository import JobRepository
+from modules.protocols.models.protocol import ProtocolType
 from modules.servers.models.server import ServerStatus, VPNServer
 
 # Какие задачи пишут в аудит старт и завершение. Выдача/отзыв клиента пишут успех сами (там известен
@@ -91,7 +92,8 @@ class JobService:
         await self.jobs.create(job)
         await self.session.flush()
         if job_type in _STARTED:
-            self.audit.record(_STARTED[job_type], AuditEntity.SERVER, server_id, {"job_id": job.id})
+            started_meta: dict[str, Any] = {"job_id": job.id, **self._protocol_meta(job_type, params)}
+            self.audit.record(_STARTED[job_type], AuditEntity.SERVER, server_id, started_meta)
         await self.session.commit()
         await self.job_queue.enqueue(job.id)
         # В API здесь же в контексте request_id: по этой строке запрос связывается с job_id в логах воркера.
@@ -155,8 +157,20 @@ class JobService:
         return deleted
 
     @staticmethod
+    def _protocol_meta(job_type: JobType, params: dict[str, Any] | None) -> dict[str, Any]:
+        """Какой протокол ставили/снимали: значение enum из params (без params - обычный). Другого в журнал не идёт."""
+        if job_type not in (JobType.INSTALL_PROTOCOL, JobType.REMOVE_PROTOCOL):
+            return {}
+        try:
+            return {
+                "protocol_type": ProtocolType((params or {}).get("protocol_type", ProtocolType.AMNEZIA_WG.value)).value
+            }
+        except ValueError:
+            return {}
+
+    @staticmethod
     def _meta(job: Job) -> dict[str, Any]:
-        meta: dict[str, Any] = {"job_id": job.id}
+        meta: dict[str, Any] = {"job_id": job.id, **JobService._protocol_meta(job.type, job.params)}
         if job.type in _RESULT_IN_AUDIT and job.result:
             meta.update(job.result)
         if job.type == JobType.DISCOVER_VPN and job.result:
