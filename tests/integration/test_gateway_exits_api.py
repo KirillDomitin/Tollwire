@@ -242,7 +242,7 @@ async def test_worker_creates_the_internal_client_then_the_tunnel_and_activates_
     job = (await world.jobs(JobType.GATEWAY_ADD_EXIT))[0]
     await world.session.refresh(job)
     assert job.status == JobStatus.SUCCESS
-    assert job.result == {"exit_id": exit_["id"], "exit_server_id": str(server.id), "slot": 1}
+    assert job.result == {"exit_id": exit_["id"], "exit_server_id": str(server.id), "slot": 1, "assigned": 0}
 
 
 async def test_locks_are_taken_gateway_first_and_the_exit_inside(
@@ -485,6 +485,7 @@ async def test_get_lists_exits_by_slot_with_server_names_and_no_secrets(
         "checked_at",
         "weight",
         "max_clients",
+        "assigned_clients",
     }
     assert (items[0]["weight"], items[0]["max_clients"], items[1]["weight"], items[1]["max_clients"]) == (
         2,
@@ -589,6 +590,8 @@ async def test_delete_drains_at_once_then_the_worker_removes_the_tunnel_the_inte
     assert job.status == JobStatus.SUCCESS
     assert job.result == {
         "exit_id": exit_["id"],
+        "moved": 0,
+        "unassigned": 0,
         "slot": 1,
         "peer_revoked": True,
         "exit_server_id": str(server.id),
@@ -876,7 +879,9 @@ async def test_sync_of_the_gateway_reports_exits_updates_health_and_takes_no_act
     second = await add_exit(api, worker, gw.sid, b[0].id)
     handshake = fresh_handshake()
     gw.gateway.exit_handshakes = {1: handshake}
-    gw.gateway.exit_interfaces.remove("gwx2")  # второй выход пропал с шлюза
+    gw.gateway.exit_interfaces.remove("gwx2")  # второй выход пропал с шлюза совсем: ни интерфейса, ни файла
+    gw.gateway.exit_configs.pop("gwx2", None)
+    gw.gateway.files.pop(exit_host_file(GATEWAY_LAYOUT, 2))
     commands = len(gw.gateway.commands)
 
     sync = await run_job(api, worker, await api.post(f"/api/v1/servers/{gw.sid}/sync"))
@@ -892,7 +897,9 @@ async def test_sync_of_the_gateway_reports_exits_updates_health_and_takes_no_act
     shown = {item["slot"]: item for item in await list_exits(api, gw.sid)}
     assert shown[1]["health"] == "ok" and shown[1]["last_handshake_at"] is not None and shown[1]["checked_at"]
     assert shown[2]["health"] == "down" and shown[2]["last_handshake_at"] is None
-    assert not any("awg-quick up" in command or "start.sh" in command for command in gw.gateway.commands[commands:])
+    assert not any(
+        "awg-quick up" in command for command in gw.gateway.commands[commands:]
+    )  # туннель сам не поднимается
     assert gw.gateway.exit_interfaces == ["gwx1"]  # автоматических действий в 24.2 нет
 
 

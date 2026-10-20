@@ -15,6 +15,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- Gateway: client traffic now goes through the exits. Each client gets an exit when its config is issued (the least loaded
+  healthy exit, by weight and client limit); the mapping lives in the DB and is applied to the gateway as a whole
+  (`assign.rules`, restored after a container restart). A client without an exit has no internet (kill-switch), never a
+  leak. Removing an exit moves its clients to the others first; if some would be left without an exit, the removal needs `?force=true`. Established
+  connections stay on their exit when a mapping changes. Sync re-applies the mapping if the gateway differs from the DB.
+  `GET /api/v1/servers/{id}/gateway/assignments`, `assigned_clients` in the exit list.
 - Gateway exits: `POST/GET/PATCH/DELETE /api/v1/servers/{id}/gateway/exits` connect foreign panel servers (with the
   AmneziaWG protocol) to a gateway. For each exit the panel creates an internal client on it and brings up a `gwxN`
   tunnel on the gateway (own routing table, MTU 1280, NAT on the tunnel). Adding runs in two resumable phases, removal

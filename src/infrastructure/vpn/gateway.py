@@ -5,12 +5,13 @@
 import contextlib
 import logging
 import posixpath
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from ipaddress import IPv4Address
 from typing import ClassVar
 
-from core.ssh_exception import CommandExecutionError
+from core.ssh_exception import CommandExecutionError, DockerError
 from infrastructure.vpn.amnezia import AmneziaWGProvider
 from infrastructure.vpn.awg_config import (
     generate_secret_keys,
@@ -24,11 +25,15 @@ from infrastructure.vpn.gateway_config import (
     AWG_SHOW_INTERFACES,
     DOCKER_PUBLISHED_PORTS,
     GATEWAY_LAYOUT,
+    GATEWAY_SYSCTLS,
     IP_RULE_SHOW,
     PORT_PICK_ATTEMPTS,
     ExitTunnel,
     ExitTunnelStatus,
     apply_rules_command,
+    assign_apply_command,
+    assign_host_file,
+    assign_show_command,
     container_start_script,
     exit_delete_link_command,
     exit_down_command,
@@ -42,13 +47,19 @@ from infrastructure.vpn.gateway_config import (
     exit_slot_from_interface,
     exit_sync_command,
     exit_up_command,
+    has_assign_hooks,
     has_kill_switch,
     host_start_script,
+    missing_exit_rules,
+    parse_assign_chain,
     parse_published_ports,
     parse_transfer,
+    prerouting_show_command,
+    render_assign_rules,
     render_exit_config,
     render_start_script,
     sysctl_flags,
+    sysctls_command,
 )
 from infrastructure.vpn.provider import HealthCheck, ProviderHealth, ProviderStatus
 
@@ -66,6 +77,9 @@ class _Created:
 
 class AmneziaGatewayProvider(AmneziaWGProvider):
     layout: ClassVar[ContainerLayout] = GATEWAY_LAYOUT
+    # Причина пересоздания контейнера последним install() (None - не пересоздавался). Пересоздание рвёт всех клиентов,
+    # поэтому вызывающий сервис пишет его в аудит.
+    recreated: str | None = None
 
     async def install(self) -> ProviderStatus:
         """Идемпотентно: порт и ключи сервера не перегенерируются, start.sh и правила дочиниваются.
@@ -154,6 +168,7 @@ class AmneziaGatewayProvider(AmneziaWGProvider):
     async def _repair(self, port: int) -> None:
         """Повторная установка: чинит то, что отстало от кода панели, не трогая ключи, порт и клиентов."""
         await self._write_start_script()
+        await self._recreate_if_outdated(port)
         state = (await self.ssh_client.execute(self._ps("State"))).stdout.strip()
         if state != "running":
             await self._run_container(port)  # нет контейнера - создаём, остановлен - запускаем
@@ -164,6 +179,37 @@ class AmneziaGatewayProvider(AmneziaWGProvider):
         result = await self.ssh_client.execute(apply_rules_command(self.layout))
         if result.exit_status != 0:
             raise CommandExecutionError(f"Failed to apply gateway rules: {result.stderr.strip()}")
+
+    async def _recreate_if_outdated(self, port: int) -> None:
+        """Контейнер создан с другими sysctl (например, прежним rp_filter=2): sysctl меняются только при создании,
+        поэтому контейнер пересоздаётся (`stop && rm`, затем `docker run` с теми же папкой и портом). Клиенты
+        переподключатся сами (keepalive); конфиги, ключи и порт на хосте не меняются. Контейнера нет - ничего."""
+        layout = self.layout
+        if not (await self.ssh_client.execute(self._ps("State"))).stdout.strip():
+            return
+        result = await self.ssh_client.execute(sysctls_command(layout))
+        if result.exit_status != 0:
+            raise CommandExecutionError(f"Failed to inspect container '{layout.container_name}'")
+        if set(GATEWAY_SYSCTLS) <= set(result.stdout.split()):
+            return
+        logger.warning("gateway container has outdated sysctls, recreating it")
+        name = layout.container_name
+        removed = await self.ssh_client.execute(f"docker stop {name} && docker rm {name}")
+        if removed.exit_status != 0:
+            raise DockerError(f"Failed to remove the outdated container. Error: {removed.stderr.strip()}")
+        name = layout.container_name
+        self.recreated = "sysctl_mismatch"
+        for attempt in (1, 2):  # один повтор: контейнера уже нет, оставлять шлюз без него нельзя
+            try:
+                await self._run_container(port)
+                return
+            except DockerError as exc:
+                logger.warning("gateway container did not start after recreation", extra={"attempt": attempt})
+                if attempt == 2:
+                    raise DockerError(
+                        f"Container '{name}' was removed to be recreated and could not be started again "
+                        f"({str(exc)[:200]}); install the gateway protocol again"
+                    ) from exc
 
     async def _rollback(self, created: "_Created") -> None:
         """Убирает следы неудавшейся первой установки - только созданное этим вызовом. Ошибки отката не заменяют
@@ -324,6 +370,72 @@ class AmneziaGatewayProvider(AmneziaWGProvider):
             statuses.append(ExitTunnelStatus(slot, True, max(seen) if seen else None, rx, tx))
         return statuses
 
+    # --- назначение выходов клиентам (этап 24.3) ----------------------------------------------------------------
+
+    async def apply_assignments(self, assignments: Mapping[IPv4Address, int]) -> None:
+        """Применяет ПОЛНУЮ карту «адрес клиента -> слот выхода» (пустая допустима: у всех клиентов нет выхода, трафик
+        режет kill-switch). Файл assign.rules пишется по SFTP (0600) и применяется атомарно (`--test`, затем
+        `--noflush`; объявление цепочки очищает её). Сбой возвращает прежний файл и применяет его снова: файл на хосте
+        не расходится с цепочкой, которую start.sh загрузит при перезапуске контейнера. Вызывающий держит ServerLock."""
+        layout = self.layout
+        text = render_assign_rules(assignments, layout.tunnel_subnet)
+        await self._require_running()
+        if not await self._hooks_present():
+            # restore сам создал бы цепочку, а прыжков в неё нет - метки не ставились бы, клиенты остались бы без выхода
+            raise CommandExecutionError("The client assignment hooks are missing on the gateway; run install first")
+        path = assign_host_file(layout)
+        old = await self.ssh_client.read_file_optional(path)
+        await self.ssh_client.write_file(path, text)
+        try:
+            await self._exit_run(assign_apply_command(layout), "Failed to apply the client assignments")
+        except BaseException:
+            with contextlib.suppress(Exception):
+                if old is None:
+                    await self.ssh_client.execute(f"rm -f {path}")
+                else:
+                    await self.ssh_client.write_file(path, old)
+                    await self._exit_run(assign_apply_command(layout), "rollback")
+            raise
+
+    async def _hooks_present(self) -> bool:
+        """Три прыжка start.sh в PREROUTING на месте. Без них метки не ставятся, а само существование цепочки GW_ASSIGN
+        ничего не значит: `iptables-restore` создаёт её и сам."""
+        result = await self.ssh_client.execute(prerouting_show_command(self.layout))
+        return result.exit_status == 0 and has_assign_hooks(result.stdout, self.layout.interface_name)
+
+    async def assignment_problems(self) -> list[str]:
+        """Чего не хватает для назначений на работающем шлюзе (только чтение): прыжков PREROUTING и правил `ip rule`
+        метки у поднятых выходов. Пусто - всё на месте. Без деталей конфигов."""
+        layout = self.layout
+        problems = []
+        if not await self._hooks_present():
+            problems.append("PREROUTING hooks of the client assignments are missing")
+        rules = await self.ssh_client.execute(f"docker exec {layout.container_name} {IP_RULE_SHOW}")
+        if rules.exit_status != 0:
+            problems.append("failed to read ip rules")
+            return problems
+        for slot in missing_exit_rules(rules.stdout, sorted(await self._exit_slots_up())):
+            problems.append(f"ip rule of {exit_interface(slot)} is missing")
+        return problems
+
+    async def read_assignments(self) -> dict[IPv4Address, int]:
+        """Фактическая карта в цепочке GW_ASSIGN (только чтение). Цепочки нет (шлюз со старым start.sh) -
+        CommandExecutionError."""
+        await self._require_running()
+        result = await self.ssh_client.execute(assign_show_command(self.layout))
+        if result.exit_status != 0:
+            raise CommandExecutionError("The assignment chain is missing on the gateway")
+        return parse_assign_chain(result.stdout)
+
+    async def assignments_in_sync(self, desired: Mapping[IPv4Address, int]) -> bool:
+        """Карта в цепочке GW_ASSIGN и файл assign.rules (его загрузит start.sh после перезапуска) совпадают с желаемой.
+        Цепочки нет - CommandExecutionError (см. read_assignments)."""
+        if await self.read_assignments() != dict(desired) or await self.assignment_problems():
+            return False
+        text = render_assign_rules(desired, self.layout.tunnel_subnet)
+        saved = await self.ssh_client.read_file_optional(assign_host_file(self.layout))
+        return saved == text or (saved is None and not desired)  # карты нет и не нужна: файла может и не быть
+
     async def health_check(self) -> ProviderHealth:
         """Проверки обычного протокола и два шлюзовых: правило kill-switch и туннели выходов.
 
@@ -357,4 +469,8 @@ class AmneziaGatewayProvider(AmneziaWGProvider):
             states = ", ".join(f"{exit_interface(slot)} {label}" for slot, label in labels.items())
             detail = f"{len(statuses)} exit tunnel(s), {healthy} healthy: {states}"
         health.checks.append(HealthCheck("exits", healthy > 0, detail))
+        problems = await self.assignment_problems()
+        health.checks.append(
+            HealthCheck("assignments", not problems, "; ".join(problems) or "marks, hooks and exit rules in place")
+        )
         return health

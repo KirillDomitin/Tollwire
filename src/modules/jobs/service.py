@@ -61,7 +61,7 @@ _RESULT_IN_AUDIT = frozenset({JobType.INSTALL_SSH_KEY})
 _IMPORT_COUNTED = ("imported", "already", "gone", "unsupported", "conflict")
 # Задачи выходов шлюза: в meta аудита идут только эти поля params (id выхода и сервера-выхода, слот, вес) - не ключи.
 _EXIT_JOBS = (JobType.GATEWAY_ADD_EXIT, JobType.GATEWAY_REMOVE_EXIT)
-_EXIT_META_FIELDS = ("exit_id", "exit_server_id", "slot", "weight")
+_EXIT_META_FIELDS = ("exit_id", "exit_server_id", "slot", "weight", "force")
 _ERROR_MAX_LENGTH = 500
 
 
@@ -183,6 +183,11 @@ class JobService:
     @staticmethod
     def _meta(job: Job) -> dict[str, Any]:
         meta: dict[str, Any] = {"job_id": job.id, **JobService._job_meta(job.type, job.params)}
+        if job.type == JobType.GATEWAY_REMOVE_EXIT and job.result:
+            # Сколько клиентов перенесено на другие выходы и сколько осталось без выхода (только счётчики).
+            for name in ("moved", "unassigned"):
+                if name in job.result:
+                    meta[name] = job.result[name]
         if job.type in _RESULT_IN_AUDIT and job.result:
             meta.update(job.result)
         if job.type == JobType.DISCOVER_VPN and job.result:

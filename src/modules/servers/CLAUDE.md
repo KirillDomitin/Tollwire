@@ -92,6 +92,10 @@ CRUD; `PUT/GET/DELETE /{id}/credentials`; `POST /{id}/test-connection`; `POST /{
   в отчёт протокола добавляется `exits` (по слоту: `exit_id, slot, state, interface_up, health`), а в `issues` -
   "Exit gwxN is down/missing on the gateway" для `active` без интерфейса и "Unknown exit tunnel" для чужого туннеля; сбой чтения туннелей - issue "Failed to list exit tunnels", отчёт по клиентам сохраняется;
   обновляются `health` / `last_handshake_at` / `checked_at` строк. Действий нет (failover - 24.5).
+- Sync шлюза сначала вызывает `install()` шлюза (дочинивает `start.sh`, правила и sysctl; пересоздание контейнера - в аудит и
+  отчёт), потом сверяет назначения выходов клиентам (`GatewayAssignmentService.reconcile`, отчёт `assignments`:
+  `assigned`, `newly_assigned`, `reapplied`): карта в цепочке `GW_ASSIGN` и файл `assign.rules` приводятся к БД, клиенты без
+  выхода получают его (`sync`), туннели выходов с конфигом прежней версии пересоздаются. Сбой сверки - issue, sync не падает.
 - Health (`health.py`): проверка `exits` шлюза - хотя бы один туннель с интерфейсом и рукопожатием не старше 180 с; те же
   поля строк выходов обновляются и здесь (если контейнер шлюза не отвечает - остаются прежними).
 

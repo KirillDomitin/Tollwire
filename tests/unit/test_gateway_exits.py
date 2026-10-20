@@ -131,6 +131,8 @@ def test_exit_config_is_exactly_this() -> None:
         "Table = 1003\n"
         "PostUp = iptables -t nat -C POSTROUTING -o gwx3 -j MASQUERADE 2>/dev/null"
         " || iptables -t nat -A POSTROUTING -o gwx3 -j MASQUERADE\n"
+        "PostUp = ip rule add priority 1000 fwmark 1003 lookup 1003 2>/dev/null || true\n"
+        "PostDown = ip rule del priority 1000 fwmark 1003 lookup 1003 2>/dev/null || true\n"
         "PostDown = iptables -t nat -D POSTROUTING -o gwx3 -j MASQUERADE 2>/dev/null || true\n"
         "\n"
         "[Peer]\n"
@@ -152,7 +154,12 @@ def test_exit_config_takes_nothing_but_the_allowlist_from_the_client_interface()
     assert "evil" not in config and "reboot" not in config and "rm -rf" not in config
     for forbidden in ("Table = 254", "SaveConfig", "FwMark", "ListenPort", "MTU = 9000", "HeaderProtectionKey", "DNS"):
         assert forbidden not in config
-    assert config.count("PostUp") == 1 and config.count("Table") == 1 and "Table = 1002" in config
+    assert (
+        config.count("PostUp") == 2
+        and config.count("PostDown") == 2
+        and config.count("Table") == 1
+        and "Table = 1002" in config
+    )
     assert "MTU = 1280" in config
 
 

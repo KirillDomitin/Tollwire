@@ -30,9 +30,11 @@ from modules.access.schemas import (
 from modules.audit.actor import AuditActor
 from modules.audit.models.audit_log import AuditAction, AuditEntity
 from modules.audit.service import AuditService, diff_changes
+from modules.gateway.assignment import GatewayAssignmentService
 from modules.jobs.models.job import Job, JobType
 from modules.jobs.repository import JobRepository
 from modules.jobs.service import JobService
+from modules.protocols.models.protocol import ProtocolType
 from modules.protocols.repository import ProtocolRepository
 from modules.servers.repository import ServerRepository
 from modules.servers.service import ServerConnectionService, provider_class
@@ -344,6 +346,7 @@ class VPNCredentialService:
         self.job_repository = JobRepository(session)
         self.connections = ServerConnectionService(session)
         self.audit = AuditService(session, actor)
+        self.actor = actor
 
     async def schedule_issue(self, access_grant_id: UUID) -> Job:
         """Ставит задачу CREATE_USER: воркер создаст клиента на сервере и сохранит credential.
@@ -367,6 +370,7 @@ class VPNCredentialService:
         grant = await self._ensure_grant_is_live(access_grant_id)
         live = await self.credentials.get_live_by_access_grant_id(access_grant_id)
         if live:
+            await self._attach_to_gateway(live, grant.protocol_id)  # повтор после сбоя назначения чинит его
             return live
         protocol = await self.protocols.get_by_id(grant.protocol_id)
         if not protocol:
@@ -405,7 +409,15 @@ class VPNCredentialService:
             },
         )
         await self.session.commit()
+        # Конфиг выдан и сохранён; выход шлюза назначается уже после commit: нет исправных выходов - клиент остаётся без
+        # назначения (и без интернета), выход ему назначат при появлении (assign_unassigned), конфиг не теряется.
+        await self._attach_to_gateway(credential, grant.protocol_id)
         return credential
+
+    async def _attach_to_gateway(self, credential: VPNCredential, protocol_id: UUID) -> None:
+        protocol = await self.protocols.get_by_id(protocol_id)
+        if protocol is not None and protocol.type == ProtocolType.AMNEZIA_GATEWAY:
+            await GatewayAssignmentService(self.session, self.actor).attach(credential)
 
     async def deprovision(self, access_grant_id: UUID) -> VPNCredential | None:
         """Удаляет клиента гранта с сервера и помечает credential отозванным.
@@ -435,6 +447,9 @@ class VPNCredentialService:
             {"access_grant_id": grant.id, "server_id": grant.server_id, "public_key": credential.client_public_key},
         )
         await self.session.commit()
+        if protocol.type == ProtocolType.AMNEZIA_GATEWAY:
+            # Назначение снимается после commit: карта шлюза строится из БД без отозванных (остальное чинит sync).
+            await GatewayAssignmentService(self.session, self.actor).detach(credential)
         return credential
 
     async def schedule_revoke_for_grants(self, grants: Sequence[AccessGrant]) -> list[Job]:

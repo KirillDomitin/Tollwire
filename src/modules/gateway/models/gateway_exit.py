@@ -70,3 +70,7 @@ class GatewayExit(UuidPkMixin, TimestampMixin, Base):
     client_public_key: Mapped[str | None] = mapped_column(String(64), default=None)
     client_address: Mapped[str | None] = mapped_column(String(64), default=None)
     encrypted_config: Mapped[str | None] = mapped_column(Text, default=None)
+    # Итог переноса клиентов при снятии выхода (24.3): сколько перенесено на другие выходы и сколько осталось без.
+    # Копятся по повторам (перенос коммитится вместе с применением карты), поэтому счётчики аудита не теряются.
+    drained_moved: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    drained_unassigned: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))

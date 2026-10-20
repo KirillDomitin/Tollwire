@@ -35,6 +35,7 @@ from infrastructure.vpn.gateway_config import (
     has_kill_switch,
     parse_published_ports,
     render_start_script,
+    sysctls_command,
 )
 from infrastructure.vpn.provider import HealthCheck, ProviderState
 from tests.fakes.fake_ssh import FakeServer, FakeSSHClient
@@ -109,8 +110,9 @@ def test_start_script_is_stable_text() -> None:
 
 def test_start_script_uses_only_tools_that_exist_in_the_image() -> None:
     """В образе нет nftables, ipset, dnsmasq, conntrack - есть iproute2, iptables, bash, awg, awg-quick."""
+    text = script().replace("-m conntrack ", "")  # модуль ядра conntrack для iptables - не утилита conntrack-tools
     for forbidden in ("nft ", "ipset", "dnsmasq", "conntrack", "curl", "wget", "sysctl", "modprobe"):
-        assert forbidden not in script(), forbidden
+        assert forbidden not in text, forbidden
 
 
 def test_start_script_installs_the_routing_rules_and_kill_switch() -> None:
@@ -140,7 +142,7 @@ def test_start_script_order_kill_switch_first_then_interface_exits_and_alive() -
         text.index("ensure_ipt filter FORWARD"),
         text.index('awg-quick up "$GW_CONF"'),
         text.index('awg-quick up "$conf"'),
-        text.index("ensure_ipt mangle"),
+        text.index("ensure_ipt mangle FORWARD"),
         text.index("tail -f /dev/null"),
     ]
     assert positions == sorted(positions)  # kill-switch действует ещё до подъёма gw0
@@ -235,6 +237,7 @@ ALLOWED = [
         E("docker ps -a --format '{{.Ports}}'"),
         E("docker inspect --type container -f '{{range .Mounts}}{{.Source}} {{end}}' ") + NAME,
         E("docker inspect -f '{{.State.Running}}' ") + NAME,
+        E(" ".join(sysctls_command(GATEWAY_LAYOUT).split())),
         E("docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' ") + NAME,
         E("mkdir -p /opt/vpn-admin"),
         E(f"test -d {HOST_DIR}"),
@@ -255,6 +258,7 @@ ALLOWED = [
         rf"docker exec {NAME} awg show gw0 (?:public-key|listen-port|latest-handshakes)",
         E(f"docker exec {NAME} awg show interfaces"),
         E(f"docker exec {NAME} ip rule show"),
+        E(f"docker exec {NAME} iptables -t mangle -S PREROUTING"),
         E(f"docker exec {NAME} bash {CONT_DIR}/start.sh apply"),
         E(f"docker exec {NAME} iptables -t nat -C POSTROUTING -s 10.77.0.0/22 -o eth0 -j MASQUERADE"),
         E(f"docker exec {NAME} sh -c '{GATEWAY_LAYOUT.nat_post_up}'"),
@@ -308,8 +312,8 @@ async def test_install_runs_the_container_with_sysctls_and_the_start_script() ->
     fake = await installed()
     (run,) = [" ".join(c.split()) for c in fake.commands if c.startswith("docker run")]
     assert " --sysctl net.ipv4.ip_forward=1" in run
-    assert " --sysctl net.ipv4.conf.all.rp_filter=2" in run
-    assert " --sysctl net.ipv4.conf.default.rp_filter=2" in run
+    assert " --sysctl net.ipv4.conf.all.rp_filter=0" in run
+    assert " --sysctl net.ipv4.conf.default.rp_filter=0" in run
     assert " --sysctl net.ipv6.conf.all.disable_ipv6=1" in run
     assert fake.container_sysctls[NAME] == list(GATEWAY_SYSCTLS)
     assert run.endswith(f"{AMNEZIAWG_IMAGE} bash /etc/vpn-admin/gw/start.sh")
@@ -337,7 +341,7 @@ async def test_installed_gateway_state_is_running_with_rules_and_server_config()
         "100:\tfrom 10.77.0.0/22 lookup 200",
         "9000:\tfrom 10.77.0.0/22 prohibit",
     ]
-    assert fake.firewall == {"isolation", "mss"} and fake.nat_rule
+    assert fake.firewall == {"isolation", "mss", "assign", "assign_hooks", "ct_guard"} and fake.nat_rule
     values = interface_values(fake.files[CONFIG])
     assert values["Address"] == "10.77.0.1/22" and values["ListenPort"] == "31337"
     assert values["PostUp"] == GATEWAY_LAYOUT.nat_post_up  # NAT для российского напрямую - из конфига
@@ -744,3 +748,27 @@ async def test_sync_snapshot_of_a_server_without_gateway_is_not_installed() -> N
     snapshot = await call(fake, "sync")
     assert snapshot.provider_status.server_status == ProviderState.NOT_INSTALLED and snapshot.client_list == []
     assert fake.mutating_commands() == []
+
+
+async def test_reinstall_recreates_a_container_made_with_outdated_sysctls_and_keeps_the_config() -> None:
+    """sysctl меняются только при создании контейнера (rp_filter=2 из 24.1/24.2 роняет ответы выходов): install()
+    пересоздаёт такой контейнер, не трогая конфиг, ключи и порт."""
+    fake = await installed()
+    old_config = fake.files[CONFIG]
+    fake.container_sysctls[NAME] = [item.replace("rp_filter=0", "rp_filter=2") for item in fake.container_sysctls[NAME]]
+    start = len(fake.commands)
+
+    await call(fake, "install")
+
+    new = [" ".join(c.split()) for c in fake.commands[start:]]
+    assert f"docker stop {NAME} && docker rm {NAME}" in new and any(c.startswith("docker run") for c in new)
+    assert fake.files[CONFIG] == old_config and fake.running
+    assert set(GATEWAY_SYSCTLS) <= set(fake.container_sysctls[NAME])
+    assert not any(c.startswith("rm -rf") for c in new)  # папка шлюза с ключами цела
+
+
+async def test_reinstall_of_a_current_container_does_not_recreate_it() -> None:
+    fake = await installed()
+    start = len(fake.commands)
+    await call(fake, "install")
+    assert not any(c.startswith(("docker stop", "docker rm", "docker run")) for c in fake.commands[start:])

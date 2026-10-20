@@ -761,3 +761,138 @@ async def test_gateway_exits_migration_cycle_is_idempotent_and_keeps_the_job_def
     finally:
         await _alembic("upgrade", "head")
     assert EXIT_JOB_TYPES <= await _labels(JOB_TYPES_SQL)
+
+
+# --- назначения выходов клиентам (24.3): таблица gateway_assignments ---
+
+BEFORE_ASSIGNMENTS = "c7e1b4d8a932"  # голова перед миграцией назначений
+ASSIGNMENTS_TABLE_SQL = text(
+    "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename = 'gateway_assignments'"
+)
+
+
+async def _assignment_scene() -> tuple[UUID, UUID, UUID]:
+    """Шлюз с двумя выходами и клиентом шлюза: возвращает (credential, выход 1, выход 2)."""
+    gateway_server, gateway, _, first_protocol = await _exit_scene()
+    async with engine.begin() as conn:
+        second_protocol = (
+            await conn.execute(
+                _INSERT_PROTOCOL,
+                {"s": (await conn.execute(_INSERT_SERVER, {"n": "exit-two"})).scalar_one(), "t": "AMNEZIA_WG"},
+            )
+        ).scalar_one()
+        exits = []
+        for slot, exit_protocol in ((1, first_protocol), (2, second_protocol)):
+            exits.append(
+                (
+                    await conn.execute(
+                        text(
+                            "INSERT INTO gateway_exits (id, gateway_protocol_id, exit_protocol_id, slot) "
+                            "VALUES (gen_random_uuid(), :g, :e, :slot) RETURNING id"
+                        ),
+                        {"g": gateway, "e": exit_protocol, "slot": slot},
+                    )
+                ).scalar_one()
+            )
+        user = await _insert_user(conn, "gwa@example.com", "gwa")
+        grant = await _insert_grant(conn, gateway_server, user, "AMNEZIA_GATEWAY")
+        credential = (
+            await conn.execute(
+                text(
+                    "INSERT INTO vpn_credentials (id, access_grant_id, encrypted_config, client_address, "
+                    "client_public_key) VALUES (gen_random_uuid(), :g, 'enc', '10.77.0.2', 'k') RETURNING id"
+                ),
+                {"g": grant},
+            )
+        ).scalar_one()
+    return credential, exits[0], exits[1]
+
+
+_INSERT_ASSIGNMENT = text(
+    "INSERT INTO gateway_assignments (credential_id, exit_id, pinned_exit_id) VALUES (:c, :e, :p)"
+)
+
+
+async def test_assignments_migration_creates_the_table_with_defaults_and_the_orm_agrees() -> None:
+    from modules.gateway.models.gateway_assignment import AssignReason, GatewayAssignment
+
+    assert await _query(ASSIGNMENTS_TABLE_SQL) == [("gateway_assignments",)]
+    credential, first, _ = await _assignment_scene()
+    async with engine.begin() as conn:
+        await conn.execute(_INSERT_ASSIGNMENT, {"c": credential, "e": first, "p": None})
+    async with session_factory() as session:
+        row = await session.get(GatewayAssignment, credential)
+        assert row is not None and (row.exit_id, row.pinned_exit_id, row.reason) == (first, None, AssignReason.ISSUE)
+        assert row.assigned_at is not None
+    assert await _query(text("SELECT reason FROM gateway_assignments")) == [("ISSUE",)]
+
+
+async def test_assignments_are_one_per_credential() -> None:
+    credential, first, second = await _assignment_scene()
+    async with engine.begin() as conn:
+        await conn.execute(_INSERT_ASSIGNMENT, {"c": credential, "e": first, "p": None})
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(_INSERT_ASSIGNMENT, {"c": credential, "e": second, "p": None})
+    except Exception as exc:  # noqa: BLE001 - нужен именно отказ БД по первичному ключу
+        assert "gateway_assignments_pkey" in str(exc)
+    else:
+        raise AssertionError("a credential got two assignments")
+
+
+async def test_assignments_follow_their_credential_and_exit_and_the_pin_is_released() -> None:
+    credential, first, second = await _assignment_scene()
+    async with engine.begin() as conn:
+        await conn.execute(_INSERT_ASSIGNMENT, {"c": credential, "e": first, "p": second})
+    async with engine.begin() as conn:  # закреплённый выход удалён: назначение живо, закрепление снято
+        await conn.execute(text("DELETE FROM gateway_exits WHERE id = :id"), {"id": second})
+    assert await _query(text("SELECT exit_id, pinned_exit_id FROM gateway_assignments")) == [(first, None)]
+    async with engine.begin() as conn:  # выход удалён: назначение уходит каскадом
+        await conn.execute(text("DELETE FROM gateway_exits WHERE id = :id"), {"id": first})
+    assert await _query(text("SELECT count(*) FROM gateway_assignments")) == [(0,)]
+
+
+async def test_assignments_go_with_a_deleted_credential() -> None:
+    credential, first, _ = await _assignment_scene()
+    async with engine.begin() as conn:
+        await conn.execute(_INSERT_ASSIGNMENT, {"c": credential, "e": first, "p": None})
+    async with engine.begin() as conn:
+        await conn.execute(text("DELETE FROM vpn_credentials WHERE id = :id"), {"id": credential})
+    assert await _query(text("SELECT count(*) FROM gateway_assignments")) == [(0,)]
+
+
+async def test_assignments_migration_downgrade_drops_only_the_table_then_upgrade_restores() -> None:
+    credential, first, _ = await _assignment_scene()
+    async with engine.begin() as conn:
+        await conn.execute(_INSERT_ASSIGNMENT, {"c": credential, "e": first, "p": None})
+    await _alembic("downgrade", BEFORE_ASSIGNMENTS)
+    try:
+        assert await _query(ASSIGNMENTS_TABLE_SQL) == []
+        assert await _query(EXITS_TABLE_SQL) == [("gateway_exits",)]  # выходы и клиенты на месте
+        assert await _query(text("SELECT count(*) FROM gateway_exits")) == [(2,)]
+        assert await _query(text("SELECT count(*) FROM vpn_credentials")) == [(1,)]
+    finally:
+        await _alembic("upgrade", "head")
+    assert await _query(ASSIGNMENTS_TABLE_SQL) == [("gateway_assignments",)]
+    assert await _query(text("SELECT count(*) FROM gateway_assignments")) == [(0,)]
+
+
+async def test_assignments_migration_adds_the_drain_counters_with_zero_defaults_and_downgrade_removes_them() -> None:
+    columns_sql = text(
+        "SELECT column_name, is_nullable, column_default FROM information_schema.columns "
+        "WHERE table_name = 'gateway_exits' AND column_name IN ('drained_moved', 'drained_unassigned') "
+        "ORDER BY column_name"
+    )
+    rows = await _query(columns_sql)
+    assert [(name, nullable) for name, nullable, _ in rows] == [("drained_moved", "NO"), ("drained_unassigned", "NO")]
+    assert all("0" in str(default) for _, _, default in rows)
+    _, first, _ = await _assignment_scene()
+    assert await _query(
+        text("SELECT drained_moved, drained_unassigned FROM gateway_exits WHERE id = :id").bindparams(id=first)
+    ) == [(0, 0)]
+    await _alembic("downgrade", BEFORE_ASSIGNMENTS)
+    try:
+        assert await _query(columns_sql) == []
+    finally:
+        await _alembic("upgrade", "head")
+    assert len(await _query(columns_sql)) == 2

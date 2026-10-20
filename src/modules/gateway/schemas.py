@@ -5,6 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from modules.gateway.models.gateway_assignment import AssignReason
 from modules.gateway.models.gateway_exit import MAX_WEIGHT, ExitState
 
 MAX_CLIENTS_LIMIT = 100_000
@@ -40,3 +41,14 @@ class GatewayExitRead(BaseModel):
     checked_at: datetime | None
     weight: int
     max_clients: int | None
+    assigned_clients: int  # сколько живых клиентов шлюза идёт через этот выход
+
+
+class GatewayAssignmentRead(BaseModel):
+    """Назначение выхода клиенту шлюза. Без адреса и ключей клиента: клиент определяется по credential_id."""
+
+    credential_id: UUID
+    exit_id: UUID
+    slot: int
+    reason: AssignReason
+    assigned_at: datetime

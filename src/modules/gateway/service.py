@@ -14,18 +14,20 @@ from core.exceptions import (
     NotFoundError,
     SSHError,
 )
-from core.security import decrypt_secret, encrypt_secret
+from core.security import encrypt_secret
+from core.ssh_exception import CommandExecutionError
 from infrastructure.vpn.amnezia import AmneziaWGProvider
 from infrastructure.vpn.gateway import AmneziaGatewayProvider
-from infrastructure.vpn.gateway_config import ExitTunnel, format_endpoint
 from infrastructure.workers.locks import ServerLock
 from modules.audit.actor import AuditActor
 from modules.audit.models.audit_log import AuditAction, AuditEntity
 from modules.audit.service import AuditService, diff_changes
+from modules.gateway.assignment import GatewayAssignmentService
 from modules.gateway.models.gateway_exit import ExitState, GatewayExit
 from modules.gateway.naming import exit_client_name
-from modules.gateway.repository import GatewayExitRepository
-from modules.gateway.schemas import GatewayExitCreate, GatewayExitRead, GatewayExitUpdate
+from modules.gateway.repository import GatewayAssignmentRepository, GatewayExitRepository
+from modules.gateway.schemas import GatewayAssignmentRead, GatewayExitCreate, GatewayExitRead, GatewayExitUpdate
+from modules.gateway.tunnels import exit_tunnel
 from modules.jobs.models.job import Job, JobType
 from modules.jobs.service import JobService
 from modules.protocols.models.protocol import ProtocolType, VPNProtocol
@@ -55,6 +57,7 @@ class GatewayExitService:
         self.server_credentials = CredentialRepository(session)
         self.protocols = ProtocolRepository(session)
         self.exits = GatewayExitRepository(session)
+        self.assignments = GatewayAssignmentRepository(session)
         self.connections = ServerConnectionService(session)
         self.audit = AuditService(session, actor)
 
@@ -80,10 +83,11 @@ class GatewayExitService:
         server = await self.servers.get_by_id(protocol.server_id) if protocol else None
         if protocol is None or server is None:  # FK не допускает; страховка от порчи данных
             raise NotFoundError("Exit server not found")
-        return self._read(gateway_exit, server.id, server.name)
+        assigned = (await self.assignments.counts(gateway_exit.gateway_protocol_id)).get(gateway_exit.id, 0)
+        return self._read(gateway_exit, server.id, server.name, assigned)
 
     @staticmethod
-    def _read(gateway_exit: GatewayExit, server_id: UUID, server_name: str) -> GatewayExitRead:
+    def _read(gateway_exit: GatewayExit, server_id: UUID, server_name: str, assigned: int) -> GatewayExitRead:
         return GatewayExitRead(
             id=gateway_exit.id,
             exit_server_id=server_id,
@@ -95,6 +99,7 @@ class GatewayExitService:
             checked_at=gateway_exit.checked_at,
             weight=gateway_exit.weight,
             max_clients=gateway_exit.max_clients,
+            assigned_clients=assigned,
         )
 
     async def list_exits(self, server_id: UUID) -> list[GatewayExitRead]:
@@ -105,7 +110,29 @@ class GatewayExitService:
         if gateway is None:
             return []
         rows = await self.exits.list_with_server_names(gateway.id)
-        return [self._read(gateway_exit, exit_server_id, name) for gateway_exit, exit_server_id, name in rows]
+        counts = await self.assignments.counts(gateway.id)
+        return [
+            self._read(gateway_exit, exit_server_id, name, counts.get(gateway_exit.id, 0))
+            for gateway_exit, exit_server_id, name in rows
+        ]
+
+    async def list_assignments(self, server_id: UUID) -> list[GatewayAssignmentRead]:
+        """Живые назначения шлюза: клиент (credential), выход, слот, причина, время. Адресов и ключей клиентов нет."""
+        if not await self.servers.get_by_id(server_id):
+            raise NotFoundError("Server not found")
+        gateway = await self.protocols.get_by_server_and_type(server_id, ProtocolType.AMNEZIA_GATEWAY)
+        if gateway is None:
+            return []
+        return [
+            GatewayAssignmentRead(
+                credential_id=assignment.credential_id,
+                exit_id=assignment.exit_id,
+                slot=slot,
+                reason=assignment.reason,
+                assigned_at=assignment.assigned_at,
+            )
+            for assignment, slot in await self.assignments.list_for_gateway(gateway.id)
+        ]
 
     async def _exit_protocol(self, gateway_server_id: UUID, data: GatewayExitCreate) -> tuple[VPNServer, VPNProtocol]:
         """Сервер-выход и его протокол AMNEZIA_WG. Всё, что в выходы не годится, - понятная ошибка до постановки."""
@@ -165,9 +192,13 @@ class GatewayExitService:
         # JobService.create коммитит вместе со строкой выхода.
         return await JobService(self.session, self.actor).create(JobType.GATEWAY_ADD_EXIT, server_id, params=params)
 
-    async def schedule_remove(self, server_id: UUID, exit_id: UUID) -> Job:
+    async def schedule_remove(self, server_id: UUID, exit_id: UUID, force: bool = False) -> Job:
         """Снять выход: состояние DRAINING (новых клиентов на него не назначать) и задача GATEWAY_REMOVE_EXIT (202).
-        Подходит любое состояние: незаконченное добавление тоже снимается. Повтор после сбоя задачи - тот же вызов."""
+        Подходит любое состояние: незаконченное добавление тоже снимается. Повтор после сбоя задачи - тот же вызов.
+
+        Клиенты, которым после переноса не хватит выхода (последний выход или нет места по `max_clients`), остались бы
+        без интернета: без `force` это 409 с числом таких клиентов (оценка по БД, `pick_exit` на копии состояния);
+        с `force` задача идёт, а каждый оставшийся без выхода клиент пишется в аудит."""
         gateway = await self._gateway(server_id)
         if not await self.server_credentials.get_by_server_id(server_id):
             raise CredentialNotFound("SSH credentials are not set for this server")
@@ -175,12 +206,19 @@ class GatewayExitService:
         gateway_exit = await self._exit_of(gateway, exit_id)
         if await self.exits.has_unfinished_job(gateway_exit.id):
             raise JobAlreadyRunningError("This exit is already being added or removed")
+        left = await GatewayAssignmentService(self.session, self.actor).estimate_unassigned(gateway_exit)
+        if left and not force:
+            raise GatewayExitError(
+                f"{left} client(s) of this exit would be left without an exit and without internet; "
+                "add another exit first or confirm with ?force=true"
+            )
         protocol = await self.protocols.get_by_id(gateway_exit.exit_protocol_id)
         gateway_exit.state = ExitState.DRAINING if gateway_exit.state != ExitState.REMOVING else ExitState.REMOVING
         params = {
             "exit_id": str(gateway_exit.id),
             "exit_server_id": str(protocol.server_id) if protocol else None,
             "slot": gateway_exit.slot,
+            "force": force,
         }
         return await JobService(self.session, self.actor).create(JobType.GATEWAY_REMOVE_EXIT, server_id, params=params)
 
@@ -240,7 +278,19 @@ class GatewayExitService:
         if gateway_exit.state == ExitState.PENDING:
             await self._create_peer(gateway_exit, exit_protocol.server_id)
         await self._activate(gateway_exit, job.server_id, exit_protocol)
-        return {"exit_id": str(gateway_exit.id), "exit_server_id": str(exit_protocol.server_id), "slot": slot}
+        result: dict[str, Any] = {
+            "exit_id": str(gateway_exit.id),
+            "exit_server_id": str(exit_protocol.server_id),
+            "slot": slot,
+            "assigned": 0,
+        }
+        try:
+            # Клиенты, которым выхода не хватало (выдача без выходов), получают его сразу.
+            result["assigned"] = await GatewayAssignmentService(self.session, self.actor).assign_unassigned(gateway)
+        except (SSHError, CommandExecutionError) as exc:
+            result["assign_error"] = True
+            logger.warning("assigning waiting clients failed", extra={"error": str(exc)[:200]})
+        return result
 
     async def _create_peer(self, gateway_exit: GatewayExit, exit_server_id: UUID) -> None:
         name = exit_client_name(gateway_exit.id)
@@ -262,16 +312,7 @@ class GatewayExitService:
             await self.session.commit()
 
     async def _activate(self, gateway_exit: GatewayExit, gateway_server_id: UUID, exit_protocol: VPNProtocol) -> None:
-        exit_server = await self.servers.get_by_id(exit_protocol.server_id)
-        if exit_server is None or not exit_protocol.port:
-            raise NotFoundError("Exit server not found")
-        if gateway_exit.encrypted_config is None:
-            raise GatewayExitError("The internal client of the exit has no stored config")
-        tunnel = ExitTunnel(
-            slot=gateway_exit.slot,
-            client_config=decrypt_secret(gateway_exit.encrypted_config),
-            endpoint=format_endpoint(exit_server.host, exit_protocol.port),
-        )
+        tunnel = await exit_tunnel(self.session, gateway_exit)
         ssh_client = await self.connections.create_ssh_client(gateway_server_id)
         provider = self.connections.build_provider(ssh_client, ProtocolType.AMNEZIA_GATEWAY)
         assert isinstance(provider, AmneziaGatewayProvider)
@@ -280,13 +321,10 @@ class GatewayExitService:
         gateway_exit.state = ExitState.ACTIVE
         await self.session.commit()
 
-    async def drain(self, gateway_exit: GatewayExit) -> None:
-        """Точка расширения этапа 24.3: перенос клиентов шлюза с этого выхода на остальные до снятия туннеля.
-
-        Сейчас клиентам выходы не назначаются, переносить нечего - метод ничего не делает и не имеет побочных
-        эффектов. Вызывается из `run_remove` между DRAINING и REMOVING.
-        """
-        return None
+    async def drain(self, gateway_exit: GatewayExit) -> dict[str, int]:
+        """Перенос клиентов снимаемого выхода на остальные до снятия туннеля (`GatewayAssignmentService.drain`).
+        Вызывается из `run_remove` между DRAINING и REMOVING; счётчики переноса идут в результат."""
+        return await GatewayAssignmentService(self.session, self.actor).drain(gateway_exit)
 
     async def run_remove(self, job: Job) -> dict[str, Any]:
         """Снятие выхода: DRAINING -> перенос клиентов (`drain`) -> REMOVING -> туннель на шлюзе -> внутренний клиент
@@ -314,6 +352,8 @@ class GatewayExitService:
             await self.drain(gateway_exit)
             gateway_exit.state = ExitState.REMOVING
             await self.session.commit()
+        # Счётчики переноса хранятся в строке выхода и переживают повторы задачи (перенос мог быть сделан раньше).
+        result["moved"], result["unassigned"] = gateway_exit.drained_moved, gateway_exit.drained_unassigned
 
         ssh_client = await self.connections.create_ssh_client(server_id)
         provider = self.connections.build_provider(ssh_client, ProtocolType.AMNEZIA_GATEWAY)

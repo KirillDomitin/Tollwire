@@ -109,6 +109,19 @@ git (локальный «сервер» + второй клон, из кото�
   `exit_configs` (применённые конфиги). Незнакомая команда - `AssertionError`.
 - `services/test_migrations.py` - миграция выходов (таблица, ограничения, каскад/RESTRICT, downgrade, цикл).
 
+## Назначение выходов (этап 24.3)
+
+- `unit/test_gateway_assign.py` - балансировщик (`pick_exit`: веса, `max_clients`, нет исправных, ничья, независимость от порядка),
+  `assign.rules` строка в строку и проверка адресов/слотов, разбор `iptables -S GW_ASSIGN`, правило метки в конфиге выхода, текст
+  `start.sh` (цепочка, три хука, загрузка карты), `apply_assignments` с откатом, `assignments_in_sync`, карта переживает
+  перезапуск. `integration/test_gateway_assignments_api.py` - выдача и отзыв на шлюзе (в том числе без выходов и с
+  переиспользованным адресом), перенос при снятии выхода (на втором и на последнем), sync (повторное применение, потерянный
+  файл, старый start.sh и туннель, сбой сверки), `GET .../assignments`, аудит без адресов. Миграция - в `services/test_migrations.py`.
+- Фейк шлюза (`FakeServer`): `assign_chain` (живая цепочка), `assign_test_fails` / `assign_apply_fails`, `assign_applies`;
+  `iptables-restore --test --noflush` + применение разбирают файл строго по формату панели (иное - код 2), `iptables -t mangle -S
+  GW_ASSIGN` (нет цепочки при старом start.sh - код 1), `start.sh` создаёт цепочку и грузит `assign.rules`; правило `ip rule` метки
+  появляется и исчезает вместе с интерфейсом выхода.
+
 ## Правила
 
 - Гонки проверять детерминированно (окно через monkeypatch), а не через `asyncio.gather` по ASGI.

@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions import NotFoundError, SSHConnectionError, SSHTimeoutError
 from core.security import decrypt_secret
-from core.ssh_exception import CommandExecutionError, UnsupportedOperationError
+from core.ssh_exception import CommandExecutionError, SSHServerError, UnsupportedOperationError
 from infrastructure.vpn.amnezia import AmneziaInstaller
 from infrastructure.vpn.gateway import AmneziaGatewayProvider
 from infrastructure.vpn.provider import ProviderState, VPNClientInfo, VPNProvider
@@ -16,6 +16,8 @@ from modules.access.models import CredentialSource
 from modules.access.models.vpn_credential import VPNCredential
 from modules.access.repository import VPNCredentialRepository
 from modules.access.service import CLIENT_NAME_PREFIX, client_name, inactive_reason
+from modules.audit.actor import SYSTEM_ACTOR
+from modules.gateway.assignment import GatewayAssignmentService
 from modules.gateway.exit_health import exit_report, record_exit_status
 from modules.gateway.naming import exit_client_name, is_exit_client_name
 from modules.gateway.repository import GatewayExitRepository
@@ -122,7 +124,19 @@ class ServerSyncService:
         report.update(await self._reconcile_clients(provider, protocol, snapshot.client_list, report["issues"]))
         if isinstance(provider, AmneziaGatewayProvider):
             report["exits"] = await self._report_exits(provider, protocol, report["issues"])
+            report["assignments"] = await self._reconcile_assignments(provider, protocol, report["issues"])
         return report
+
+    async def _reconcile_assignments(
+        self, provider: AmneziaGatewayProvider, protocol: VPNProtocol, issues: list[str]
+    ) -> dict[str, Any]:
+        """Назначения выходов клиентам: туннели выходов - по конфигу из БД, клиенты без выхода получают его, карта на
+        шлюзе, не совпавшая с БД, применяется заново (БД - источник правды)."""
+        try:
+            return await GatewayAssignmentService(self.session, SYSTEM_ACTOR).reconcile(protocol, provider, issues)
+        except SSHServerError as exc:  # в том числе DockerError: пересоздание контейнера не должно ронять весь sync
+            issues.append(f"Failed to reconcile client assignments: {exc}")
+            return {"assigned": 0, "newly_assigned": 0, "reapplied": False, "error": True}
 
     async def _report_exits(
         self, provider: AmneziaGatewayProvider, protocol: VPNProtocol, issues: list[str]

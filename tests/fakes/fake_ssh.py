@@ -38,18 +38,26 @@ from infrastructure.vpn.config import (
 from infrastructure.vpn.gateway_config import (
     AWG_SHOW_INTERFACES,
     DOCKER_PUBLISHED_PORTS,
+    EXIT_RULE_PRIORITY,
     IP_RULE_SHOW,
     KILL_SWITCH_PRIORITY,
     RU_RULE_PRIORITY,
     RU_TABLE,
+    assign_apply_command,
+    assign_host_file,
+    assign_show_command,
     exit_container_file,
     exit_host_dir,
     exit_host_file,
     exit_interface,
+    exit_mark,
+    exit_rule_down,
+    exit_rule_up,
     exit_slot_from_interface,
     exit_sync_command,
     exit_table,
     render_start_script,
+    sysctls_command,
 )
 
 CONFIG_FILE = f"{HOST_CONFIG_DIR}/{CONFIG_FILE_NAME}"
@@ -113,6 +121,24 @@ def stage_conf(container: str) -> str:
 
 def stage_table(container: str) -> str:
     return f"{STAGE_DIR}/{container}.clientsTable"
+
+
+_ASSIGN_LINE = re.compile(r"-A GW_ASSIGN -s (\d+\.\d+\.\d+\.\d+)/32 -j MARK --set-mark (\d+)")
+
+
+def _parse_assign_rules(text: str) -> dict[str, int] | None:
+    """assign.rules по формату панели: `*mangle`, `:GW_ASSIGN - [0:0]`, правила MARK, `COMMIT`. Иное - None (ошибка)."""
+    lines = text.splitlines()
+    if lines[:2] != ["*mangle", ":GW_ASSIGN - [0:0]"] or lines[-1:] != ["COMMIT"]:
+        return None
+    parsed: dict[str, int] = {}
+    for line in lines[2:-1]:
+        match = _ASSIGN_LINE.fullmatch(line)
+        if match is None:
+            return None
+        ipaddress.IPv4Address(match.group(1))
+        parsed[match.group(1)] = int(match.group(2))
+    return parsed
 
 
 def _parse_app_config(text: str, previous: list["AppPeer"]) -> list["AppPeer"]:
@@ -343,6 +369,13 @@ class FakeServer:
     exit_transfer: dict[int, tuple[int, int]] = field(default_factory=dict)  # слот -> (принято, отправлено) байт
     exit_up_fails: set[int] = field(default_factory=set)  # `awg-quick up` этих слотов падает (код 1)
     exit_down_fails: set[int] = field(default_factory=set)  # `awg-quick down` этих слотов падает
+    # Назначение выходов клиентам (24.3). Фейк не исполняет iptables-restore: файл assign.rules разбирается строго по
+    # формату панели (`*mangle`, объявление цепочки, правила MARK, `COMMIT`); иной формат - код 2, цепочка не меняется.
+    assign_chain: dict[str, int] = field(default_factory=dict)  # адрес клиента -> метка в живой цепочке GW_ASSIGN
+    assign_test_fails: bool = False  # `iptables-restore --test` падает
+    assign_apply_fails: bool = False  # настоящее применение падает (после успешного --test)
+    docker_run_fails: int = 0  # сколько ближайших `docker run` нашего контейнера упадут
+    assign_applies: int = 0  # сколько раз цепочка заменена целиком
     exit_nat_cleanups: list[str] = field(default_factory=list)  # интерфейсы, чьё правило NAT снято вручную
     exit_sync_fails: set[int] = field(default_factory=set)  # strip/syncconf этих слотов падает
     start_script_runs: list[str] = field(default_factory=list)  # режимы запусков start.sh: "run" / "apply"
@@ -466,6 +499,8 @@ class FakeServer:
         self.nat_rule = self.layout.nat_post_up in self.files.get(self.config_file, "")
         if self.container_commands.get(name, "").endswith("/start.sh"):  # контейнер шлюза: bash <путь>/start.sh
             self.exit_interfaces, self.exit_configs = [], {}  # новый запуск контейнера: интерфейсов ещё нет
+            self.assign_chain, self.firewall = {}, set()
+            self.ip_rules = [rule for rule in self.ip_rules if not rule.startswith(f"{EXIT_RULE_PRIORITY}:")]
             if not self._run_start_script("run"):
                 self.containers[name] = "exited"  # скрипт упал - контейнер вышел (restart policy в фейке не крутится)
                 self.interface_peers, self.nat_rule = set(), False
@@ -490,7 +525,10 @@ class FakeServer:
             f"{KILL_SWITCH_PRIORITY}:\tfrom {subnet} prohibit",
         )
         self.ip_rules += [rule for rule in rules if rule not in self.ip_rules]
-        self.firewall |= {"isolation", "mss"}
+        self.firewall |= {"isolation", "mss", "assign", "assign_hooks", "ct_guard"}
+        saved = self.files.get(assign_host_file(layout))
+        if saved is not None and (parsed := _parse_assign_rules(saved)) is not None:
+            self.assign_chain = parsed  # start.sh: iptables-restore --noflush < assign.rules
         # Туннели выходов: каждый exits/*.conf, которого ещё нет среди поднятых; упавший контейнер не роняет.
         for path in sorted(self.files):
             slot = self._exit_slot_of_host_file(path)
@@ -524,7 +562,15 @@ class FakeServer:
             return _fail("Configuration parsing error", 1)
         self.exit_interfaces.append(name)
         self.exit_configs[name] = text
+        rule = f"{EXIT_RULE_PRIORITY}:\tfrom all fwmark 0x{exit_mark(slot):x} lookup {exit_mark(slot)}"
+        if exit_rule_up(slot) in text and rule not in self.ip_rules:
+            self.ip_rules.append(rule)  # PostUp туннеля
         return _ok()
+
+    def _drop_exit_rule(self, slot: int) -> None:
+        """Правило метки уходит вместе с интерфейсом (PostDown выполняет `awg-quick down`)."""
+        rule = f"{EXIT_RULE_PRIORITY}:\tfrom all fwmark 0x{exit_mark(slot):x} lookup {exit_mark(slot)}"
+        self.ip_rules = [item for item in self.ip_rules if item != rule]
 
     def run(self, command: str) -> CommandResult:
         layout = self.layout
@@ -571,6 +617,10 @@ class FakeServer:
             if match.group(1) not in self.containers:
                 return _fail("No such object", 1)
             return _ok("true\n" if self.containers[match.group(1)] == "running" else "false\n")
+        if cmd == " ".join(sysctls_command(layout).split()):
+            if container not in self.containers:
+                return _fail("No such object", 1)
+            return _ok(" ".join(self.container_sysctls.get(container, [])) + chr(10))
         if match := _INSPECT_MOUNTS_RE.fullmatch(cmd):
             name = match.group(1)
             if name not in self.containers:
@@ -593,6 +643,9 @@ class FakeServer:
             self.restart_policy = "unless-stopped"
             return _ok(f"{container}\n")
         if cmd.startswith(f"docker run -d --name {container} "):
+            if self.docker_run_fails > 0:  # сбой создания контейнера (демон, образ, порт)
+                self.docker_run_fails -= 1
+                return _fail("docker: Error response from daemon: cannot start", 125)
             if container in self.containers:  # как настоящий docker: имя занято
                 return _fail(f'Conflict. The container name "/{container}" is already in use', 125)
             requested = {int(port) for port in re.findall(r" -p (\d+):\d+/udp", cmd)}
@@ -623,6 +676,7 @@ class FakeServer:
             self.interface_peers = set()
             self.nat_rule = False
             self.ip_rules, self.firewall, self.exit_interfaces, self.exit_configs = [], set(), [], {}
+            self.assign_chain = {}
             return _ok()
         if cmd == f"rm -rf {layout.host_config_dir}":
             self.files = {
@@ -641,7 +695,9 @@ class FakeServer:
         if match := re.fullmatch(r"rm -f (\S+)", cmd):
             # Файлы шлюза (откат первой установки) - только в шлюзовой раскладке; конфиг обычного протокола - нет.
             gateway_files = (
-                set() if layout == DEFAULT_LAYOUT else {layout.host_config_file, f"{layout.host_config_dir}/start.sh"}
+                set()
+                if layout == DEFAULT_LAYOUT
+                else {layout.host_config_file, f"{layout.host_config_dir}/start.sh", assign_host_file(layout)}
             )
             exit_file = self._exit_slot_of_host_file(match.group(1)) is not None
             if not _STAGE_FILE.fullmatch(match.group(1)) and match.group(1) not in gateway_files and not exit_file:
@@ -658,7 +714,7 @@ class FakeServer:
         if cmd.startswith(f"docker exec {container} "):
             if not self.running:
                 return _fail(f"container {container} is not running", 1)
-            return self._exec(cmd.removeprefix(f"docker exec {container} "))
+            return self._exec(cmd.removeprefix(f"docker exec {layout.container_name} "))
         raise AssertionError(f"FakeServer: unexpected command: {command!r}")
 
     def _docker_ps(self, filter_arg: str, template: str) -> CommandResult:
@@ -747,6 +803,19 @@ class FakeServer:
             return _ok(app.handshakes_output())
         raise AssertionError(f"FakeServer: unexpected docker exec in {app.container}: {inner!r}")
 
+    def _assign_apply(self) -> CommandResult:
+        """`iptables-restore --test --noflush < assign.rules && iptables-restore --noflush < assign.rules`."""
+        text = self.files.get(assign_host_file(self.layout))
+        parsed = _parse_assign_rules(text) if text is not None else None
+        if parsed is None or self.assign_test_fails:
+            return _fail("iptables-restore: line 3 failed", 2)
+        if self.assign_apply_fails:
+            return _fail("iptables-restore: apply failed", 1)
+        self.assign_chain = parsed  # объявление цепочки очищает её: каждое применение - полная замена
+        self.firewall.add("assign")
+        self.assign_applies += 1
+        return _ok()
+
     def _exit_quick(self, action: str, container_path: str, inner: str) -> CommandResult:
         """`awg-quick up|down <exits/gwx<N>.conf>`: путь и команда строго такие, как их собирает провайдер."""
         match = re.fullmatch(
@@ -763,7 +832,9 @@ class FakeServer:
         if name not in self.exit_interfaces or slot in self.exit_down_fails:
             return _fail(f"awg-quick: `{name}' is not a WireGuard interface", 1)
         self.exit_interfaces.remove(name)
-        self.exit_configs.pop(name, None)
+        text = self.exit_configs.pop(name, "")
+        if exit_rule_down(slot) in text:
+            self._drop_exit_rule(slot)
         return _ok()
 
     def _exit_peer_key(self, name: str) -> str:
@@ -810,12 +881,33 @@ class FakeServer:
             private_key = interface_values(self.files[self.config_file])["PrivateKey"]
             return _ok(public_key_from_private(private_key) + "\n")
         if inner == IP_RULE_SHOW:
-            rules = "".join(f"{rule}\n" for rule in self.ip_rules)
+            rules = "".join(f"{rule}\n" for rule in sorted(self.ip_rules, key=lambda item: int(item.split(":")[0])))
             return _ok(f"0:\tfrom all lookup local\n{rules}32766:\tfrom all lookup main\n")
         if inner == AWG_SHOW_INTERFACES:
             return _ok(" ".join([iface, *self.exit_interfaces]) + "\n")
         if inner == f"bash {layout.container_config_dir}/start.sh apply":
             return _ok() if self._run_start_script("apply") else _fail("bash: start.sh: No such file", 127)
+        if inner == assign_apply_command(layout).removeprefix(f"docker exec {layout.container_name} "):
+            return self._assign_apply()
+        if inner == "iptables -t mangle -S PREROUTING":
+            lines = ["-P PREROUTING ACCEPT"]
+            if "assign_hooks" in self.firewall:
+                head = f"-A PREROUTING -i {layout.interface_name}"
+                masks = "--nfmask 0xffffffff --ctmask 0xffffffff"
+                lines += [
+                    f"{head} -j CONNMARK --restore-mark {masks}",
+                    f"{head} -m mark --mark 0x0 -j GW_ASSIGN",
+                    f"{head} -j CONNMARK --save-mark {masks}",
+                ]
+            return _ok("".join(f"{line}{chr(10)}" for line in lines))
+        if inner == assign_show_command(layout).removeprefix(f"docker exec {layout.container_name} "):
+            if "assign" not in self.firewall:
+                return _fail("iptables: No chain/target/match by that name.", 1)
+            rules = "".join(
+                f"-A GW_ASSIGN -s {address}/32 -j MARK --set-xmark 0x{mark:x}/0xffffffff\n"
+                for address, mark in sorted(self.assign_chain.items())
+            )
+            return _ok(f"-N GW_ASSIGN\n{rules}")
         if match := re.fullmatch(r"awg-quick (up|down) (\S+)", inner):
             return self._exit_quick(match.group(1), match.group(2), inner)
         if match := re.fullmatch(r"iptables -t nat -D POSTROUTING -o (gwx\S+) -j MASQUERADE \|\| true", inner):
@@ -830,7 +922,9 @@ class FakeServer:
             if match.group(1) not in self.exit_interfaces:
                 return _fail(f'Cannot find device "{match.group(1)}"', 1)
             self.exit_interfaces.remove(match.group(1))
-            self.exit_configs.pop(match.group(1), None)
+            self.exit_configs.pop(
+                match.group(1), None
+            )  # ссылку удалили напрямую: PostDown не выполнялся, правило метки живо
             return _ok()
         if match := re.fullmatch(r"awg show (gwx\S+) (latest-handshakes|transfer)", inner):
             return self._exit_show(match.group(1), match.group(2), inner)

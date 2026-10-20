@@ -35,7 +35,7 @@ Redis LIST `jobs:queue`: LPUSH + BRPOP = FIFO, в очереди только `j
 - `fail_stale_running` (RUNNING > 30 мин → FAILED), `requeue_lost_pending`, `purge_finished`.
 - Аудит `protocol_install_*` / `protocol_remove_*` (started, completed, failed) несёт в meta `protocol_type` - значение
 enum из `params` (без params - `amnezia_wg`; нераспознанное не пишется). `record_finished` пишет аудит started/completed/failed по таблицам `_STARTED/_COMPLETED/_FAILED`. Для INSTALL_SSH_KEY
-  результат задачи (fingerprint, username, replaced, removed_old) целиком попадает в meta аудита. Для DISCOVER_VPN в meta — только счётчики `protocols` и `clients`. Для GATEWAY_*_EXIT — `exit_id`, `exit_server_id`, `slot`, `weight` из `params` (ключей нет). Для IMPORT_CLIENTS — `protocol_id` и счётчики
+  результат задачи (fingerprint, username, replaced, removed_old) целиком попадает в meta аудита. Для DISCOVER_VPN в meta — только счётчики `protocols` и `clients`. Для GATEWAY_REMOVE_EXIT к ним добавлены счётчики `moved` / `unassigned` из результата (клиентов перенесено и оставлено без выхода). Для GATEWAY_*_EXIT — `exit_id`, `exit_server_id`, `slot`, `weight` из `params` (ключей нет). Для IMPORT_CLIENTS — `protocol_id` и счётчики
   `imported`, `already`, `gone`, `unsupported`, `conflict` (ключей и имён в журнал не попадают).
 
 ## API

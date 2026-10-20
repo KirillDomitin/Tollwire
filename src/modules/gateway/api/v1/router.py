@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database.postgres import get_session
@@ -18,7 +18,7 @@ from modules.audit.actor import AuditActor
 from modules.audit.dependencies import get_audit_actor
 from modules.auth.dependencies import get_current_admin, require
 from modules.auth.permissions import Permission
-from modules.gateway.schemas import GatewayExitCreate, GatewayExitRead, GatewayExitUpdate
+from modules.gateway.schemas import GatewayAssignmentRead, GatewayExitCreate, GatewayExitRead, GatewayExitUpdate
 from modules.gateway.service import GatewayExitService
 from modules.jobs.models.job import Job
 from modules.jobs.schemas import JobRead
@@ -85,13 +85,28 @@ async def update_exit(server_id: UUID, exit_id: UUID, body: GatewayExitUpdate, s
     response_model=JobRead,
     status_code=202,
 )
-async def remove_exit(server_id: UUID, exit_id: UUID, service: Service) -> Job:
-    """Снимает выход: задача `gateway_remove_exit` (туннель на шлюзе, затем внутренний клиент на выходе)."""
+async def remove_exit(server_id: UUID, exit_id: UUID, service: Service, force: Annotated[bool, Query()] = False) -> Job:
+    """Снимает выход: задача `gateway_remove_exit` (клиенты переносятся на другие выходы, затем туннель на шлюзе и
+    внутренний клиент на выходе). Если часть клиентов останется без выхода (и без интернета) - 409 с их числом;
+    `?force=true` подтверждает снятие."""
     try:
-        return await service.schedule_remove(server_id, exit_id)
+        return await service.schedule_remove(server_id, exit_id, force)
     except NotFoundError as exc:
         raise HTTPException(404, detail=str(exc))
     except CredentialNotFound:
         raise HTTPException(409, detail="Credentials do not exist to perform this operation")
     except (GatewayExitError, JobAlreadyRunningError) as exc:
         raise HTTPException(409, detail=str(exc))
+
+
+@router.get(
+    "/assignments",
+    dependencies=[Depends(require(Permission.SERVERS_READ))],
+    response_model=list[GatewayAssignmentRead],
+)
+async def list_assignments(server_id: UUID, service: Service) -> list[GatewayAssignmentRead]:
+    """Какой клиент шлюза идёт через какой выход (credential_id, exit_id, слот, причина, время). Без адресов."""
+    try:
+        return await service.list_assignments(server_id)
+    except NotFoundError as exc:
+        raise HTTPException(404, detail=str(exc))

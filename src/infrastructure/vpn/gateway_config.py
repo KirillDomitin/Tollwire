@@ -10,6 +10,7 @@ AmneziaWG и пересылает трафик на зарубежные сер�
 
 import ipaddress
 import re
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -47,20 +48,28 @@ GATEWAY_LAYOUT = ContainerLayout(
 )
 
 START_SCRIPT_NAME = "start.sh"
+ASSIGN_FILE_NAME = (
+    "assign.rules"  # <папка шлюза>/assign.rules - карта «адрес клиента -> метка выхода» (iptables-restore)
+)
+ASSIGN_CHAIN = "GW_ASSIGN"  # цепочка mangle, в которую панель кладёт по правилу на клиента
 EXITS_DIR_NAME = "exits"  # <папка шлюза>/exits/gwx<слот>.conf - туннели к выходам (этап 24.2)
 
 # Приоритеты правил маршрутизации (ip rule) трафика клиентов. Меньше число - раньше проверяется.
 RU_TABLE = 200  # таблица «российское напрямую» (этап 24.4); пока пустая - правило её пропускает
 RU_RULE_PRIORITY = 100
+EXIT_RULE_PRIORITY = 1000  # fwmark выхода -> его таблица (этап 24.3); позже ru (100), раньше prohibit (9000)
 KILL_SWITCH_PRIORITY = 9000  # prohibit: трафик клиентов никогда не уходит в main (утечка зарубежного, доступ к хосту)
 
-# sysctl контейнера. ip_forward - пересылка; rp_filter=2 (loose) - ответы выходов приходят не тем интерфейсом, которым
-# уходил запрос (policy routing), строгая проверка их бы отбросила; IPv6 выключен целиком: правила шлюза только IPv4,
-# через IPv6 клиент утёк бы мимо kill-switch.
+# sysctl контейнера. ip_forward - пересылка. rp_filter=0 (отключён, этап 24.3): иначе ядро отбрасывает ответы выходов -
+# проверка обратного пути ищет маршрут к источнику ответа "от адреса клиента", и такой поиск попадает под kill-switch
+# (`from <подсеть клиентов> prohibit`; отличить его от пакета клиента правилами нельзя), поэтому даже в режиме loose (2)
+# растёт счётчик IPReversePathFilter, а TCP-ответ до клиента не доходит. Подмена адресов не расширяется: клиент в gw0
+# ограничен AllowedIPs (своим /32), выходы - собственные серверы панели. IPv6 выключен целиком: правила шлюза только
+# IPv4, через IPv6 клиент утёк бы мимо kill-switch.
 GATEWAY_SYSCTLS = (
     "net.ipv4.ip_forward=1",
-    "net.ipv4.conf.all.rp_filter=2",
-    "net.ipv4.conf.default.rp_filter=2",
+    "net.ipv4.conf.all.rp_filter=0",
+    "net.ipv4.conf.default.rp_filter=0",
     "net.ipv6.conf.all.disable_ipv6=1",
 )
 
@@ -70,6 +79,14 @@ AWG_SHOW_INTERFACES = "awg show interfaces"
 # Занятые порты хоста: все контейнеры (в том числе не панели), только чтение.
 DOCKER_PUBLISHED_PORTS = "docker ps -a --format '{{.Ports}}'"
 PORT_PICK_ATTEMPTS = 100
+
+
+SYSCTLS_SHOW = "docker inspect -f '{{{{range $k, $v := .HostConfig.Sysctls}}}}{{{{$k}}}}={{{{$v}}}} {{{{end}}}}' {name}"
+
+
+def sysctls_command(layout: ContainerLayout) -> str:
+    """Sysctl, с которыми создан контейнер (`k=v` через пробел): по ним install() узнаёт устаревший контейнер."""
+    return SYSCTLS_SHOW.format(name=layout.container_name)
 
 
 def sysctl_flags() -> str:
@@ -132,6 +149,20 @@ ensure_rule @RU_PRIORITY@ 'lookup (@RU_TABLE@|ru)' lookup @RU_TABLE@
 ensure_rule @KILL_PRIORITY@ prohibit prohibit
 # Clients are isolated from each other.
 ensure_ipt filter FORWARD -i "$GW_IF" -o "$GW_IF" -j DROP
+# An exit (even a compromised one) cannot start connections into the clients' network: only replies get through.
+ensure_ipt filter FORWARD -i "@EXIT_IF_GLOB@" -m conntrack ! --ctstate ESTABLISHED,RELATED -j DROP
+
+# Exit assignment (stage 24.3): GW_ASSIGN marks client packets with the mark of their exit; the exit tunnel's ip rule
+# @EXIT_RULE_PRIORITY@ sends marked packets to the exit table. CONNMARK keeps the mark for the whole connection, so
+# existing connections stay on their exit when an assignment changes. No mark - no rule - the prohibit rule above.
+iptables -t mangle -N @ASSIGN_CHAIN@ 2>/dev/null || true
+ensure_ipt mangle PREROUTING -i "$GW_IF" -j CONNMARK --restore-mark
+ensure_ipt mangle PREROUTING -i "$GW_IF" -m mark --mark 0 -j @ASSIGN_CHAIN@
+ensure_ipt mangle PREROUTING -i "$GW_IF" -j CONNMARK --save-mark
+# The panel's assignment map survives a container restart.
+if [ -f "$GW_DIR/@ASSIGN_FILE@" ]; then
+    iptables-restore -w --noflush < "$GW_DIR/@ASSIGN_FILE@" || echo "start.sh: assignments were not loaded" >&2
+fi
 
 if [ "$MODE" != apply ]; then
     awg-quick up "$GW_CONF" || { echo "start.sh: $GW_IF failed to come up" >&2; exit 1; }
@@ -173,6 +204,10 @@ def render_start_script(layout: ContainerLayout) -> str:
         "RU_TABLE": str(RU_TABLE),
         "KILL_PRIORITY": str(KILL_SWITCH_PRIORITY),
         "EXITS_DIR": EXITS_DIR_NAME,
+        "ASSIGN_CHAIN": ASSIGN_CHAIN,
+        "ASSIGN_FILE": ASSIGN_FILE_NAME,
+        "EXIT_RULE_PRIORITY": str(EXIT_RULE_PRIORITY),
+        "EXIT_IF_GLOB": f"{EXIT_INTERFACE_PREFIX}+",
     }
     text = _START_SCRIPT
     for key, value in values.items():
@@ -293,6 +328,23 @@ def exit_post_down(slot: int) -> str:
     return f"iptables -t nat -D {exit_nat_rule(slot)} 2>/dev/null || true"
 
 
+def exit_mark(slot: int) -> int:
+    """Метка fwmark клиентов выхода = номер его таблицы маршрутов (1000 + слот): метка и таблица совпадают."""
+    return exit_table(slot)
+
+
+def exit_rule_up(slot: int) -> str:
+    """Правило «пакеты с меткой выхода -> таблица выхода». Живёт и умирает вместе с интерфейсом (PostUp/PostDown).
+    Повторное добавление - EEXIST, поэтому `|| true`."""
+    mark = exit_mark(slot)
+    return f"ip rule add priority {EXIT_RULE_PRIORITY} fwmark {mark} lookup {mark} 2>/dev/null || true"
+
+
+def exit_rule_down(slot: int) -> str:
+    mark = exit_mark(slot)
+    return f"ip rule del priority {EXIT_RULE_PRIORITY} fwmark {mark} lookup {mark} 2>/dev/null || true"
+
+
 def format_endpoint(host: str, port: int) -> str:
     """`host:port` для Endpoint; адрес IPv6 - в скобках. Проверяется в render_exit_config."""
     return f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
@@ -366,6 +418,8 @@ def render_exit_config(tunnel: ExitTunnel) -> str:
         f"MTU = {EXIT_MTU}",
         f"Table = {exit_table(slot)}",
         f"PostUp = {exit_post_up(slot)}",
+        f"PostUp = {exit_rule_up(slot)}",
+        f"PostDown = {exit_rule_down(slot)}",
         f"PostDown = {exit_post_down(slot)}",
         "",
         "[Peer]",
@@ -384,10 +438,26 @@ def exit_needs_restart(old_config: str | None, new_config: str) -> bool:
     if old_config is None:
         return True
     try:
-        old, new = interface_values(old_config), interface_values(new_config)
+        interface_values(old_config)
+        interface_values(new_config)
     except ValueError:
         return True
-    return any(old.get(key) != new.get(key) for key in _EXIT_RESTART_KEYS)
+    return _restart_entries(old_config) != _restart_entries(new_config)
+
+
+def _restart_entries(config: str) -> dict[str, list[str]]:
+    """Значения ключей _EXIT_RESTART_KEYS из [Interface] списками (PostUp/PostDown бывают по нескольку строк)."""
+    entries: dict[str, list[str]] = {key: [] for key in _EXIT_RESTART_KEYS}
+    in_interface = False
+    for raw in config.splitlines():
+        line = raw.strip()
+        if line.startswith("["):
+            in_interface = line == "[Interface]"
+        elif in_interface and "=" in line and not line.startswith("#"):
+            key, value = (part.strip() for part in line.split("=", 1))
+            if key in entries:
+                entries[key].append(value)
+    return entries
 
 
 def exit_up_command(layout: ContainerLayout, slot: int) -> str:
@@ -448,3 +518,100 @@ def exit_health_label(status: ExitTunnelStatus | None, now: datetime) -> str:
         return "no_handshake"
     age = (now - status.latest_handshake).total_seconds()
     return "ok" if age <= ACTIVE_HANDSHAKE_WINDOW_SECONDS else "stale"
+
+
+# --- назначение выходов клиентам (этап 24.3) --------------------------------------------------------------------
+#
+# Панель держит на шлюзе файл assign.rules (формат iptables-restore, секция *mangle): по правилу на клиента, которое
+# ставит метку его выхода. Файл применяется атомарно (`--test`, затем `--noflush`; объявление цепочки `:GW_ASSIGN`
+# очищает её, поэтому каждое применение - полная замена карты) и читается start.sh при запуске контейнера.
+
+_ASSIGN_RULE_RE = re.compile(
+    rf"-A {ASSIGN_CHAIN} -s (\d{{1,3}}(?:\.\d{{1,3}}){{3}})(?:/32)?"
+    r" -j MARK --set-(?:x?mark) (0x[0-9a-fA-F]+|\d+)(?:/0x[0-9a-fA-F]+)?"
+)
+
+
+def render_assign_rules(assignments: Mapping[ipaddress.IPv4Address, int], subnet: str = GATEWAY_SUBNET) -> str:
+    """Текст assign.rules по полной карте «адрес клиента -> слот выхода» (пустая допустима). В строки попадают только
+    проверенные IPv4Address из подсети клиентов и метки целых слотов; порядок - по адресу, текст стабилен."""
+    network = ipaddress.ip_network(subnet)
+    lines = ["*mangle", f":{ASSIGN_CHAIN} - [0:0]"]
+    for address, slot in sorted(assignments.items()):
+        if not isinstance(address, ipaddress.IPv4Address) or address not in network:
+            raise ValueError("Assignment address must be an IPv4 address inside the client subnet")
+        lines.append(f"-A {ASSIGN_CHAIN} -s {address}/32 -j MARK --set-mark {exit_mark(slot)}")
+    return "\n".join([*lines, "COMMIT"]) + "\n"
+
+
+def assign_apply_command(layout: ContainerLayout) -> str:
+    """Применить assign.rules атомарно: сначала `--test` (ничего не меняет), затем настоящее применение."""
+    path = f"{layout.container_config_dir}/{ASSIGN_FILE_NAME}"
+    # -w: ждать xtables-lock (параллельный iptables не должен ронять применение карты).
+    script = f"iptables-restore -w --test --noflush < {path} && iptables-restore -w --noflush < {path}"
+    return f"docker exec {layout.container_name} sh -c '{script}'"
+
+
+def assign_show_command(layout: ContainerLayout) -> str:
+    return f"docker exec {layout.container_name} iptables -t mangle -S {ASSIGN_CHAIN}"
+
+
+PREROUTING_SHOW = "iptables -t mangle -S PREROUTING"
+
+
+def prerouting_show_command(layout: ContainerLayout) -> str:
+    return f"docker exec {layout.container_name} {PREROUTING_SHOW}"
+
+
+def has_assign_hooks(prerouting_output: str, interface: str) -> bool:
+    """В `iptables -t mangle -S PREROUTING` есть все три прыжка start.sh и именно в таком порядке: восстановить метку
+    соединения -> назначить выход (GW_ASSIGN, только для пакетов без метки) -> сохранить метку в соединении. Сама
+    цепочка GW_ASSIGN прыжков не доказывает: `iptables-restore` создаёт её сам, даже если start.sh старый."""
+    prefix = f"-A PREROUTING -i {interface} "
+    found: list[str] = []
+    for raw in prerouting_output.splitlines():
+        line = raw.strip()
+        if not line.startswith(prefix):
+            continue
+        rest = line.removeprefix(prefix)
+        if rest.startswith("-j CONNMARK --restore-mark"):
+            found.append("restore")
+        elif re.fullmatch(rf"-m mark --mark (?:0x0|0) -j {ASSIGN_CHAIN}", rest):
+            found.append("assign")
+        elif rest.startswith("-j CONNMARK --save-mark"):
+            found.append("save")
+    return found == ["restore", "assign", "save"]
+
+
+def missing_exit_rules(ip_rule_output: str, slots: Iterable[int]) -> list[int]:
+    """Слоты поднятых выходов, у которых нет `ip rule` метки (`1000: from all fwmark 0x.. lookup ..`)."""
+    present = {line.strip() for line in ip_rule_output.splitlines()}
+    missing = []
+    for slot in slots:
+        mark = exit_mark(slot)
+        pattern = re.compile(rf"{EXIT_RULE_PRIORITY}:\s+from all fwmark 0x{mark:x} lookup {mark}")
+        if not any(pattern.fullmatch(" ".join(line.split())) for line in present):
+            missing.append(slot)
+    return missing
+
+
+def assign_host_file(layout: ContainerLayout) -> str:
+    return f"{layout.host_config_dir}/{ASSIGN_FILE_NAME}"
+
+
+def parse_assign_chain(output: str) -> dict[ipaddress.IPv4Address, int]:
+    """Фактическая карта из `iptables -t mangle -S GW_ASSIGN`: адрес клиента -> слот. Вывод - с сервера (недоверенный):
+    кривые строки и метки вне диапазона слотов пропускаются."""
+    found: dict[ipaddress.IPv4Address, int] = {}
+    for line in output.splitlines():
+        match = _ASSIGN_RULE_RE.fullmatch(line.strip())
+        if match is None:
+            continue
+        try:
+            address = ipaddress.IPv4Address(match.group(1))
+            slot = int(match.group(2), 0) - EXIT_TABLE_BASE
+        except ValueError:
+            continue
+        if 1 <= slot <= MAX_EXIT_SLOT:
+            found[address] = slot
+    return found

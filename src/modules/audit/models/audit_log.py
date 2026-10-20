@@ -87,6 +87,9 @@ class AuditAction(enum.Enum):
     GATEWAY_EXIT_REMOVE_COMPLETED = "gateway_exit_remove_completed"
     GATEWAY_EXIT_REMOVE_FAILED = "gateway_exit_remove_failed"
     GATEWAY_EXIT_UPDATED = "gateway_exit_updated"
+    GATEWAY_CLIENT_ASSIGNED = "gateway_client_assigned"  # клиенту шлюза назначен выход (выдача, перенос)
+    GATEWAY_CLIENT_UNASSIGNED = "gateway_client_unassigned"  # клиент остался без выхода (снят последний/нет места)
+    GATEWAY_CONTAINER_RECREATED = "gateway_container_recreated"  # контейнер шлюза пересоздан (клиенты переподключаются)
 
 
 class AuditEntity:

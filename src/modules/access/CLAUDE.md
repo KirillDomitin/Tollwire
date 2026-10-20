@@ -41,6 +41,9 @@
 - `schedule_issue` → Job `CREATE_USER` (202); 409, если уже есть живой credential или незавершённая выдача.
 - `provision` (в воркере, под ServerLock): `provider.create_client(client_name(grant_id))` → имя `grant-<12 hex>`,
   грант перечитывается `FOR UPDATE` (гонка «отозвали, пока выдача шла»), шифрованный конфиг в БД, грант → ACTIVE.
+- Для протокола шлюза (`AMNEZIA_GATEWAY`) `provision` после commit credential'а вызывает
+  `GatewayAssignmentService.attach` (назначение выхода), `deprovision` после commit отзыва - `detach`; логика и ограничения -
+  `modules/gateway/CLAUDE.md`. Нет исправных выходов - выдача проходит, клиент без выхода.
 - `deprovision` / `schedule_revoke` → `REVOKE_ACCESS`; повторный отзыв уже отозванного → 200 с credential.
 - `reveal_config` — единственное место расшифровки: `config` (.conf), `share_link` (`vpn://`), `share_qr`
   (серия QR); имя сервера из панели → `description`. Ответ `Cache-Control: no-store`, аудит `config_viewed`,

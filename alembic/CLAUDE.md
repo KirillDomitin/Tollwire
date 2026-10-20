@@ -38,6 +38,13 @@
   1..200, веса 1..100, `max_clients > 0`; `state` — VARCHAR(16), не Postgres-enum; индекс по `exit_protocol_id`).
 - Downgrade: удаляет таблицу, задачи этих типов и пересоздаёт `jobtype` (DEFAULT `HEALTH_CHECK` возвращается).
 
+## Назначения выходов (`d2f8a6c3b514`)
+
+- Таблица `gateway_assignments`: PK `credential_id` (FK `vpn_credentials` CASCADE), `exit_id` (FK `gateway_exits` CASCADE, индекс),
+  `pinned_exit_id` (FK `gateway_exits` SET NULL), `assigned_at`, `reason` (VARCHAR(16), не Postgres-enum).
+- Также `gateway_exits.drained_moved` / `drained_unassigned` (INTEGER NOT NULL DEFAULT 0): итог переноса клиентов при снятии выхода.
+- Downgrade удаляет эти колонки и таблицу (производные данные: карту на шлюзе панель собирает из БД).
+
 ## Импорт клиентов (`f6b2d8a41c73`)
 
 - `jobtype` += `IMPORT_CLIENTS` — в `autocommit_block`, с `IF NOT EXISTS`.
