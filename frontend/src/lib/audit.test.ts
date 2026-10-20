@@ -306,3 +306,184 @@ describe("auditDetails", () => {
     expect(() => auditDetails(log({ metadata: null }))).not.toThrow();
   });
 });
+
+describe("gateway and Russia-direct events", () => {
+  const GATEWAY_EVENTS = [
+    "gateway_exit_add_started",
+    "gateway_exit_add_completed",
+    "gateway_exit_add_failed",
+    "gateway_exit_remove_started",
+    "gateway_exit_remove_completed",
+    "gateway_exit_remove_failed",
+    "gateway_exit_updated",
+    "gateway_client_assigned",
+    "gateway_client_unassigned",
+    "gateway_client_moved",
+    "gateway_failover",
+    "gateway_all_exits_down",
+    "gateway_exit_recovered",
+    "gateway_container_recreated",
+    "gateway_ru_applied",
+    "gateway_ru_apply_failed",
+    "geoip_list_updated",
+    "geoip_list_activated",
+    "geoip_override_added",
+    "geoip_override_removed",
+  ] as const;
+
+  it("are all known, in one group of their own that can be filtered", () => {
+    for (const action of GATEWAY_EVENTS) expect(AUDIT_ACTIONS[action].group).toBe("gateway");
+    expect(AUDIT_GROUPS).toContain("gateway");
+    expect([...actionsOfGroup("gateway")].sort()).toEqual([...GATEWAY_EVENTS].sort());
+  });
+
+  it("are red when an operation fails or no exit is left, amber when clients lose their way", () => {
+    for (const action of [
+      "gateway_exit_add_failed",
+      "gateway_exit_remove_failed",
+      "gateway_ru_apply_failed",
+      "gateway_all_exits_down",
+    ] as const) {
+      expect(AUDIT_ACTIONS[action].tone).toBe("down");
+    }
+    for (const action of [
+      "gateway_client_unassigned",
+      "gateway_failover",
+      "gateway_container_recreated",
+    ] as const) {
+      expect(AUDIT_ACTIONS[action].tone).toBe("warn");
+    }
+    for (const action of [
+      "gateway_exit_add_completed",
+      "gateway_client_moved",
+      "geoip_list_activated",
+    ] as const) {
+      expect(AUDIT_ACTIONS[action].tone).toBeUndefined();
+    }
+  });
+
+  it("have a text and a group name in both languages that does not repeat the key", async () => {
+    for (const language of ["ru", "en"]) {
+      await i18n.changeLanguage(language);
+      for (const action of GATEWAY_EVENTS) expect(auditActionText(action)).not.toContain("audit.actions");
+    }
+    await i18n.changeLanguage("ru");
+    expect(auditGroupLabel("gateway")).toBe("Шлюз");
+    expect(auditActionText("gateway_failover")).toBe("Выход шлюза отказал — клиенты перенесены");
+    await i18n.changeLanguage("en");
+    expect(auditGroupLabel("gateway")).toBe("Gateway");
+    expect(auditActionText("geoip_override_added")).toBe("Russia direct exception added");
+  });
+
+  it("show slots and counters of a failover in words, but no ids", () => {
+    const text = shown(
+      log({
+        action: "gateway_failover",
+        metadata: {
+          exit_id: "99999999-9999-4999-8999-999999999999",
+          slot: 2,
+          moved: 5,
+          unassigned: 1,
+        },
+      }),
+    );
+    expect(text).toContain("Слот выхода");
+    expect(text).toContain("Перенесено клиентов");
+    expect(text).toContain("Осталось без выхода");
+    expect(text).not.toContain("99999999");
+  });
+
+  it("show where a client moved and why, with the reason translated", () => {
+    const text = shown(
+      log({
+        action: "gateway_client_moved",
+        metadata: {
+          credential_id: "77777777-7777-4777-8777-777777777777",
+          from_slot: 1,
+          to_slot: 2,
+          reason: "failover_return",
+        },
+      }),
+    );
+    expect(text).toContain("С выхода");
+    expect(text).toContain("На выход");
+    expect(text).toContain("возврат на закреплённый выход");
+    expect(text).not.toContain("77777777");
+  });
+
+  it("translate the exception direction and the list status, and show the list counters, but not the list", () => {
+    const text = shown(
+      log({
+        action: "geoip_list_updated",
+        metadata: {
+          version: "20261019",
+          count: 8612,
+          sha256: "ab".repeat(32),
+          status: "candidate",
+          source: "ripe",
+        },
+      }),
+    );
+    for (const expected of [
+      "Версия списка",
+      "20261019",
+      "Диапазонов",
+      "8612",
+      "Контрольная сумма",
+      "ждёт подтверждения",
+      "ripe",
+    ]) {
+      expect(text).toContain(expected);
+    }
+    const override = shown(
+      log({ action: "geoip_override_added", metadata: { network: "5.45.200.0/24", action: "tunnel" } }),
+    );
+    expect(override).toContain("5.45.200.0/24");
+    expect(override).toContain("через выход");
+  });
+
+  it("show which protocol was installed or removed, and the routes of an applied list", () => {
+    expect(
+      shown(log({ action: "protocol_install_completed", metadata: { protocol_type: "amnezia_gateway" } })),
+    ).toContain("Шлюз");
+    expect(
+      shown(log({ action: "protocol_install_completed", metadata: { protocol_type: "amnezia_wg" } })),
+    ).toContain("AmneziaWG");
+    expect(shown(log({ action: "gateway_ru_applied", metadata: { job_id: "x", routes: 8612 } }))).toContain(
+      "Маршрутов на шлюзе",
+    );
+  });
+
+  it("show the gateway reason in English too, and an unknown value as it is", async () => {
+    await i18n.changeLanguage("en");
+    expect(
+      shown(log({ action: "gateway_container_recreated", metadata: { reason: "sysctl_mismatch" } })),
+    ).toContain("outdated kernel settings");
+    expect(shown(log({ action: "gateway_client_moved", metadata: { reason: "brand_new" } }))).toContain(
+      "brand_new",
+    );
+  });
+
+  it("leave the reason of other events as the backend sent it", () => {
+    expect(shown(log({ action: "login_locked", metadata: { reason: "manual" } }))).toContain("manual");
+  });
+
+  it("name the gateway server in the subject, and say nothing for list events", () => {
+    const subject = auditSubject(
+      log({
+        action: "gateway_exit_add_completed",
+        entity_type: "server",
+        entity_id: SERVER_ID,
+        metadata: { slot: 1 },
+      }),
+      names({ servers: new Map([[SERVER_ID, "gw-1"]]) }),
+    );
+    expect(subject).toEqual({ label: "gw-1", to: `/servers/${SERVER_ID}` });
+    expect(
+      auditSubject(
+        log({ action: "geoip_list_updated", entity_type: "geoip", entity_id: crypto.randomUUID() }),
+        names(),
+      ),
+    ).toBeNull();
+  });
+});

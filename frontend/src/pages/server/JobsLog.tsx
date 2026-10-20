@@ -12,7 +12,18 @@ interface Check {
   detail: string;
 }
 
-const CHECK_NAMES = ["ssh", "docker", "internet", "docker_daemon"] as const;
+const CHECK_NAMES = [
+  "ssh",
+  "docker",
+  "internet",
+  "docker_daemon",
+  // Проверки шлюза: контейнер, защита от утечки, выходы, метки клиентов и список «России напрямую».
+  "container",
+  "kill_switch",
+  "exits",
+  "assignments",
+  "ru",
+] as const;
 
 /** Журнал задач сервера: что, когда, чем кончилось. Отчёт health раскрывается по щелчку. */
 export function JobsLog({ jobs }: { jobs: Job[] }) {

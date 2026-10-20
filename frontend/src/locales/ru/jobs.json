@@ -2,7 +2,7 @@
   "types": {
     "install_server": "Установка Amnezia",
     "uninstall_server": "Удаление Amnezia",
-    "install_protocol": "Установка AmneziaWG",
+    "install_protocol": "Установка протокола",
     "install_ssh_key": "Установка ключа панели",
     "remove_protocol": "Снятие протокола",
     "sync_server": "Сверка с базой",
@@ -11,7 +11,12 @@
     "revoke_access": "Отзыв клиента",
     "delete_user": "Удаление пользователя",
     "discover_vpn": "Поиск AmneziaVPN",
-    "import_clients": "Перенос клиентов AmneziaVPN"
+    "import_clients": "Перенос клиентов AmneziaVPN",
+    "gateway_add_exit": "Добавление выхода шлюза",
+    "gateway_remove_exit": "Снятие выхода шлюза",
+    "gateway_apply": "Проверка выходов шлюза",
+    "gateway_apply_ru": "Применение «России напрямую»",
+    "geoip_update": "Обновление списка «России напрямую»"
   },
   "statuses": {
     "pending": "В очереди",

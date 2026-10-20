@@ -57,9 +57,10 @@ export function GrantAccessDialog({
   const [untilDate, setUntilDate] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
 
-  // Выдать можно только там, где стоит AmneziaWG и сервер готов; уже выданные серверы не предлагаются.
-  const granted = new Set(grants.filter(isLive).map((grant) => grant.server_id));
-  const candidates = servers.filter((server) => server.status === "ready" && !granted.has(server.id));
+  // Выдать можно только там, где стоит AmneziaWG или шлюз и сервер готов. Уже выданное не предлагается — по протоколу, а
+  // не по серверу: на одном сервере бывают и AmneziaWG, и шлюз (разные контейнеры), и доступ к ним выдаётся отдельно.
+  const granted = new Set(grants.filter(isLive).map((grant) => grant.protocol_id));
+  const candidates = servers.filter((server) => server.status === "ready");
   const protocols = useQueries({
     queries: candidates.map((server) => ({
       queryKey: ["server", server.id, "protocols"],
@@ -70,11 +71,14 @@ export function GrantAccessDialog({
       enabled: open,
     })),
   });
-  const available = candidates.flatMap((server, index) => {
-    // Выдавать клиентов панель умеет только в своём протоколе; перенесённый из приложения AmneziaVPN не подходит.
-    const protocol = protocols[index]?.data?.find((item) => item.type === "amnezia_wg");
-    return protocol ? [{ server, protocolId: protocol.id }] : [];
-  });
+  const available = candidates.flatMap((server, index) =>
+    // Выдавать клиентов панель умеет в своих протоколах (AmneziaWG и шлюз); перенесённый из приложения AmneziaVPN не подходит.
+    (protocols[index]?.data ?? [])
+      .filter(
+        (item) => (item.type === "amnezia_wg" || item.type === "amnezia_gateway") && !granted.has(item.id),
+      )
+      .map((item) => ({ server, protocolId: item.id, gateway: item.type === "amnezia_gateway" })),
+  );
 
   const grant = useMutation({
     mutationFn: async () => {
@@ -91,7 +95,7 @@ export function GrantAccessDialog({
           },
         );
       }
-      for (const { server, protocolId } of available.filter((item) => selected.includes(item.server.id))) {
+      for (const { server, protocolId } of available.filter((item) => selected.includes(item.protocolId))) {
         const created = await unwrap(
           api.POST("/api/v1/subscriptions/{subscription_id}/grants", {
             params: { path: { subscription_id: subscription.id } },
@@ -186,18 +190,21 @@ export function GrantAccessDialog({
               {granted.size > 0 ? t("users.grantDialog.allGranted") : t("users.grantDialog.noReady")}
             </p>
           )}
-          {available.map(({ server }) => (
-            <label key={server.id}>
+          {available.map(({ server, protocolId, gateway }) => (
+            <label key={protocolId}>
               <input
                 type="checkbox"
-                checked={selected.includes(server.id)}
+                checked={selected.includes(protocolId)}
                 onChange={(event) =>
                   setSelected((current) =>
-                    event.target.checked ? [...current, server.id] : current.filter((id) => id !== server.id),
+                    event.target.checked
+                      ? [...current, protocolId]
+                      : current.filter((id) => id !== protocolId),
                   )
                 }
               />
               {server.name} <span className={styles.address}>{server.host}</span>
+              {gateway && <span className={styles.kind}>{t("users.grantDialog.gateway")}</span>}
             </label>
           ))}
         </fieldset>

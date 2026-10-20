@@ -3,7 +3,7 @@ import { lazy, Suspense, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams } from "react-router";
 
-import { api, unwrap, type Credential, type Job, type Server } from "../../api/client";
+import { api, unwrap, type Credential, type Job, type Protocol, type Server } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import { Button } from "../../components/Button";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
@@ -16,6 +16,7 @@ import { AmneziaAppSection } from "./AmneziaAppSection";
 import { CredentialsDialog } from "./CredentialsDialog";
 import { isAppProtocol, type AppProtocol } from "./discovery";
 import { EditServerDialog } from "./EditServerDialog";
+import { GatewaySection } from "./gateway/GatewaySection";
 import { HostKeyDialog } from "./HostKeyDialog";
 import { JobsLog } from "./JobsLog";
 import styles from "./ServerPage.module.css";
@@ -36,10 +37,12 @@ interface Setup {
   key: boolean;
   credential: boolean;
   installed: boolean;
-  /** Есть любой протокол в панели: свой или перенесённый из приложения AmneziaVPN. */
+  /** Есть обычный протокол в панели: свой (AmneziaWG) или перенесённый из приложения AmneziaVPN. Шлюз не в счёт. */
   protocol: boolean;
-  /** Есть собственный протокол панели (AmneziaWG) — только его можно снять и только он ставится из панели. */
+  /** Есть собственный протокол панели (AmneziaWG) — «Снять AmneziaWG» и порт в «Обслуживании» относятся к нему. */
   ownProtocol: boolean;
+  /** Есть протокол шлюза (отдельный контейнер, ставится и снимается отдельно от AmneziaWG). */
+  gateway: boolean;
 }
 
 export function ServerPage() {
@@ -67,8 +70,11 @@ export function ServerPage() {
   const jobList = jobs.data ?? [];
   const { signal, label } = serverSignal(data);
   const ownProtocol = protocols.data?.find((item) => item.type === "amnezia_wg") ?? null;
-  // Строка протокола приложения появляется после переноса клиентов; для панели это тоже «протокол есть».
-  const protocol = ownProtocol ?? protocols.data?.[0] ?? null;
+  const gatewayProtocol: Protocol | null =
+    protocols.data?.find((item) => item.type === "amnezia_gateway") ?? null;
+  // Строка протокола приложения появляется после переноса клиентов; для панели это тоже «протокол есть». Шлюз —
+  // отдельный протокол со своим контейнером и портом: он не делает сервер «с протоколом» и не подменяет собой AmneziaWG.
+  const protocol = ownProtocol ?? protocols.data?.find((item) => item.type !== "amnezia_gateway") ?? null;
   // Найденные поиском установки приложения AmneziaVPN (отчёт читается только при SSH-учётке).
   const found: AppProtocol[] = discovery.data?.protocols.filter(isAppProtocol) ?? [];
   const setup: Setup = {
@@ -76,15 +82,17 @@ export function ServerPage() {
     credential: Boolean(credential.data),
     // offline — установлен, но не отвечает: это уже обслуживание, а не подготовка. Стоящий протокол — тоже
     // доказательство установки: статус меняет только задача установки, а протокол могли поставить и без неё.
-    installed: data.status === "ready" || data.status === "offline" || protocol !== null,
+    installed:
+      data.status === "ready" || data.status === "offline" || protocol !== null || gatewayProtocol !== null,
     protocol: protocol !== null,
     ownProtocol: ownProtocol !== null,
+    gateway: gatewayProtocol !== null,
   };
   const ready = setup.key && setup.credential && setup.installed && setup.protocol;
   // Найденное приложение AmneziaVPN открывает «Обслуживание» (проверка, сверка) и без протокола в панели: иначе
   // сервер, где подхватывать нечего, навсегда остался бы в чек-листе без единой рабочей кнопки.
   const maintainable =
-    setup.key && setup.credential && setup.installed && (setup.protocol || found.length > 0);
+    setup.key && setup.credential && setup.installed && (setup.protocol || setup.gateway || found.length > 0);
   const manage = can("servers:manage");
 
   return (
@@ -137,7 +145,9 @@ export function ServerPage() {
           server={data}
           credential={credential.data ?? null}
           port={protocol?.port ?? found[0]?.port ?? null}
+          hasProtocol={setup.protocol || found.length > 0}
           appOnly={!setup.ownProtocol}
+          gateway={gatewayProtocol}
           jobs={jobList}
           searched={discovery.data?.checked_at ?? null}
           found={found.length > 0}
@@ -153,6 +163,8 @@ export function ServerPage() {
           importing={hasRunning(jobList, "import_clients")}
         />
       )}
+
+      {gatewayProtocol && <GatewaySection server={data} protocol={gatewayProtocol} jobs={jobList} />}
 
       {/* Замеры снимаются только с серверов, куда панель может зайти по SSH. */}
       {setup.credential && (
@@ -331,6 +343,22 @@ function SetupChecklist({
                   </Button>
                 </>
               )}
+              {/* Шлюз — отдельный контейнер (vpn-admin-gw): он не занимает имя приложения и ставится рядом с обычным протоколом. */}
+              {setup.gateway ? (
+                <p className={styles.hint}>{t("servers.setup.protocol.gatewayInstalled")}</p>
+              ) : (
+                <>
+                  <p className={styles.hint}>{t("servers.setup.protocol.gatewayHint")}</p>
+                  <Button
+                    variant="quiet"
+                    busy={start.isPending && start.variables === "gateway-install"}
+                    busyLabel={t("servers.card.queueBusy")}
+                    onClick={() => start.mutate("gateway-install")}
+                  >
+                    {t("servers.setup.protocol.gatewayButton")}
+                  </Button>
+                </>
+              )}
               {/* Когда приложение уже найдено, поиск повторяется кнопкой в «Обслуживании». */}
               {found.length === 0 && (
                 <Button
@@ -364,7 +392,9 @@ function Maintenance({
   server,
   credential,
   port,
+  hasProtocol,
   appOnly,
+  gateway,
   jobs,
   searched,
   found,
@@ -372,8 +402,12 @@ function Maintenance({
   server: Server;
   credential: Credential | null;
   port: number | null;
+  /** Есть обычный протокол (свой или приложения AmneziaVPN), чей порт показан в первой строке сведений. */
+  hasProtocol: boolean;
   /** В панели есть только протокол, перенесённый из приложения AmneziaVPN, своего AmneziaWG нет. */
   appOnly: boolean;
+  /** Протокол шлюза, если он установлен. */
+  gateway: Protocol | null;
   jobs: Job[];
   /** Время последнего поиска приложения AmneziaVPN, если он был. */
   searched: string | null;
@@ -390,6 +424,7 @@ function Maintenance({
   const syncing = hasRunning(jobs, "sync_server");
   const searching = hasRunning(jobs, "discover_vpn");
   const installingKey = hasRunning(jobs, "install_ssh_key");
+  const installingProtocol = hasRunning(jobs, "install_protocol");
 
   return (
     <section className={styles.section} aria-labelledby="service-title">
@@ -430,8 +465,39 @@ function Maintenance({
       )}
 
       <dl className={styles.facts}>
-        <dt>{appOnly ? t("servers.maintenance.amneziaApp") : t("servers.maintenance.amnezia")}</dt>
-        <dd>{port ? t("servers.maintenance.port", { port }) : t("servers.maintenance.portUnknown")}</dd>
+        {hasProtocol && (
+          <>
+            <dt>{appOnly ? t("servers.maintenance.amneziaApp") : t("servers.maintenance.amnezia")}</dt>
+            <dd>{port ? t("servers.maintenance.port", { port }) : t("servers.maintenance.portUnknown")}</dd>
+          </>
+        )}
+
+        {(gateway || manage) && (
+          <>
+            <dt>{t("servers.maintenance.gateway")}</dt>
+            <dd>
+              {gateway ? (
+                gateway.port ? (
+                  t("servers.maintenance.port", { port: gateway.port })
+                ) : (
+                  t("servers.maintenance.portUnknown")
+                )
+              ) : (
+                <>
+                  <span className={styles.hint}>{t("servers.maintenance.gatewayNone")}</span>
+                  <Button
+                    variant="quiet"
+                    busy={installingProtocol || (start.isPending && start.variables === "gateway-install")}
+                    busyLabel={t("servers.card.queueBusy")}
+                    onClick={() => start.mutate("gateway-install")}
+                  >
+                    {t("servers.maintenance.gatewayInstall")}
+                  </Button>
+                </>
+              )}
+            </dd>
+          </>
+        )}
 
         <dt>{t("servers.maintenance.hostKey")}</dt>
         <dd>
@@ -523,6 +589,18 @@ function DangerZone({ server, setup }: { server: Server; setup: Setup }) {
               actionLabel={t("servers.danger.removeProtocol.action")}
               busyLabel={t("servers.card.queueBusy")}
               onConfirm={() => start.mutateAsync("remove-protocol")}
+            />
+          </li>
+        )}
+        {setup.gateway && (
+          <li>
+            <ConfirmDialog
+              trigger={<Button variant="quiet">{t("servers.danger.removeGateway.trigger")}</Button>}
+              title={t("servers.danger.removeGateway.title")}
+              consequences={t("servers.danger.removeGateway.consequences")}
+              actionLabel={t("servers.danger.removeGateway.action")}
+              busyLabel={t("servers.card.queueBusy")}
+              onConfirm={() => start.mutateAsync("gateway-remove")}
             />
           </li>
         )}

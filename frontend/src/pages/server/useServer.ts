@@ -13,6 +13,17 @@ export const keys = {
   protocols: (id: string) => ["server", id, "protocols"] as const,
   jobs: (id: string) => ["server", id, "jobs"] as const,
   discovery: (id: string) => ["server", id, "discovery"] as const,
+  /** Всё о шлюзе сервера (выходы, назначения): сбрасывается одним префиксом после задач. */
+  gateway: (id: string) => ["server", id, "gateway"] as const,
+  gatewayExits: (id: string) => ["server", id, "gateway", "exits"] as const,
+  gatewayAssignments: (id: string) => ["server", id, "gateway", "assignments"] as const,
+};
+
+/** Список «России напрямую» общий для всех шлюзов панели. */
+export const geoipKeys = {
+  all: ["geoip"] as const,
+  overview: ["geoip", "overview"] as const,
+  overrides: ["geoip", "overrides"] as const,
 };
 
 /** Последние задачи сервера: общий источник для карточки и диалога переноса (один запрос, один опрос). */
@@ -69,6 +80,8 @@ export function useServerData(serverId: string) {
       void queryClient.invalidateQueries({ queryKey: keys.protocols(serverId) });
       void queryClient.invalidateQueries({ queryKey: keys.credential(serverId) }); // ключ панели меняет учётку
       void queryClient.invalidateQueries({ queryKey: keys.discovery(serverId) }); // поиск, установка и перенос клиентов
+      void queryClient.invalidateQueries({ queryKey: keys.gateway(serverId) }); // выходы, назначения, failover
+      void queryClient.invalidateQueries({ queryKey: geoipKeys.all }); // список мог обновиться задачей шлюза
       void queryClient.invalidateQueries({ queryKey: ["servers"] });
     }
     previous.current = running;
@@ -78,24 +91,51 @@ export function useServerData(serverId: string) {
 }
 
 export type ServerAction =
-  "install" | "protocol" | "sync" | "health" | "discover" | "remove-protocol" | "ssh-key";
+  | "install"
+  | "protocol"
+  | "sync"
+  | "health"
+  | "discover"
+  | "remove-protocol"
+  | "ssh-key"
+  | "gateway-install"
+  | "gateway-remove";
 
 /** Поставить серверную задачу (202 + Job) и сразу начать следить за ней. */
 export function useStartJob(serverId: string) {
   const queryClient = useQueryClient();
   const path = { params: { path: { server_id: serverId } } };
-  return useMutation({
-    mutationFn: (action: ServerAction): Promise<Job> =>
-      action === "remove-protocol"
-        ? unwrap(api.DELETE("/api/v1/servers/{server_id}/protocol", path), {
-            409: i18n.t("servers.card.errors.removeProtocol"),
-          })
-        : unwrap(api.POST(`/api/v1/servers/{server_id}/${action}`, path), {
-            409:
-              action === "ssh-key"
-                ? i18n.t("servers.card.errors.installKey")
-                : i18n.t("servers.card.errors.needAccess"),
+  const enqueue = (action: ServerAction): Promise<Job> => {
+    switch (action) {
+      case "gateway-install":
+        return unwrap(
+          api.POST("/api/v1/servers/{server_id}/protocol", { ...path, body: { type: "amnezia_gateway" } }),
+          {
+            409: i18n.t("servers.card.errors.needAccess"),
+          },
+        );
+      case "gateway-remove":
+        return unwrap(
+          api.DELETE("/api/v1/servers/{server_id}/protocol", {
+            params: { path: { server_id: serverId }, query: { type: "amnezia_gateway" } },
           }),
+          { 409: i18n.t("servers.card.errors.removeGateway") },
+        );
+      case "remove-protocol":
+        return unwrap(api.DELETE("/api/v1/servers/{server_id}/protocol", path), {
+          409: i18n.t("servers.card.errors.removeProtocol"),
+        });
+      default:
+        return unwrap(api.POST(`/api/v1/servers/{server_id}/${action}`, path), {
+          409:
+            action === "ssh-key"
+              ? i18n.t("servers.card.errors.installKey")
+              : i18n.t("servers.card.errors.needAccess"),
+        });
+    }
+  };
+  return useMutation({
+    mutationFn: enqueue,
     onSuccess: (job) => {
       queryClient.setQueryData<Job[]>(keys.jobs(serverId), (jobs = []) => [job, ...jobs]);
     },

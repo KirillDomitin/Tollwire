@@ -119,7 +119,10 @@
     "configImported": "Client taken over from AmneziaVPN {{date}}",
     "importedRevoked": "App client revoked",
     "importedNote": "Config unavailable: the client was taken over from the AmneziaVPN app. The private key stayed in the client's app, so the panel cannot show a config or QR code, and it cannot issue a new client for this access.",
-    "importedRevokedNote": "A new client cannot be issued for this access from the panel: clients of an AmneziaVPN installation are created only by the app."
+    "importedRevokedNote": "A new client cannot be issued for this access from the panel: clients of an AmneziaVPN installation are created only by the app.",
+    "gateway": "Gateway",
+    "exit": "Goes through exit {{slot}} — {{name}}",
+    "exitNone": "No exit assigned — no internet"
   },
   "grantDialog": {
     "titleAdd": "Add servers",
@@ -137,7 +140,7 @@
     "servers": "Servers",
     "checking": "Checking servers…",
     "allGranted": "All ready servers have already been granted to this user.",
-    "noReady": "No ready servers with AmneziaWG. Set up a server in the “Servers” section.",
+    "noReady": "No ready servers with AmneziaWG or a gateway. Set up a server in the “Servers” section.",
     "submitAdd": "Add",
     "submitGrant": "Grant access",
     "busy": "Granting…",
@@ -146,7 +149,8 @@
       "subscriptionInvalid": "Check the access term.",
       "grantConflict": "Access to server {{server}} has already been granted.",
       "credentialConflict": "The config for {{server}} is already being issued, or the access period hasn't started yet."
-    }
+    },
+    "gateway": "Gateway"
   },
   "period": {
     "title": "Change the access term",

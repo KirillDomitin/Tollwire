@@ -103,7 +103,8 @@
       "removeProtocol": "Can't remove the protocol: the server has live clients (revoke their access first) or SSH access isn't set.",
       "installKey": "Can't install the key: an installation is already running, the server key isn't pinned or SSH access isn't set.",
       "needAccess": "Set SSH access to the server first.",
-      "hasClients": "The server has live clients. Revoke their access first."
+      "hasClients": "The server has live clients. Revoke their access first.",
+      "removeGateway": "Can't remove the gateway: it has live clients (revoke their access first) or SSH access isn't set."
     },
     "queueBusy": "Queuing…"
   },
@@ -134,7 +135,10 @@
       "lockedNoAccess": "Available once the key is pinned and SSH access is set — the protocol is installed over SSH.",
       "lockedNoInstall": "Available after Amnezia is installed.",
       "appV1": "AmneziaVPN is already installed on this server (container {{container}}). The app owns that name, so the panel's own protocol cannot be installed here. You can take over the app's clients in the \"AmneziaVPN is already on this server\" block below.",
-      "appV2": "AmneziaVPN with the AWG 2.0 protocol is already installed on this server (container {{container}}). The panel's protocol goes into a separate container and leaves the app alone, but make sure you need both installations."
+      "appV2": "AmneziaVPN with the AWG 2.0 protocol is already installed on this server (container {{container}}). The panel's protocol goes into a separate container and leaves the app alone, but make sure you need both installations.",
+      "gatewayInstalled": "The gateway is already installed on this server — manage it in the “Gateway” section below.",
+      "gatewayHint": "Or install the gateway: it accepts clients and sends their traffic through foreign exits. It is a separate container that goes next to AmneziaWG.",
+      "gatewayButton": "Install the gateway"
     }
   },
   "maintenance": {
@@ -166,7 +170,10 @@
     "amneziaApp": "AmneziaVPN (app)",
     "discover": "Find existing Amnezia",
     "discovering": "Searching…",
-    "discoverNone": "Searched {{when}}: no installed AmneziaVPN found."
+    "discoverNone": "Searched {{when}}: no installed AmneziaVPN found.",
+    "gateway": "Gateway",
+    "gatewayNone": "not installed",
+    "gatewayInstall": "Install the gateway"
   },
   "danger": {
     "title": "Danger zone",
@@ -196,6 +203,12 @@
       "consequences": "The server will disappear from the panel along with its SSH access and pinned key. Nothing changes on the server itself. It can't be deleted while it has live clients.",
       "action": "Delete server",
       "busy": "Deleting…"
+    },
+    "removeGateway": {
+      "trigger": "Remove the gateway",
+      "title": "Remove the gateway from the server?",
+      "consequences": "The gateway container, its exits and client assignments will be deleted and the port will close. While the gateway has live clients it can't be removed — revoke their access first.",
+      "action": "Remove gateway"
     }
   },
   "hostKey": {
@@ -241,7 +254,12 @@
       "ssh": "SSH",
       "docker": "Docker",
       "internet": "Internet",
-      "docker_daemon": "Docker service"
+      "docker_daemon": "Docker service",
+      "container": "Container",
+      "kill_switch": "Leak protection",
+      "exits": "Exits",
+      "assignments": "Client assignments",
+      "ru": "Russia direct"
     }
   },
   "monitoring": {

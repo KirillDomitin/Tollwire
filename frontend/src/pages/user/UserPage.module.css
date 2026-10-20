@@ -78,6 +78,16 @@
   align-items: baseline;
   gap: var(--space-2);
 }
+
+/* Вид протокола рядом с сервером: «Шлюз» — отдельный пункт, не путается с AmneziaWG того же сервера. */
+.kind {
+  padding: 0 var(--space-2);
+  font-size: var(--text-meta);
+  font-weight: 550;
+  color: var(--pine);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-control);
+}
 .servers .address {
   font-size: var(--text-meta);
 }

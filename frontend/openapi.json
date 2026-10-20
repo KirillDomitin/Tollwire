@@ -926,6 +926,7 @@
           "servers"
         ],
         "summary": "Protocol Install",
+        "description": "Ставит протокол панели: без типа - обычный (`amnezia_wg`), шлюз - `{\"type\": \"amnezia_gateway\"}` в теле или\n`?type=amnezia_gateway` в адресе (если прокси отбрасывает тело); оба и разные - 422.",
         "operationId": "protocol_install_api_v1_servers__server_id__protocol_post",
         "security": [
           {
@@ -942,8 +943,41 @@
               "format": "uuid",
               "title": "Server Id"
             }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ProtocolType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Type"
+            }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ProtocolRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "202": {
             "description": "Successful Response",
@@ -972,6 +1006,7 @@
           "servers"
         ],
         "summary": "Protocol Uninstall",
+        "description": "Снимает протокол панели: без типа - обычный, шлюз - `{\"type\": \"amnezia_gateway\"}` в теле или\n`?type=amnezia_gateway` (у DELETE тело нередко отбрасывают клиент или прокси - тогда снялся бы не тот протокол).",
         "operationId": "protocol_uninstall_api_v1_servers__server_id__protocol_delete",
         "security": [
           {
@@ -988,8 +1023,41 @@
               "format": "uuid",
               "title": "Server Id"
             }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ProtocolType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Type"
+            }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ProtocolRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "202": {
             "description": "Successful Response",
@@ -1453,6 +1521,718 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ServerRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/servers/{server_id}/gateway/exits": {
+      "get": {
+        "tags": [
+          "gateway"
+        ],
+        "summary": "List Exits",
+        "description": "Выходы шлюза по слотам. Ключей и конфигов внутренних клиентов в ответе нет.",
+        "operationId": "list_exits_api_v1_servers__server_id__gateway_exits_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Server Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GatewayExitRead"
+                  },
+                  "title": "Response List Exits Api V1 Servers  Server Id  Gateway Exits Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "gateway"
+        ],
+        "summary": "Add Exit",
+        "description": "Подключает зарубежный сервер выходом шлюза: задача `gateway_add_exit` (внутренний клиент на выходе, затем\nтуннель на шлюзе). Состояние выхода - в `GET /exits`.",
+        "operationId": "add_exit_api_v1_servers__server_id__gateway_exits_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Server Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GatewayExitCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/servers/{server_id}/gateway/exits/{exit_id}": {
+      "patch": {
+        "tags": [
+          "gateway"
+        ],
+        "summary": "Update Exit",
+        "description": "Вес и предел клиентов выхода (только БД, без задачи).",
+        "operationId": "update_exit_api_v1_servers__server_id__gateway_exits__exit_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Server Id"
+            }
+          },
+          {
+            "name": "exit_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Exit Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GatewayExitUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayExitRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "gateway"
+        ],
+        "summary": "Remove Exit",
+        "description": "Снимает выход: задача `gateway_remove_exit` (клиенты переносятся на другие выходы, затем туннель на шлюзе и\nвнутренний клиент на выходе). Если часть клиентов останется без выхода (и без интернета) - 409 с их числом;\n`?force=true` подтверждает снятие.",
+        "operationId": "remove_exit_api_v1_servers__server_id__gateway_exits__exit_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Server Id"
+            }
+          },
+          {
+            "name": "exit_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Exit Id"
+            }
+          },
+          {
+            "name": "force",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Force"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/servers/{server_id}/gateway/assignments": {
+      "get": {
+        "tags": [
+          "gateway"
+        ],
+        "summary": "List Assignments",
+        "description": "Какой клиент шлюза идёт через какой выход (credential_id, exit_id, слот, причина, время). Без адресов.",
+        "operationId": "list_assignments_api_v1_servers__server_id__gateway_assignments_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Server Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GatewayAssignmentRead"
+                  },
+                  "title": "Response List Assignments Api V1 Servers  Server Id  Gateway Assignments Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/servers/{server_id}/gateway/ru/apply": {
+      "post": {
+        "tags": [
+          "gateway"
+        ],
+        "summary": "Apply Ru",
+        "description": "Применяет на шлюзе эффективный список «Россия напрямую» (активный список и исключения): задача\n`gateway_apply_ru`. Нужен активный список (`GET /api/v1/geoip`).",
+        "operationId": "apply_ru_api_v1_servers__server_id__gateway_ru_apply_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Server Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/servers/{server_id}/gateway/assignments/{credential_id}": {
+      "patch": {
+        "tags": [
+          "gateway"
+        ],
+        "summary": "Move Client",
+        "description": "Переносит клиента шлюза на указанный ACTIVE-выход (причина `manual`) и / или закрепляет за выходом\n(`pin`). Применяется сразу, под блокировкой шлюза; ответ - итоговое назначение. `exit_id: null, pin: false` только\nснимает закрепление.",
+        "operationId": "move_client_api_v1_servers__server_id__gateway_assignments__credential_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Server Id"
+            }
+          },
+          {
+            "name": "credential_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Credential Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GatewayAssignmentMove"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayAssignmentRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/servers/{server_id}/gateway/check": {
+      "post": {
+        "tags": [
+          "gateway"
+        ],
+        "summary": "Check Now",
+        "description": "«Проверить сейчас»: задача `gateway_apply` с проверкой выходов и переносом клиентов, если выход отказал.",
+        "operationId": "check_now_api_v1_servers__server_id__gateway_check_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Server Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/geoip": {
+      "get": {
+        "tags": [
+          "geoip"
+        ],
+        "summary": "Overview",
+        "description": "Активный список (версия, число префиксов, sha256) и кандидаты, ждущие подтверждения. Самих префиксов нет.",
+        "operationId": "overview_api_v1_geoip_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeoipOverview"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/geoip/update": {
+      "post": {
+        "tags": [
+          "geoip"
+        ],
+        "summary": "Update",
+        "description": "Скачивает список с RIPE (адрес - из настроек панели) в фоне; итог - в result задачи `geoip_update`.",
+        "operationId": "update_api_v1_geoip_update_post",
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobRead"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/geoip/upload": {
+      "post": {
+        "tags": [
+          "geoip"
+        ],
+        "summary": "Upload",
+        "description": "Запасной путь без доступа к RIPE: тело `text/plain` - файл RIPE или CIDR по строке, до 5 МБ. Те же проверки и\nправила активации, что у скачанного списка.",
+        "operationId": "upload_api_v1_geoip_upload_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeoipIngestResult"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/geoip/overrides": {
+      "get": {
+        "tags": [
+          "geoip"
+        ],
+        "summary": "List Overrides",
+        "operationId": "list_overrides_api_v1_geoip_overrides_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OverrideRead"
+                  },
+                  "type": "array",
+                  "title": "Response List Overrides Api V1 Geoip Overrides Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "geoip"
+        ],
+        "summary": "Add Override",
+        "description": "Сеть, которая идёт напрямую (`direct`) или через выход (`tunnel`) вопреки списку. Только публичный IPv4 CIDR.",
+        "operationId": "add_override_api_v1_geoip_overrides_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverrideCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OverrideRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/geoip/overrides/{override_id}": {
+      "delete": {
+        "tags": [
+          "geoip"
+        ],
+        "summary": "Remove Override",
+        "operationId": "remove_override_api_v1_geoip_overrides__override_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "override_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Override Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/geoip/{list_id}/activate": {
+      "post": {
+        "tags": [
+          "geoip"
+        ],
+        "summary": "Activate",
+        "description": "Подтверждает кандидата (он отличался от активного больше чем на 20%): список становится активным.",
+        "operationId": "activate_api_v1_geoip__list_id__activate_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "list_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "List Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeoipListRead"
                 }
               }
             }
@@ -3177,6 +3957,18 @@
         "type": "object",
         "title": "AdminUpdate"
       },
+      "AssignReason": {
+        "type": "string",
+        "enum": [
+          "issue",
+          "drain",
+          "failover",
+          "failover_return",
+          "manual",
+          "sync"
+        ],
+        "title": "AssignReason"
+      },
       "AuditAction": {
         "type": "string",
         "enum": [
@@ -3236,7 +4028,27 @@
           "config_viewed",
           "clients_import_started",
           "clients_import_completed",
-          "clients_import_failed"
+          "clients_import_failed",
+          "gateway_exit_add_started",
+          "gateway_exit_add_completed",
+          "gateway_exit_add_failed",
+          "gateway_exit_remove_started",
+          "gateway_exit_remove_completed",
+          "gateway_exit_remove_failed",
+          "gateway_exit_updated",
+          "gateway_client_assigned",
+          "gateway_client_unassigned",
+          "geoip_list_updated",
+          "geoip_list_activated",
+          "geoip_override_added",
+          "geoip_override_removed",
+          "gateway_ru_applied",
+          "gateway_ru_apply_failed",
+          "gateway_client_moved",
+          "gateway_failover",
+          "gateway_all_exits_down",
+          "gateway_exit_recovered",
+          "gateway_container_recreated"
         ],
         "title": "AuditAction"
       },
@@ -3644,6 +4456,409 @@
         ],
         "title": "DiscoveryRead"
       },
+      "ExitState": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "peer_created",
+          "active",
+          "draining",
+          "removing"
+        ],
+        "title": "ExitState"
+      },
+      "GatewayAssignmentMove": {
+        "properties": {
+          "exit_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Id"
+          },
+          "pin": {
+            "type": "boolean",
+            "title": "Pin",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "GatewayAssignmentMove",
+        "description": "Тело PATCH .../assignments/{credential_id}: перенос клиента на выход и / или закрепление.\n\n`exit_id` - выход, на который перенести (ACTIVE этого шлюза); null - не переносить. `pin` - закрепить клиента за\nцелевым выходом (без `exit_id` - за текущим); false снимает закрепление."
+      },
+      "GatewayAssignmentRead": {
+        "properties": {
+          "credential_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Credential Id"
+          },
+          "exit_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Exit Id"
+          },
+          "slot": {
+            "type": "integer",
+            "title": "Slot"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/AssignReason"
+          },
+          "assigned_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Assigned At"
+          },
+          "pinned_exit_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pinned Exit Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "credential_id",
+          "exit_id",
+          "slot",
+          "reason",
+          "assigned_at"
+        ],
+        "title": "GatewayAssignmentRead",
+        "description": "Назначение выхода клиенту шлюза. Без адреса и ключей клиента: клиент определяется по credential_id."
+      },
+      "GatewayExitCreate": {
+        "properties": {
+          "exit_server_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Exit Server Id"
+          },
+          "weight": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Weight",
+            "default": 1
+          },
+          "max_clients": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100000.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Clients"
+          }
+        },
+        "type": "object",
+        "required": [
+          "exit_server_id"
+        ],
+        "title": "GatewayExitCreate",
+        "description": "Тело POST /servers/{id}/gateway/exits: какой сервер подключить выходом."
+      },
+      "GatewayExitRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "exit_server_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Exit Server Id"
+          },
+          "exit_server_name": {
+            "type": "string",
+            "title": "Exit Server Name"
+          },
+          "slot": {
+            "type": "integer",
+            "title": "Slot"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ExitState"
+          },
+          "health": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Health"
+          },
+          "last_handshake_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Handshake At"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "healthy_since": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Healthy Since"
+          },
+          "weight": {
+            "type": "integer",
+            "title": "Weight"
+          },
+          "max_clients": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Clients"
+          },
+          "assigned_clients": {
+            "type": "integer",
+            "title": "Assigned Clients"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "exit_server_id",
+          "exit_server_name",
+          "slot",
+          "state",
+          "health",
+          "last_handshake_at",
+          "checked_at",
+          "healthy_since",
+          "weight",
+          "max_clients",
+          "assigned_clients"
+        ],
+        "title": "GatewayExitRead",
+        "description": "Выход шлюза для API. Ключей и конфига внутреннего клиента здесь нет и быть не должно."
+      },
+      "GatewayExitUpdate": {
+        "properties": {
+          "weight": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weight"
+          },
+          "max_clients": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100000.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Clients"
+          }
+        },
+        "type": "object",
+        "title": "GatewayExitUpdate",
+        "description": "Тело PATCH: только поля, переданные в запросе (max_clients: null снимает предел)."
+      },
+      "GeoipIngestResult": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "list_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "List Id"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "prefixes": {
+            "type": "integer",
+            "title": "Prefixes"
+          },
+          "sha256": {
+            "type": "string",
+            "title": "Sha256"
+          },
+          "skipped": {
+            "type": "integer",
+            "title": "Skipped"
+          },
+          "rejected": {
+            "type": "integer",
+            "title": "Rejected",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "list_id",
+          "version",
+          "prefixes",
+          "sha256",
+          "skipped"
+        ],
+        "title": "GeoipIngestResult",
+        "description": "Итог получения списка: принят и активен, принят кандидатом (нужно подтверждение) или совпал с активным."
+      },
+      "GeoipListRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "sha256": {
+            "type": "string",
+            "title": "Sha256"
+          },
+          "prefixes_count": {
+            "type": "integer",
+            "title": "Prefixes Count"
+          },
+          "addresses_count": {
+            "type": "integer",
+            "title": "Addresses Count"
+          },
+          "status": {
+            "$ref": "#/components/schemas/GeoipStatus"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "activated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "source",
+          "version",
+          "sha256",
+          "prefixes_count",
+          "addresses_count",
+          "status",
+          "created_at",
+          "activated_at"
+        ],
+        "title": "GeoipListRead",
+        "description": "Список без самих префиксов (≈150 КБ): версия, размер, отпечаток и состояние."
+      },
+      "GeoipOverview": {
+        "properties": {
+          "active": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GeoipListRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/GeoipListRead"
+            },
+            "type": "array",
+            "title": "Candidates"
+          }
+        },
+        "type": "object",
+        "required": [
+          "active",
+          "candidates"
+        ],
+        "title": "GeoipOverview"
+      },
+      "GeoipStatus": {
+        "type": "string",
+        "enum": [
+          "active",
+          "candidate",
+          "superseded"
+        ],
+        "title": "GeoipStatus"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -3925,7 +5140,12 @@
           "install_protocol",
           "install_ssh_key",
           "discover_vpn",
-          "import_clients"
+          "import_clients",
+          "gateway_add_exit",
+          "gateway_remove_exit",
+          "geoip_update",
+          "gateway_apply_ru",
+          "gateway_apply"
         ],
         "title": "JobType"
       },
@@ -4288,6 +5508,85 @@
         ],
         "title": "MetricsSeries"
       },
+      "OverrideAction": {
+        "type": "string",
+        "enum": [
+          "direct",
+          "tunnel"
+        ],
+        "title": "OverrideAction"
+      },
+      "OverrideCreate": {
+        "properties": {
+          "network": {
+            "type": "string",
+            "maxLength": 18,
+            "title": "Network"
+          },
+          "action": {
+            "$ref": "#/components/schemas/OverrideAction"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "network",
+          "action"
+        ],
+        "title": "OverrideCreate"
+      },
+      "OverrideRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "network": {
+            "type": "string",
+            "title": "Network"
+          },
+          "action": {
+            "$ref": "#/components/schemas/OverrideAction"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "network",
+          "action",
+          "note",
+          "created_at"
+        ],
+        "title": "OverrideRead"
+      },
       "ProtocolRead": {
         "properties": {
           "id": {
@@ -4330,12 +5629,24 @@
         ],
         "title": "ProtocolRead"
       },
+      "ProtocolRequest": {
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/ProtocolType",
+            "default": "amnezia_wg"
+          }
+        },
+        "type": "object",
+        "title": "ProtocolRequest",
+        "description": "Необязательное тело POST/DELETE /servers/{id}/protocol. Без тела - обычный протокол панели (AMNEZIA_WG)."
+      },
       "ProtocolType": {
         "type": "string",
         "enum": [
           "amnezia_wg",
           "amnezia_app_awg",
-          "amnezia_app_awg2"
+          "amnezia_app_awg2",
+          "amnezia_gateway"
         ],
         "title": "ProtocolType"
       },

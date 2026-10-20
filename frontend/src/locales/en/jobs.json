@@ -2,7 +2,7 @@
   "types": {
     "install_server": "Amnezia installation",
     "uninstall_server": "Amnezia removal",
-    "install_protocol": "AmneziaWG installation",
+    "install_protocol": "Protocol installation",
     "install_ssh_key": "Panel key installation",
     "remove_protocol": "Protocol removal",
     "sync_server": "Sync with the database",
@@ -11,7 +11,12 @@
     "revoke_access": "Client revoke",
     "delete_user": "User deletion",
     "discover_vpn": "AmneziaVPN discovery",
-    "import_clients": "AmneziaVPN clients takeover"
+    "import_clients": "AmneziaVPN clients takeover",
+    "gateway_add_exit": "Gateway exit adding",
+    "gateway_remove_exit": "Gateway exit removal",
+    "gateway_apply": "Gateway exits check",
+    "gateway_apply_ru": "Russia direct apply",
+    "geoip_update": "Russia direct list update"
   },
   "statuses": {
     "pending": "Queued",

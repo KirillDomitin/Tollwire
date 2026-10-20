@@ -6,7 +6,8 @@
     "admins": "Admins",
     "servers": "Servers",
     "access": "Users and access",
-    "configs": "Configs"
+    "configs": "Configs",
+    "gateway": "Gateway"
   },
   "actions": {
     "login": "Signed in to the panel",
@@ -65,7 +66,27 @@
     "credential_imported": "Client taken over from AmneziaVPN",
     "clients_import_started": "AmneziaVPN clients takeover started",
     "clients_import_completed": "AmneziaVPN clients takeover finished",
-    "clients_import_failed": "AmneziaVPN clients takeover failed"
+    "clients_import_failed": "AmneziaVPN clients takeover failed",
+    "gateway_exit_add_started": "Gateway exit adding started",
+    "gateway_exit_add_completed": "Gateway exit added",
+    "gateway_exit_add_failed": "Gateway exit adding failed",
+    "gateway_exit_remove_started": "Gateway exit removal started",
+    "gateway_exit_remove_completed": "Gateway exit removed",
+    "gateway_exit_remove_failed": "Gateway exit removal failed",
+    "gateway_exit_updated": "Gateway exit weight or limit changed",
+    "gateway_client_assigned": "Gateway client assigned an exit",
+    "gateway_client_unassigned": "Gateway client left without an exit",
+    "gateway_client_moved": "Gateway client moved to another exit",
+    "gateway_failover": "Gateway exit failed — clients moved",
+    "gateway_all_exits_down": "All gateway exits are down",
+    "gateway_exit_recovered": "Gateway exit is healthy again",
+    "gateway_container_recreated": "Gateway container recreated — clients will reconnect",
+    "gateway_ru_applied": "Russia direct applied on the gateway",
+    "gateway_ru_apply_failed": "Russia direct could not be applied on the gateway",
+    "geoip_list_updated": "Russia direct list received",
+    "geoip_list_activated": "Russia direct list activated",
+    "geoip_override_added": "Russia direct exception added",
+    "geoip_override_removed": "Russia direct exception removed"
   },
   "details": {
     "reason": "Reason",
@@ -90,7 +111,23 @@
     "unsupported": "Not supported",
     "conflict": "Conflicts",
     "public_key": "Client public key",
-    "source": "Source"
+    "source": "Source",
+    "protocol_type": "Protocol",
+    "slot": "Exit slot",
+    "from_slot": "From exit",
+    "to_slot": "To exit",
+    "moved": "Clients moved",
+    "unassigned": "Left without an exit",
+    "routes": "Routes on the gateway",
+    "version": "List version",
+    "count": "Ranges",
+    "sha256": "Checksum",
+    "status": "Result",
+    "network": "Network",
+    "action": "Goes",
+    "weight": "Weight",
+    "force": "Forced",
+    "exits": "Exits"
   },
   "actor": {
     "anonymous": "Anonymous",
@@ -120,5 +157,36 @@
   },
   "loadingMore": "Loading…",
   "more": "Show more",
-  "details_summary": "Details"
+  "details_summary": "Details",
+  "values": {
+    "protocol_type": {
+      "amnezia_wg": "AmneziaWG",
+      "amnezia_gateway": "Gateway"
+    },
+    "action": {
+      "direct": "directly",
+      "tunnel": "through an exit"
+    },
+    "status": {
+      "active": "active",
+      "candidate": "awaiting confirmation",
+      "superseded": "superseded",
+      "unchanged": "unchanged"
+    },
+    "reason": {
+      "issue": "config issued",
+      "drain": "exit removed",
+      "failover": "exit failed",
+      "failover_return": "returned to the pinned exit",
+      "manual": "manual",
+      "sync": "sync",
+      "pin": "pinned",
+      "unpin": "unpinned",
+      "sysctl_mismatch": "outdated kernel settings"
+    },
+    "force": {
+      "true": "yes",
+      "false": "no"
+    }
+  }
 }

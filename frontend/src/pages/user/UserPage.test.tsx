@@ -68,6 +68,8 @@ function mockApi({
   patchStatus = 200,
   userPatch = {} as Record<string, unknown>,
   serverProtocols = [{ id: "p1", server_id: SERVER, type: "amnezia_wg", port: 51820 }] as unknown[],
+  /** Если задан, сервер отвечает как шлюз: выходы и назначения клиентов. */
+  gateway = null as { exits: unknown[]; assignments: unknown[] } | null,
 } = {}) {
   const calls: string[] = [];
   let currentUser: Record<string, unknown> = { ...user, ...userPatch };
@@ -83,11 +85,33 @@ function mockApi({
         currentUser = { ...currentUser, ...body };
         return json(currentUser);
       }
+      if (request.method === "POST" && path === `/api/v1/subscriptions/${SUB}/grants`) {
+        const body = (await request.json()) as { protocol_id: string };
+        calls.push(`POST grants ${body.protocol_id}`);
+        return json({ ...grant, id: "grant-new", protocol_id: body.protocol_id });
+      }
+      if (request.method === "POST" && path === "/api/v1/access/grant-new/credentials") {
+        calls.push("POST credentials grant-new");
+        return json(
+          {
+            id: "job-new",
+            type: "create_user",
+            status: "pending",
+            progress: 0,
+            server_id: SERVER,
+            created_at: day(0),
+          },
+          202,
+        );
+      }
       if (path === "/api/v1/vpn-users") return json([{ ...currentUser, access: subscriptions[0] ?? null }]);
       if (path === `/api/v1/vpn-users/${USER}`) return json(currentUser);
       if (path === `/api/v1/vpn-users/${USER}/subscriptions`) return json(subscriptions);
       if (path === `/api/v1/subscriptions/${SUB}/grants`) return json(grants);
       if (path === `/api/v1/access/${GRANT}/credentials`) return json(credentials);
+      if (gateway && path === `/api/v1/servers/${SERVER}/gateway/exits`) return json(gateway.exits);
+      if (gateway && path === `/api/v1/servers/${SERVER}/gateway/assignments`)
+        return json(gateway.assignments);
       if (path === "/api/v1/servers") return json([server]);
       if (path === `/api/v1/servers/${SERVER}/protocols`) return json(serverProtocols);
       if (path === "/api/v1/credentials/cred-1/config") {
@@ -219,6 +243,154 @@ describe("granting access to a server", () => {
 
     await userEvent.click(await screen.findByRole("button", { name: "Добавить серверы" }));
     expect(await within(await screen.findByRole("dialog")).findByLabelText(/US2/)).toBeInTheDocument();
+  });
+});
+
+const wgProtocol = { id: "p1", server_id: SERVER, type: "amnezia_wg", port: 51820 };
+const gatewayProtocol = { id: "pg", server_id: SERVER, type: "amnezia_gateway", port: 51821 };
+
+describe("granting access to a gateway", () => {
+  const openDialog = async () => {
+    await userEvent.click(await screen.findByRole("button", { name: "Добавить серверы" }));
+    return screen.findByRole("dialog");
+  };
+
+  it("offers the gateway as its own item next to AmneziaWG of the same server", async () => {
+    mockApi({ grants: [], credentials: [], serverProtocols: [wgProtocol, gatewayProtocol] });
+    renderCard();
+
+    const dialog = await openDialog();
+    await within(dialog).findAllByRole("checkbox");
+    const boxes = within(dialog).getAllByRole("checkbox");
+    expect(boxes.map((box) => box.closest("label")?.textContent)).toEqual([
+      "US2 203.0.113.30",
+      "US2 203.0.113.30Шлюз",
+    ]);
+  });
+
+  it("offers a server that has only the gateway", async () => {
+    mockApi({ grants: [], credentials: [], serverProtocols: [gatewayProtocol] });
+    renderCard();
+
+    const dialog = await openDialog();
+    expect(await within(dialog).findByRole("checkbox", { name: /US2.*Шлюз/ })).toBeInTheDocument();
+    expect(within(dialog).getAllByRole("checkbox")).toHaveLength(1);
+  });
+
+  it("does not hide the gateway of a server whose AmneziaWG is already granted, and the other way round", async () => {
+    mockApi({ serverProtocols: [wgProtocol, gatewayProtocol] }); // выдан AmneziaWG (p1)
+    const { unmount } = renderCard();
+    let dialog = await openDialog();
+    expect(await within(dialog).findByRole("checkbox", { name: /US2.*Шлюз/ })).toBeInTheDocument();
+    expect(within(dialog).getAllByRole("checkbox")).toHaveLength(1);
+    unmount();
+
+    mockApi({ grants: [{ ...grant, protocol_id: "pg" }], serverProtocols: [wgProtocol, gatewayProtocol] });
+    renderCard();
+    dialog = await openDialog();
+    const only = await within(dialog).findByRole("checkbox", { name: /US2/ });
+    expect(only).not.toHaveAccessibleName(/Шлюз/);
+    expect(within(dialog).getAllByRole("checkbox")).toHaveLength(1);
+  });
+
+  it("grants the gateway protocol, not AmneziaWG, when the gateway item is ticked", async () => {
+    const calls = mockApi({ grants: [], credentials: [], serverProtocols: [wgProtocol, gatewayProtocol] });
+    renderCard();
+
+    const dialog = await openDialog();
+    await userEvent.click(await within(dialog).findByRole("checkbox", { name: /US2.*Шлюз/ }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Добавить" }));
+
+    await waitFor(() => expect(calls).toContain("POST credentials grant-new"));
+    expect(calls).toContain("POST grants pg");
+    expect(calls).not.toContain("POST grants p1");
+  });
+
+  it("is labelled in English too", async () => {
+    await i18n.changeLanguage("en");
+    mockApi({ grants: [], credentials: [], serverProtocols: [gatewayProtocol] });
+    renderCard();
+    await userEvent.click(await screen.findByRole("button", { name: "Add servers" }));
+    expect(await screen.findByRole("checkbox", { name: /US2.*Gateway/ })).toBeInTheDocument();
+  });
+});
+
+describe("a client on the gateway", () => {
+  const gatewayGrant = { ...grant, protocol_id: "pg" };
+  const exits = [
+    {
+      id: "e1",
+      exit_server_id: "s-fra",
+      exit_server_name: "Frankfurt",
+      slot: 2,
+      state: "active",
+      health: "ok",
+    },
+  ];
+  const assignment = {
+    credential_id: "cred-1",
+    exit_id: "e1",
+    slot: 2,
+    reason: "issue",
+    assigned_at: day(-1),
+    pinned_exit_id: null,
+  };
+
+  it("is marked as a gateway, shows the exit and gives the config like any other", async () => {
+    const calls = mockApi({
+      grants: [gatewayGrant],
+      serverProtocols: [wgProtocol, gatewayProtocol],
+      gateway: { exits, assignments: [assignment] },
+    });
+    renderCard();
+
+    const row = (await screen.findByText(/Конфиг выдан/)).closest("li")!;
+    expect(await within(row).findByText("Шлюз")).toBeInTheDocument();
+    expect(await within(row).findByText("Идёт через выход 2 — Frankfurt")).toBeInTheDocument();
+    expect(row.textContent).not.toMatch(/10\.77\./); // ни адреса клиента, ни ключей
+    expect(calls).toContain("GET /api/v1/servers/" + SERVER + "/gateway/assignments");
+
+    await userEvent.click(within(row).getByRole("button", { name: "Показать конфиг" }));
+    await userEvent.click(
+      within(await screen.findByRole("dialog")).getByRole("button", { name: "Показать конфиг" }),
+    );
+    expect(await screen.findByRole("img", { name: "QR-код конфига" })).toBeInTheDocument();
+  });
+
+  it("says that a client without an exit has no internet", async () => {
+    mockApi({
+      grants: [gatewayGrant],
+      serverProtocols: [wgProtocol, gatewayProtocol],
+      gateway: { exits, assignments: [] },
+    });
+    renderCard();
+    expect(await screen.findByText("Выход не назначен — интернета нет")).toBeInTheDocument();
+  });
+
+  it("does not mark an ordinary AmneziaWG client or ask the gateway about it", async () => {
+    const calls = mockApi({
+      serverProtocols: [wgProtocol, gatewayProtocol],
+      gateway: { exits, assignments: [] },
+    });
+    renderCard();
+
+    const row = (await screen.findByText(/Конфиг выдан/)).closest("li")!;
+    await waitFor(() => expect(calls).toContain("GET /api/v1/servers/" + SERVER + "/protocols"));
+    expect(within(row).queryByText("Шлюз")).not.toBeInTheDocument();
+    expect(calls.some((call) => call.includes("/gateway/"))).toBe(false);
+  });
+
+  it("shows no exit line without the right to read servers", async () => {
+    const calls = mockApi({
+      grants: [gatewayGrant],
+      serverProtocols: [wgProtocol, gatewayProtocol],
+      gateway: { exits, assignments: [assignment] },
+    });
+    renderCard(["vpn_users:read", "access:read"]);
+
+    expect(await screen.findByText(/Конфиг выдан/)).toBeInTheDocument();
+    expect(screen.queryByText(/Идёт через выход/)).not.toBeInTheDocument();
+    expect(calls.some((call) => call.includes("/gateway/"))).toBe(false);
   });
 });
 

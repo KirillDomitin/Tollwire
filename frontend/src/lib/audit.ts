@@ -7,7 +7,7 @@ export type AuditLog = Schemas["AuditLogRead"];
 type Tone = "down" | "warn" | null;
 
 /** Группы событий — стабильные идентификаторы (они в адресе страницы: ?group=servers), подписи — в словаре. */
-export const AUDIT_GROUPS = ["signIn", "admins", "servers", "access", "configs"] as const;
+export const AUDIT_GROUPS = ["signIn", "admins", "servers", "access", "configs", "gateway"] as const;
 export type AuditGroup = (typeof AUDIT_GROUPS)[number];
 
 interface ActionInfo {
@@ -75,6 +75,28 @@ export const AUDIT_ACTIONS: Record<AuditAction, ActionInfo> = {
   credential_revoked: { group: "configs" },
   credential_revoke_failed: { group: "configs", tone: "down" },
   config_viewed: { group: "configs", tone: "warn" },
+  // Шлюз и «Россия напрямую». Красным — сбои операций и отказ всех выходов, янтарным — то, после чего клиенты теряют
+  // связь или остаются без выхода.
+  gateway_exit_add_started: { group: "gateway" },
+  gateway_exit_add_completed: { group: "gateway" },
+  gateway_exit_add_failed: { group: "gateway", tone: "down" },
+  gateway_exit_remove_started: { group: "gateway" },
+  gateway_exit_remove_completed: { group: "gateway" },
+  gateway_exit_remove_failed: { group: "gateway", tone: "down" },
+  gateway_exit_updated: { group: "gateway" },
+  gateway_client_assigned: { group: "gateway" },
+  gateway_client_unassigned: { group: "gateway", tone: "warn" },
+  gateway_client_moved: { group: "gateway" },
+  gateway_failover: { group: "gateway", tone: "warn" },
+  gateway_all_exits_down: { group: "gateway", tone: "down" },
+  gateway_exit_recovered: { group: "gateway" },
+  gateway_container_recreated: { group: "gateway", tone: "warn" },
+  gateway_ru_applied: { group: "gateway" },
+  gateway_ru_apply_failed: { group: "gateway", tone: "down" },
+  geoip_list_updated: { group: "gateway" },
+  geoip_list_activated: { group: "gateway" },
+  geoip_override_added: { group: "gateway" },
+  geoip_override_removed: { group: "gateway" },
 };
 
 /** Безличная фраза о событии на языке интерфейса: кто действовал, показывается отдельно. */
@@ -190,7 +212,30 @@ const DETAIL_KEYS = [
   "conflict",
   "public_key",
   "source",
+  // Шлюз: слоты выходов, счётчики переносов, число маршрутов и сведения о списке «России напрямую». Идентификаторы
+  // выходов, серверов и клиентов (exit_id, exit_server_id, credential_id) не выводятся, как и остальные id.
+  "protocol_type",
+  "slot",
+  "from_slot",
+  "to_slot",
+  "moved",
+  "unassigned",
+  "routes",
+  "version",
+  "count",
+  "sha256",
+  "status",
+  "network",
+  "action",
+  "weight",
+  "force",
+  "exits",
 ] as const;
+
+/** Ключи, значения которых — слова бэкенда (enum): их показываем по-человечески, если перевод есть. */
+const TRANSLATED_VALUES = ["protocol_type", "action", "status", "reason", "force"] as const;
+/** «reason» есть и у других событий (там это слова с другим смыслом): переводится только у шлюзовых. */
+const GATEWAY_ONLY_VALUES = ["reason"];
 
 const show = (value: unknown): string =>
   typeof value === "string" || typeof value === "number" || typeof value === "boolean"
@@ -198,6 +243,15 @@ const show = (value: unknown): string =>
     : value === null || value === undefined
       ? "—"
       : JSON.stringify(value);
+
+/** Значение подробности: слова из enum бэкенда переводятся, незнакомые и числа показываются как есть. */
+function detailValue(action: AuditAction, key: (typeof DETAIL_KEYS)[number], value: unknown): string {
+  const plain = show(value);
+  if (!(TRANSLATED_VALUES as readonly string[]).includes(key)) return plain;
+  if (GATEWAY_ONLY_VALUES.includes(key) && !action.startsWith("gateway_")) return plain;
+  const path = `audit.values.${key}.${plain}`;
+  return i18n.exists(path) ? i18n.t(path as "audit.values.force.true") : plain;
+}
 
 /** Подробности события для раскрывающейся строки: только ключи из белого списка. Ошибки — обычный текст. */
 export function auditDetails(log: AuditLog): Detail[] {
@@ -215,7 +269,7 @@ export function auditDetails(log: AuditLog): Detail[] {
   }
   for (const key of DETAIL_KEYS) {
     if (key in meta && meta[key] !== null && meta[key] !== undefined) {
-      details.push({ label: i18n.t(`audit.details.${key}`), value: show(meta[key]) });
+      details.push({ label: i18n.t(`audit.details.${key}`), value: detailValue(log.action, key, meta[key]) });
     }
   }
   return details;

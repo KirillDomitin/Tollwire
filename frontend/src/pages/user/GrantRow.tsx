@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -10,6 +10,8 @@ import { Notice } from "../../components/Notice";
 import i18n from "../../i18n";
 import { formatDay, isLive } from "../../lib/access";
 import { isUnfinished } from "../../lib/jobs";
+import { keys } from "../server/useServer";
+import { GatewayExitNote } from "./GatewayExitNote";
 import styles from "./UserPage.module.css";
 import { liveCredential, userKeys } from "./useUser";
 
@@ -86,6 +88,20 @@ export function GrantRow({
   const live = isLive(grant);
   const busy = job !== undefined && isUnfinished(job);
   const manage = can("access:manage");
+  // Доступ к шлюзу выглядит как обычный (конфиг, QR, ссылка), но у него есть выход: узнаём тип протокола доступа.
+  const protocols = useQuery({
+    queryKey: keys.protocols(grant.server_id),
+    queryFn: () =>
+      unwrap(
+        api.GET("/api/v1/servers/{server_id}/protocols", {
+          params: { path: { server_id: grant.server_id } },
+        }),
+      ),
+    enabled: server !== undefined && can("servers:read"),
+  });
+  const gateway = protocols.data?.some(
+    (item) => item.id === grant.protocol_id && item.type === "amnezia_gateway",
+  );
 
   const issue = useMutation({
     mutationFn: () =>
@@ -109,6 +125,7 @@ export function GrantRow({
         <span className={styles.grantServer}>
           {serverName}
           {server && <span className={styles.address}>{server.host}</span>}
+          {gateway && <span className={styles.kind}>{t("users.grant.gateway")}</span>}
         </span>
         <span className={styles.grantState} role="status">
           {state.text}
@@ -118,6 +135,9 @@ export function GrantRow({
         <p className={styles.grantError}>{job.error}</p>
       )}
       {issue.isError && <Notice>{issue.error.message}</Notice>}
+      {gateway && live && !busy && credential && !imported && (
+        <GatewayExitNote serverId={grant.server_id} credentialId={credential.id} />
+      )}
       {live && !busy && fromApp && (
         <p className={styles.hint}>
           {imported ? t("users.grant.importedNote") : t("users.grant.importedRevokedNote")}

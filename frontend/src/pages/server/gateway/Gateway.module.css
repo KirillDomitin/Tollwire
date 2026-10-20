@@ -1,0 +1,251 @@
+/* Раздел «Шлюз» карточки сервера: общие блоки берутся у карточки (composes), таблицы — в языке журнала. */
+
+.section {
+  composes: section from "../ServerPage.module.css";
+}
+.sectionTitle {
+  composes: sectionTitle from "../ServerPage.module.css";
+}
+.hint {
+  composes: hint from "../ServerPage.module.css";
+}
+.row {
+  composes: row from "../ServerPage.module.css";
+}
+.facts {
+  composes: facts from "../ServerPage.module.css";
+}
+.form {
+  composes: form from "../ServerPage.module.css";
+}
+.choice {
+  composes: choice from "../ServerPage.module.css";
+}
+.check {
+  composes: check from "../ServerPage.module.css";
+}
+.keyValue {
+  composes: keyValue from "../ServerPage.module.css";
+}
+
+/* Подраздел: «Выходы», «Клиенты и выходы», «Россия напрямую». */
+.block {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.blockHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+
+.blockTitle {
+  margin: 0;
+  font-size: var(--text-lead);
+}
+
+/* Предупреждение «нет выходов / клиенты без интернета»: янтарная полоса слева, не красная ошибка. */
+.warning {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--paper);
+  border-left: var(--rule-width) solid var(--signal-warn);
+}
+.warning[data-tone="down"] {
+  border-left-color: var(--signal-down);
+}
+
+/* Таблицы выходов, назначений и исключений. На средней ширине таблица прокручивается внутри обёртки, а не растягивает страницу. */
+.tableWrap {
+  overflow-x: auto;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--paper);
+}
+.table thead th {
+  padding: var(--space-2);
+  font-size: var(--text-meta);
+  font-weight: 550;
+  color: var(--pine-faint);
+  text-align: left;
+  border-bottom: 1px solid var(--rule);
+}
+.table tbody > tr > * {
+  padding: var(--space-3) var(--space-2);
+  border-bottom: 1px solid var(--rule);
+  vertical-align: middle;
+  text-align: left;
+  font-weight: 400;
+}
+.table tbody > tr:last-child > * {
+  border-bottom: 0;
+}
+.table tbody > tr > :first-child {
+  border-left: var(--rule-width) solid var(--signal-idle);
+}
+.table tbody > tr[data-tone="ok"] > :first-child {
+  border-left-color: var(--signal-ok);
+}
+.table tbody > tr[data-tone="warn"] > :first-child {
+  border-left-color: var(--signal-warn);
+}
+.table tbody > tr[data-tone="down"] > :first-child {
+  border-left-color: var(--signal-down);
+}
+.table tbody > tr[data-tone="process"] > :first-child {
+  border-left-color: var(--signal-process);
+}
+
+.stack {
+  display: grid;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.name {
+  min-width: 9rem;
+  font-weight: 600;
+  overflow-wrap: break-word;
+}
+.name .sub {
+  display: block;
+}
+.sub {
+  font-size: var(--text-meta);
+  font-weight: 400;
+  color: var(--pine-soft);
+}
+
+.badge {
+  font-weight: 550;
+}
+.badge[data-tone="down"] {
+  color: var(--signal-down);
+}
+.badge[data-tone="warn"] {
+  color: var(--signal-warn-text);
+}
+.badge[data-tone="process"] {
+  color: var(--signal-process);
+}
+.badge[data-tone="idle"] {
+  font-weight: 400;
+  color: var(--pine-soft);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+}
+
+.link {
+  color: inherit;
+  text-decoration-color: var(--rule-strong);
+  text-underline-offset: 3px;
+}
+.link:hover {
+  text-decoration-color: currentColor;
+}
+
+/* Поля форм: число и выбор. */
+.select {
+  min-height: 42px;
+  padding: 0 var(--space-3);
+  font: inherit;
+  color: var(--pine);
+  background: var(--paper);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-control);
+}
+.select:focus-visible {
+  outline: 2px solid var(--focus);
+  border-color: var(--focus);
+}
+.field {
+  display: grid;
+  gap: var(--space-1);
+}
+.fieldLabel {
+  font-size: var(--text-meta);
+  font-weight: 550;
+  color: var(--pine-soft);
+}
+.fieldError {
+  margin: 0;
+  font-size: var(--text-meta);
+  color: var(--signal-down);
+}
+
+/* Итог последней операции (обновление списка, загрузка файла): та же полоса, что у результата проверки соединения. */
+.result {
+  composes: result from "../ServerPage.module.css";
+}
+
+.fileName {
+  overflow-wrap: anywhere;
+}
+
+/* Узкий экран: строка таблицы становится блоком «подпись — значение», полоса статуса — по левому краю блока. */
+@media (max-width: 760px) {
+  .table thead {
+    display: none;
+  }
+  .table,
+  .table tbody,
+  .table tbody > tr,
+  .table tbody > tr > * {
+    display: block;
+  }
+  .table tbody > tr {
+    padding: var(--space-2) 0;
+    border-left: var(--rule-width) solid var(--signal-idle);
+    border-bottom: 1px solid var(--rule);
+  }
+  .table tbody > tr:last-child {
+    border-bottom: 0;
+  }
+  .table tbody > tr[data-tone="ok"] {
+    border-left-color: var(--signal-ok);
+  }
+  .table tbody > tr[data-tone="warn"] {
+    border-left-color: var(--signal-warn);
+  }
+  .table tbody > tr[data-tone="down"] {
+    border-left-color: var(--signal-down);
+  }
+  .table tbody > tr[data-tone="process"] {
+    border-left-color: var(--signal-process);
+  }
+  .table tbody > tr > * {
+    border: 0;
+    padding: var(--space-1) var(--space-3);
+  }
+  .table tbody > tr > :first-child {
+    border-left: 0;
+  }
+  .table td[data-label] {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0 var(--space-3);
+  }
+  .table td[data-label]::before {
+    content: attr(data-label);
+    font-size: var(--text-meta);
+    color: var(--pine-faint);
+  }
+  .table td[data-label] > * {
+    text-align: right;
+  }
+  .table td[data-actions] {
+    padding-top: var(--space-2);
+  }
+}

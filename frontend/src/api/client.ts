@@ -23,12 +23,14 @@ export type Subscription = Schemas["SubscriptionRead"];
 export type Grant = Schemas["AccessGrantRead"];
 export type VPNCredential = Schemas["VPNCredentialRead"];
 
-/** Ошибка API с понятным человеку текстом; status — для веток (401/403/429). */
+/** Ошибка API с понятным человеку текстом; status — для веток (401/403/429); detail — текст `detail` из ответа
+ *  бэкенда (английский, фиксированные фразы): по нему выбирают, что показать, но сам он не показывается. */
 export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
     readonly retryAfterSeconds?: number,
+    readonly detail?: string,
   ) {
     super(message);
   }
@@ -56,5 +58,11 @@ export async function unwrap<T>(
   }
   const { status, ok } = result.response;
   if (ok) return result.data as T; // 204 — данных нет, и это успех
-  throw new ApiError(messages[status] ?? messageForStatus(status), status);
+  const detail = (result.error as { detail?: unknown } | null | undefined)?.detail;
+  throw new ApiError(
+    messages[status] ?? messageForStatus(status),
+    status,
+    undefined,
+    typeof detail === "string" ? detail : undefined,
+  );
 }

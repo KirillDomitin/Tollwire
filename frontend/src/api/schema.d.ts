@@ -245,9 +245,17 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Protocol Install */
+        /**
+         * Protocol Install
+         * @description Ставит протокол панели: без типа - обычный (`amnezia_wg`), шлюз - `{"type": "amnezia_gateway"}` в теле или
+         *     `?type=amnezia_gateway` в адресе (если прокси отбрасывает тело); оба и разные - 422.
+         */
         post: operations["protocol_install_api_v1_servers__server_id__protocol_post"];
-        /** Protocol Uninstall */
+        /**
+         * Protocol Uninstall
+         * @description Снимает протокол панели: без типа - обычный, шлюз - `{"type": "amnezia_gateway"}` в теле или
+         *     `?type=amnezia_gateway` (у DELETE тело нередко отбрасывают клиент или прокси - тогда снялся бы не тот протокол).
+         */
         delete: operations["protocol_uninstall_api_v1_servers__server_id__protocol_delete"];
         options?: never;
         head?: never;
@@ -393,6 +401,259 @@ export interface paths {
         post?: never;
         /** Reset Host Key */
         delete: operations["reset_host_key_api_v1_servers__server_id__host_key_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/servers/{server_id}/gateway/exits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Exits
+         * @description Выходы шлюза по слотам. Ключей и конфигов внутренних клиентов в ответе нет.
+         */
+        get: operations["list_exits_api_v1_servers__server_id__gateway_exits_get"];
+        put?: never;
+        /**
+         * Add Exit
+         * @description Подключает зарубежный сервер выходом шлюза: задача `gateway_add_exit` (внутренний клиент на выходе, затем
+         *     туннель на шлюзе). Состояние выхода - в `GET /exits`.
+         */
+        post: operations["add_exit_api_v1_servers__server_id__gateway_exits_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/servers/{server_id}/gateway/exits/{exit_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove Exit
+         * @description Снимает выход: задача `gateway_remove_exit` (клиенты переносятся на другие выходы, затем туннель на шлюзе и
+         *     внутренний клиент на выходе). Если часть клиентов останется без выхода (и без интернета) - 409 с их числом;
+         *     `?force=true` подтверждает снятие.
+         */
+        delete: operations["remove_exit_api_v1_servers__server_id__gateway_exits__exit_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Update Exit
+         * @description Вес и предел клиентов выхода (только БД, без задачи).
+         */
+        patch: operations["update_exit_api_v1_servers__server_id__gateway_exits__exit_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/servers/{server_id}/gateway/assignments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Assignments
+         * @description Какой клиент шлюза идёт через какой выход (credential_id, exit_id, слот, причина, время). Без адресов.
+         */
+        get: operations["list_assignments_api_v1_servers__server_id__gateway_assignments_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/servers/{server_id}/gateway/ru/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Ru
+         * @description Применяет на шлюзе эффективный список «Россия напрямую» (активный список и исключения): задача
+         *     `gateway_apply_ru`. Нужен активный список (`GET /api/v1/geoip`).
+         */
+        post: operations["apply_ru_api_v1_servers__server_id__gateway_ru_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/servers/{server_id}/gateway/assignments/{credential_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Move Client
+         * @description Переносит клиента шлюза на указанный ACTIVE-выход (причина `manual`) и / или закрепляет за выходом
+         *     (`pin`). Применяется сразу, под блокировкой шлюза; ответ - итоговое назначение. `exit_id: null, pin: false` только
+         *     снимает закрепление.
+         */
+        patch: operations["move_client_api_v1_servers__server_id__gateway_assignments__credential_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/servers/{server_id}/gateway/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check Now
+         * @description «Проверить сейчас»: задача `gateway_apply` с проверкой выходов и переносом клиентов, если выход отказал.
+         */
+        post: operations["check_now_api_v1_servers__server_id__gateway_check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/geoip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Overview
+         * @description Активный список (версия, число префиксов, sha256) и кандидаты, ждущие подтверждения. Самих префиксов нет.
+         */
+        get: operations["overview_api_v1_geoip_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/geoip/update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Update
+         * @description Скачивает список с RIPE (адрес - из настроек панели) в фоне; итог - в result задачи `geoip_update`.
+         */
+        post: operations["update_api_v1_geoip_update_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/geoip/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload
+         * @description Запасной путь без доступа к RIPE: тело `text/plain` - файл RIPE или CIDR по строке, до 5 МБ. Те же проверки и
+         *     правила активации, что у скачанного списка.
+         */
+        post: operations["upload_api_v1_geoip_upload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/geoip/overrides": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Overrides */
+        get: operations["list_overrides_api_v1_geoip_overrides_get"];
+        put?: never;
+        /**
+         * Add Override
+         * @description Сеть, которая идёт напрямую (`direct`) или через выход (`tunnel`) вопреки списку. Только публичный IPv4 CIDR.
+         */
+        post: operations["add_override_api_v1_geoip_overrides_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/geoip/overrides/{override_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Override */
+        delete: operations["remove_override_api_v1_geoip_overrides__override_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/geoip/{list_id}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Activate
+         * @description Подтверждает кандидата (он отличался от активного больше чем на 20%): список становится активным.
+         */
+        post: operations["activate_api_v1_geoip__list_id__activate_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -861,10 +1122,15 @@ export interface components {
             is_active?: boolean | null;
         };
         /**
+         * AssignReason
+         * @enum {string}
+         */
+        AssignReason: "issue" | "drain" | "failover" | "failover_return" | "manual" | "sync";
+        /**
          * AuditAction
          * @enum {string}
          */
-        AuditAction: "login" | "login_failed" | "login_locked" | "logout" | "password_changed" | "password_change_failed" | "admin_created" | "admin_updated" | "server_created" | "server_updated" | "server_deleted" | "server_credentials_set" | "server_credentials_deleted" | "server_host_key_pinned" | "server_host_key_reset" | "server_host_key_mismatch" | "server_install_started" | "server_install_completed" | "server_install_failed" | "server_sync_started" | "server_sync_completed" | "server_sync_failed" | "server_discover_started" | "server_discover_completed" | "server_discover_failed" | "server_ssh_key_install_started" | "server_ssh_key_install_completed" | "server_ssh_key_install_failed" | "protocol_install_started" | "protocol_install_completed" | "protocol_install_failed" | "protocol_remove_started" | "protocol_remove_completed" | "protocol_remove_failed" | "vpn_user_created" | "vpn_user_updated" | "vpn_user_deleted" | "subscription_created" | "subscription_updated" | "subscription_activated" | "subscription_revoked" | "subscription_expired" | "subscription_deleted" | "access_granted" | "access_updated" | "access_revoked" | "access_expired" | "access_deleted" | "credential_issued" | "credential_imported" | "credential_issue_failed" | "credential_revoked" | "credential_revoke_failed" | "config_viewed" | "clients_import_started" | "clients_import_completed" | "clients_import_failed";
+        AuditAction: "login" | "login_failed" | "login_locked" | "logout" | "password_changed" | "password_change_failed" | "admin_created" | "admin_updated" | "server_created" | "server_updated" | "server_deleted" | "server_credentials_set" | "server_credentials_deleted" | "server_host_key_pinned" | "server_host_key_reset" | "server_host_key_mismatch" | "server_install_started" | "server_install_completed" | "server_install_failed" | "server_sync_started" | "server_sync_completed" | "server_sync_failed" | "server_discover_started" | "server_discover_completed" | "server_discover_failed" | "server_ssh_key_install_started" | "server_ssh_key_install_completed" | "server_ssh_key_install_failed" | "protocol_install_started" | "protocol_install_completed" | "protocol_install_failed" | "protocol_remove_started" | "protocol_remove_completed" | "protocol_remove_failed" | "vpn_user_created" | "vpn_user_updated" | "vpn_user_deleted" | "subscription_created" | "subscription_updated" | "subscription_activated" | "subscription_revoked" | "subscription_expired" | "subscription_deleted" | "access_granted" | "access_updated" | "access_revoked" | "access_expired" | "access_deleted" | "credential_issued" | "credential_imported" | "credential_issue_failed" | "credential_revoked" | "credential_revoke_failed" | "config_viewed" | "clients_import_started" | "clients_import_completed" | "clients_import_failed" | "gateway_exit_add_started" | "gateway_exit_add_completed" | "gateway_exit_add_failed" | "gateway_exit_remove_started" | "gateway_exit_remove_completed" | "gateway_exit_remove_failed" | "gateway_exit_updated" | "gateway_client_assigned" | "gateway_client_unassigned" | "geoip_list_updated" | "geoip_list_activated" | "geoip_override_added" | "geoip_override_removed" | "gateway_ru_applied" | "gateway_ru_apply_failed" | "gateway_client_moved" | "gateway_failover" | "gateway_all_exits_down" | "gateway_exit_recovered" | "gateway_container_recreated";
         /** AuditActorRead */
         AuditActorRead: {
             /**
@@ -1008,6 +1274,182 @@ export interface components {
             /** Protocols */
             protocols: components["schemas"]["DiscoveredProtocolRead"][];
         };
+        /**
+         * ExitState
+         * @enum {string}
+         */
+        ExitState: "pending" | "peer_created" | "active" | "draining" | "removing";
+        /**
+         * GatewayAssignmentMove
+         * @description Тело PATCH .../assignments/{credential_id}: перенос клиента на выход и / или закрепление.
+         *
+         *     `exit_id` - выход, на который перенести (ACTIVE этого шлюза); null - не переносить. `pin` - закрепить клиента за
+         *     целевым выходом (без `exit_id` - за текущим); false снимает закрепление.
+         */
+        GatewayAssignmentMove: {
+            /** Exit Id */
+            exit_id?: string | null;
+            /**
+             * Pin
+             * @default false
+             */
+            pin: boolean;
+        };
+        /**
+         * GatewayAssignmentRead
+         * @description Назначение выхода клиенту шлюза. Без адреса и ключей клиента: клиент определяется по credential_id.
+         */
+        GatewayAssignmentRead: {
+            /**
+             * Credential Id
+             * Format: uuid
+             */
+            credential_id: string;
+            /**
+             * Exit Id
+             * Format: uuid
+             */
+            exit_id: string;
+            /** Slot */
+            slot: number;
+            reason: components["schemas"]["AssignReason"];
+            /**
+             * Assigned At
+             * Format: date-time
+             */
+            assigned_at: string;
+            /** Pinned Exit Id */
+            pinned_exit_id?: string | null;
+        };
+        /**
+         * GatewayExitCreate
+         * @description Тело POST /servers/{id}/gateway/exits: какой сервер подключить выходом.
+         */
+        GatewayExitCreate: {
+            /**
+             * Exit Server Id
+             * Format: uuid
+             */
+            exit_server_id: string;
+            /**
+             * Weight
+             * @default 1
+             */
+            weight: number;
+            /** Max Clients */
+            max_clients?: number | null;
+        };
+        /**
+         * GatewayExitRead
+         * @description Выход шлюза для API. Ключей и конфига внутреннего клиента здесь нет и быть не должно.
+         */
+        GatewayExitRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Exit Server Id
+             * Format: uuid
+             */
+            exit_server_id: string;
+            /** Exit Server Name */
+            exit_server_name: string;
+            /** Slot */
+            slot: number;
+            state: components["schemas"]["ExitState"];
+            /** Health */
+            health: string | null;
+            /** Last Handshake At */
+            last_handshake_at: string | null;
+            /** Checked At */
+            checked_at: string | null;
+            /** Healthy Since */
+            healthy_since: string | null;
+            /** Weight */
+            weight: number;
+            /** Max Clients */
+            max_clients: number | null;
+            /** Assigned Clients */
+            assigned_clients: number;
+        };
+        /**
+         * GatewayExitUpdate
+         * @description Тело PATCH: только поля, переданные в запросе (max_clients: null снимает предел).
+         */
+        GatewayExitUpdate: {
+            /** Weight */
+            weight?: number | null;
+            /** Max Clients */
+            max_clients?: number | null;
+        };
+        /**
+         * GeoipIngestResult
+         * @description Итог получения списка: принят и активен, принят кандидатом (нужно подтверждение) или совпал с активным.
+         */
+        GeoipIngestResult: {
+            /** Status */
+            status: string;
+            /**
+             * List Id
+             * Format: uuid
+             */
+            list_id: string;
+            /** Version */
+            version: string;
+            /** Prefixes */
+            prefixes: number;
+            /** Sha256 */
+            sha256: string;
+            /** Skipped */
+            skipped: number;
+            /**
+             * Rejected
+             * @default 0
+             */
+            rejected: number;
+        };
+        /**
+         * GeoipListRead
+         * @description Список без самих префиксов (≈150 КБ): версия, размер, отпечаток и состояние.
+         */
+        GeoipListRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Source */
+            source: string;
+            /** Version */
+            version: string;
+            /** Sha256 */
+            sha256: string;
+            /** Prefixes Count */
+            prefixes_count: number;
+            /** Addresses Count */
+            addresses_count: number;
+            status: components["schemas"]["GeoipStatus"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Activated At */
+            activated_at: string | null;
+        };
+        /** GeoipOverview */
+        GeoipOverview: {
+            active: components["schemas"]["GeoipListRead"] | null;
+            /** Candidates */
+            candidates: components["schemas"]["GeoipListRead"][];
+        };
+        /**
+         * GeoipStatus
+         * @enum {string}
+         */
+        GeoipStatus: "active" | "candidate" | "superseded";
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -1096,7 +1538,7 @@ export interface components {
          * JobType
          * @enum {string}
          */
-        JobType: "create_user" | "delete_user" | "sync_server" | "health_check" | "revoke_access" | "install_server" | "remove_protocol" | "uninstall_server" | "install_protocol" | "install_ssh_key" | "discover_vpn" | "import_clients";
+        JobType: "create_user" | "delete_user" | "sync_server" | "health_check" | "revoke_access" | "install_server" | "remove_protocol" | "uninstall_server" | "install_protocol" | "install_ssh_key" | "discover_vpn" | "import_clients" | "gateway_add_exit" | "gateway_remove_exit" | "geoip_update" | "gateway_apply_ru" | "gateway_apply";
         /**
          * LatestMetrics
          * @description Последний замер сервера — для списка серверов.
@@ -1198,6 +1640,37 @@ export interface components {
             /** Points */
             points: components["schemas"]["MetricPoint"][];
         };
+        /**
+         * OverrideAction
+         * @enum {string}
+         */
+        OverrideAction: "direct" | "tunnel";
+        /** OverrideCreate */
+        OverrideCreate: {
+            /** Network */
+            network: string;
+            action: components["schemas"]["OverrideAction"];
+            /** Note */
+            note?: string | null;
+        };
+        /** OverrideRead */
+        OverrideRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Network */
+            network: string;
+            action: components["schemas"]["OverrideAction"];
+            /** Note */
+            note: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /** ProtocolRead */
         ProtocolRead: {
             /**
@@ -1220,10 +1693,18 @@ export interface components {
             created_at: string;
         };
         /**
+         * ProtocolRequest
+         * @description Необязательное тело POST/DELETE /servers/{id}/protocol. Без тела - обычный протокол панели (AMNEZIA_WG).
+         */
+        ProtocolRequest: {
+            /** @default amnezia_wg */
+            type: components["schemas"]["ProtocolType"];
+        };
+        /**
          * ProtocolType
          * @enum {string}
          */
-        ProtocolType: "amnezia_wg" | "amnezia_app_awg" | "amnezia_app_awg2";
+        ProtocolType: "amnezia_wg" | "amnezia_app_awg" | "amnezia_app_awg2" | "amnezia_gateway";
         /** ServerCreate */
         ServerCreate: {
             /** Name */
@@ -2105,14 +2586,20 @@ export interface operations {
     };
     protocol_install_api_v1_servers__server_id__protocol_post: {
         parameters: {
-            query?: never;
+            query?: {
+                type?: components["schemas"]["ProtocolType"] | null;
+            };
             header?: never;
             path: {
                 server_id: string;
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ProtocolRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             202: {
@@ -2136,14 +2623,20 @@ export interface operations {
     };
     protocol_uninstall_api_v1_servers__server_id__protocol_delete: {
         parameters: {
-            query?: never;
+            query?: {
+                type?: components["schemas"]["ProtocolType"] | null;
+            };
             header?: never;
             path: {
                 server_id: string;
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ProtocolRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             202: {
@@ -2439,6 +2932,444 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ServerRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_exits_api_v1_servers__server_id__gateway_exits_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GatewayExitRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_exit_api_v1_servers__server_id__gateway_exits_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GatewayExitCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_exit_api_v1_servers__server_id__gateway_exits__exit_id__delete: {
+        parameters: {
+            query?: {
+                force?: boolean;
+            };
+            header?: never;
+            path: {
+                server_id: string;
+                exit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_exit_api_v1_servers__server_id__gateway_exits__exit_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+                exit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GatewayExitUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GatewayExitRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_assignments_api_v1_servers__server_id__gateway_assignments_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GatewayAssignmentRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_ru_api_v1_servers__server_id__gateway_ru_apply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    move_client_api_v1_servers__server_id__gateway_assignments__credential_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+                credential_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GatewayAssignmentMove"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GatewayAssignmentRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_now_api_v1_servers__server_id__gateway_check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    overview_api_v1_geoip_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeoipOverview"];
+                };
+            };
+        };
+    };
+    update_api_v1_geoip_update_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRead"];
+                };
+            };
+        };
+    };
+    upload_api_v1_geoip_upload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeoipIngestResult"];
+                };
+            };
+        };
+    };
+    list_overrides_api_v1_geoip_overrides_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OverrideRead"][];
+                };
+            };
+        };
+    };
+    add_override_api_v1_geoip_overrides_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OverrideCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OverrideRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_override_api_v1_geoip_overrides__override_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                override_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    activate_api_v1_geoip__list_id__activate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                list_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeoipListRead"];
                 };
             };
             /** @description Validation Error */

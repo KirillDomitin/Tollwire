@@ -15,6 +15,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- Gateway in the web UI. A server with the gateway protocol gets a "Gateway" section on its card: a summary (client
+  subnet, port, container check, healthy exits, clients with and without an exit), the exits table (slot, state, health and handshake
+  age, weight, client limit, assigned clients) with add / change / remove (removal that would leave clients without an
+  exit asks again, naming how many, and "Remove anyway" repeats it with `force`), the clients and their exits (move to another
+  exit, pin / unpin, assign an exit to a client who has none, "Check now"), and "Russia direct" (the active list, "Update
+  from RIPE", "Upload file", a candidate list waiting for confirmation, exceptions with plain explanations of the backend's
+  refusals, "Apply on the gateway"). The gateway is installed and removed next to AmneziaWG (checklist step, maintenance,
+  danger zone): a server with only the gateway no longer counts the protocol step as done, and the port and removal belong
+  to the right protocol. Granting access offers the gateway as its own item; a gateway client's card shows its exit. New audit
+  events and detail keys (a "Gateway" filter group) and task types are translated.
+- Gateway: failover and manual control of clients. A scheduler rule (`gateway_watch`, every minute) reads the exit tunnels;
+  an exit counts as failed after two bad checks in a row (stale handshake or missing tunnel) and its
+  clients move to the healthy exits at once (weights and client limits respected); with no healthy exit nothing changes and the
+  clients stay without internet (kill-switch). Unpinned clients stay where they moved; pinned ones return to their exit after it
+  has been healthy for 10 minutes (at most 5 per pass). `PATCH /api/v1/servers/{id}/gateway/assignments/{credential_id}`
+  moves a client to a chosen exit and/or pins it, `POST /api/v1/servers/{id}/gateway/check` checks now. New audit events
+  `gateway_client_moved`, `gateway_failover`, `gateway_exit_recovered`. If every exit looks bad at once (gateway restart, total
+  outage) nothing is counted or moved and one `gateway_all_exits_down` event is written. Gateways are polled in parallel with a
+  20 s limit each. Not done: load rebalancing, automatic tunnel restart, conntrack cleanup.
 - Gateway: Russia goes direct. Clients of a gateway reach Russian addresses from the gateway's own address; everything else
   still goes through the assigned exit. The list comes from RIPE (`delegated-ripencc-extended-latest`, https only, size
   limit), is checked strictly (record and prefix thresholds, nothing that overlaps private or reserved ranges, nothing larger than /12) and is applied
@@ -25,8 +44,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   overrides `GET/POST/DELETE /geoip/overrides` (`direct` / `tunnel`), `POST /servers/{id}/gateway/ru/apply`. Sync, health and
   reinstall restore the routes. The country in RIPE is the registration country of a block: CDN-hosted Russian services and
   DNS (which goes through the exit) are not covered.
-- Gateway: client traffic now goes through the exits.### Added
-
 - Gateway: client traffic now goes through the exits. Each client gets an exit when its config is issued (the least loaded
   healthy exit, by weight and client limit); the mapping lives in the DB and is applied to the gateway as a whole
   (`assign.rules`, restored after a container restart). A client without an exit has no internet (kill-switch), never a

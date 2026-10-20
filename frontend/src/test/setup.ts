@@ -1,6 +1,11 @@
 import "@testing-library/jest-dom/vitest";
+import { configure } from "@testing-library/react";
 
 import i18n from "../i18n";
+
+// Полный прогон идёт во много потоков, и findBy*/waitFor на нагруженной машине не укладывались в секунду по умолчанию:
+// отдельно такие тесты проходят. Больший запас на ожидание не замедляет успешные тесты — они завершаются сразу.
+configure({ asyncUtilTimeout: 4000 });
 
 // Тесты написаны на русском тексте интерфейса: язык фиксируем, а не берём из navigator.language (в jsdom он en-US).
 beforeEach(async () => {

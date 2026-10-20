@@ -1,0 +1,259 @@
+{
+  "title": "Gateway",
+  "description": "The gateway accepts clients and sends all their traffic through foreign exits; Russian addresses go directly, from the gateway's own address.",
+  "loading": "Loading exits…",
+  "summary": {
+    "subnet": "Client subnet",
+    "port": "Port",
+    "container": "Container",
+    "containerOk": "running",
+    "containerBad": "not running",
+    "containerUnknown": "no data — run “Check status” under maintenance",
+    "checked": "checked",
+    "exits": "Exits",
+    "exitsValue": "{{usable}} of {{total}} healthy",
+    "clients": "Clients",
+    "clientsValue_one": "{{count}} client",
+    "clientsValue_other": "{{count}} clients",
+    "stranded_one": "without an exit: {{count}}",
+    "stranded_other": "without an exit: {{count}}"
+  },
+  "warnings": {
+    "noExits": "There are no exits, so gateway clients have no internet. Add at least one exit.",
+    "noUsable": "No healthy exits: clients stay without internet until an exit recovers or another one is added."
+  },
+  "health": {
+    "ok": "healthy",
+    "stale": "handshake is stale",
+    "no_handshake": "no handshake yet",
+    "down": "not responding",
+    "unknown": "not checked"
+  },
+  "reasons": {
+    "issue": "config issued",
+    "drain": "exit removed",
+    "failover": "exit failed",
+    "failover_return": "returned to the pinned exit",
+    "manual": "manual",
+    "sync": "sync",
+    "pin": "pinned",
+    "unpin": "unpinned"
+  },
+  "exits": {
+    "title": "Exits",
+    "adding": "Adding…",
+    "empty": "No exits yet. An exit is a foreign panel server with AmneziaWG: gateway clients' traffic leaves through it.",
+    "slot": "exit {{slot}}",
+    "handshake": "handshake",
+    "unlimited": "no limit",
+    "retry": "Retry",
+    "columns": {
+      "exit": "Exit",
+      "state": "State",
+      "health": "Health",
+      "weight": "Weight",
+      "limit": "Limit",
+      "clients": "Clients",
+      "actions": "Actions"
+    },
+    "states": {
+      "active": "Active",
+      "connecting": "Connecting",
+      "removing": "Removing",
+      "error": "Error",
+      "notConnected": "Not connected",
+      "notRemoved": "Not removed"
+    },
+    "add": {
+      "trigger": "Add exit",
+      "title": "Add exit",
+      "description": "The panel creates a service client on the chosen server and brings up a tunnel to it on the gateway. The server's own clients and settings are not changed.",
+      "server": "Exit server",
+      "checking": "Checking servers…",
+      "noCandidates": "No suitable servers: you need a panel server with AmneziaWG installed that is not yet added as an exit.",
+      "weight": "Weight ({{min}}–{{max}})",
+      "limit": "Client limit (optional)",
+      "limitPlaceholder": "no limit",
+      "hint": "Weight sets the share of clients: an exit with weight 2 gets twice as many clients as one with weight 1.",
+      "submit": "Add",
+      "problems": {
+        "server": "Choose a server.",
+        "weight": "Weight must be a whole number from {{min}} to {{max}}.",
+        "limit": "The limit must be a whole number from 1 to {{max}}, or empty."
+      }
+    },
+    "edit": {
+      "trigger": "Edit exit {{name}}",
+      "button": "Edit",
+      "title": "Exit “{{name}}”",
+      "description": "Weight and limit change only in the panel: the tunnel and the clients already on the exit stay as they are."
+    },
+    "remove": {
+      "trigger": "Remove exit {{name}}",
+      "button": "Remove",
+      "title": "Remove exit “{{name}}”?",
+      "consequences": "Clients going through this exit now: {{count}}. They will move to the other exits, then the tunnel on the gateway and the service client on the exit are deleted.",
+      "action": "Remove exit",
+      "left_one": "After the move {{count}} client will be left without an exit and without internet: the other exits are full, or this is the last exit.",
+      "left_other": "After the move {{count}} clients will be left without an exit and without internet: the other exits are full, or this is the last exit.",
+      "force": "Remove anyway"
+    },
+    "errors": {
+      "notFound": "Server not found — it may have been deleted.",
+      "addConflict": "The exit was not added: the gateway or the exit has no SSH access, the exit has no AmneziaWG, it is already added, another task is running on it, or there are no free slots.",
+      "invalid": "Check the weight and the client limit.",
+      "exitGone": "Exit not found — it may already be removed.",
+      "removeConflict": "The exit cannot be removed now: another task is already running on it."
+    }
+  },
+  "assignments": {
+    "title": "Clients and exits",
+    "description": "Which exit each gateway client uses. A client without an exit has no internet; its traffic never bypasses the exit.",
+    "check": "Check now",
+    "checking": "Checking…",
+    "loading": "Loading clients…",
+    "empty": "No clients on the gateway yet.",
+    "stranded_one": "Without an exit and without internet: {{count}} client. Assign an exit or add a healthy one.",
+    "stranded_other": "Without an exit and without internet: {{count}} clients. Assign an exit or add a healthy one.",
+    "more": "Show more ({{shown}} of {{total}} shown)",
+    "unnamed": "Client {{id}}",
+    "since": "assigned",
+    "noExit": "no exit",
+    "exitGone": "exit removed",
+    "exitOption": "Exit {{slot}} — {{name}}",
+    "pinned": "pinned",
+    "pinnedTo": "pinned to exit {{slot}} — {{name}}",
+    "pinnedElsewhere": "currently on another exit",
+    "pin": "Pin",
+    "unpin": "Unpin",
+    "pinTrigger": "Pin client {{name}} to the current exit",
+    "unpinTrigger": "Unpin client {{name}}",
+    "columns": {
+      "client": "Client",
+      "exit": "Exit",
+      "reason": "Reason",
+      "pinned": "Pinning"
+    },
+    "move": {
+      "trigger": "Move client {{name}}",
+      "assignTrigger": "Assign an exit to client {{name}}",
+      "button": "Move",
+      "assign": "Assign",
+      "title": "Move client {{name}}",
+      "assignTitle": "Assign an exit to client {{name}}",
+      "description": "The client moves to the chosen exit immediately: established connections drop and reconnect.",
+      "assignDescription": "The client has no exit, so no internet. Choose an exit — the client gets it right away.",
+      "exit": "Exit",
+      "noTargets": "There are no other active exits.",
+      "pin": "Pin to this exit",
+      "pinHint": "A pinned client leaves the exit only if it fails and returns once the exit is healthy again.",
+      "busy": "Moving…",
+      "submit": "Move",
+      "assignSubmit": "Assign"
+    },
+    "errors": {
+      "notFound": "Client or exit not found — refresh the page.",
+      "conflict": "Not done: the exit is not active or has failed, the client is revoked, or the gateway is busy. Refresh the page and try again.",
+      "invalid": "Check the chosen exit.",
+      "notApplied": "The exit is valid, but applying it on the gateway failed (SSH). Nothing changed — try again later.",
+      "checkConflict": "A check is already running, or SSH access is not set."
+    }
+  },
+  "ru": {
+    "title": "Russia direct",
+    "description": "Gateway clients going to Russian addresses leave from the gateway's own address; all other traffic goes through an exit. The list of Russian networks is shared by all gateways and comes from RIPE; services behind a foreign CDN are not in it — add them as exceptions.",
+    "loading": "Loading…",
+    "noList": "No list loaded yet: all client traffic goes through an exit.",
+    "update": "Update from RIPE",
+    "updating": "Downloading the list…",
+    "updateFailed": "The list was not updated. {{error}}",
+    "apply": "Apply on the gateway",
+    "applying": "Applying…",
+    "applied": "Applied on the gateway, routes: {{routes}} ·",
+    "applyFailed": "The last apply failed. {{error}}",
+    "upload": {
+      "trigger": "Upload file",
+      "title": "Upload a list from a file",
+      "description": "A fallback without access to RIPE: a RIPE export (delegated-ripencc) or one network per line, up to {{size}} MB. The checks are the same as for a downloaded list.",
+      "file": "List file",
+      "tooBig": "The file is larger than {{size}} MB.",
+      "empty": "The file is empty.",
+      "noFile": "Choose a file.",
+      "busy": "Uploading…",
+      "submit": "Upload",
+      "active": "List accepted and active: version {{version}}, {{prefixes}} ranges.",
+      "candidate": "List received (version {{version}}, {{prefixes}} ranges) but it differs a lot from the active one: confirm it below.",
+      "unchanged": "The list did not change: it matches the active one (version {{version}}).",
+      "rejected_one": "{{count}} network that cannot be routed directly was skipped.",
+      "rejected_other": "{{count}} networks that cannot be routed directly were skipped."
+    },
+    "active": {
+      "version": "List version",
+      "prefixes": "Ranges",
+      "prefixesValue": "{{prefixes, number}}",
+      "activated": "Activated"
+    },
+    "candidate": {
+      "title": "A new list is waiting for confirmation.",
+      "text": "Version {{version}}, {{prefixes, number}} ranges: it differs a lot from the active one (by more than 20%), so it was not sent to the gateways. Make sure it is not a source glitch, then confirm.",
+      "activate": "Activate list",
+      "busy": "Activating…"
+    },
+    "overrides": {
+      "title": "Exceptions",
+      "empty": "No exceptions.",
+      "columns": {
+        "network": "Network",
+        "action": "Goes",
+        "note": "Note"
+      },
+      "actions": {
+        "direct": "directly",
+        "tunnel": "through an exit"
+      },
+      "add": {
+        "trigger": "Add exception",
+        "title": "New exception",
+        "description": "A network that goes directly or through an exit regardless of the list. Applies to all gateways.",
+        "network": "Network (CIDR)",
+        "action": "Where the network goes",
+        "hint": {
+          "direct": "Directly — a public network no larger than /16 that does not cover the gateway's or exits' addresses.",
+          "tunnel": "Through an exit — the network is subtracted from the direct list; larger than /8 is not allowed."
+        },
+        "note": "Note (optional)",
+        "submit": "Add",
+        "busy": "Adding…"
+      },
+      "remove": {
+        "trigger": "Delete exception {{network}}",
+        "button": "Delete",
+        "title": "Delete exception {{network}}?",
+        "consequences": {
+          "direct": "The network will follow the general list again: if it is not there, its traffic goes through an exit. The change is applied on the gateways.",
+          "tunnel": "The network will follow the general list again: if it is there, its traffic goes directly. The change is applied on the gateways."
+        },
+        "action": "Delete exception",
+        "busy": "Deleting…"
+      }
+    },
+    "errors": {
+      "format": "Enter an IPv4 network in CIDR form, for example 5.45.200.0/24.",
+      "hostBits": "The address has host bits set: enter the network address, for example 5.45.200.0/24, not 5.45.200.7/24.",
+      "notPublic": "Only a public network no larger than /16 can go directly: private, service and reserved ranges are not allowed.",
+      "tunnelTooBig": "A network sent through an exit cannot be larger than /8.",
+      "coversServer": "The network covers the address of the gateway or an exit server: such a route would cut the tunnels and management. Use a narrower network.",
+      "listReserved": "The list contains private or reserved networks, or networks larger than /12 — they cannot go directly. The list was not accepted.",
+      "tooFew": "The file has too few suitable records. Is it a RIPE export or one network per line?",
+      "size": "After merging there are {{prefixes}} ranges, but {{min}} to {{max}} are expected. The list was not accepted.",
+      "rejected": "The list was not accepted: check the file format.",
+      "tooLarge": "The file is too large.",
+      "applyConflict": "Cannot apply: there is no active list, SSH access is not set, or an apply is already running.",
+      "updateConflict": "A list update is already running.",
+      "listGone": "List not found — refresh the page.",
+      "notCandidate": "Only a candidate list can be confirmed: it may already be confirmed or outdated.",
+      "overrideExists": "This exception already exists.",
+      "overrideGone": "Exception not found — it may already be deleted."
+    }
+  }
+}

@@ -6,7 +6,8 @@
     "admins": "Админы",
     "servers": "Серверы",
     "access": "Пользователи и доступ",
-    "configs": "Конфиги"
+    "configs": "Конфиги",
+    "gateway": "Шлюз"
   },
   "actions": {
     "login": "Вход в панель",
@@ -65,7 +66,27 @@
     "credential_imported": "Клиент подхвачен из AmneziaVPN",
     "clients_import_started": "Начат перенос клиентов AmneziaVPN",
     "clients_import_completed": "Перенос клиентов AmneziaVPN завершён",
-    "clients_import_failed": "Перенос клиентов AmneziaVPN не удался"
+    "clients_import_failed": "Перенос клиентов AmneziaVPN не удался",
+    "gateway_exit_add_started": "Начато добавление выхода шлюза",
+    "gateway_exit_add_completed": "Выход шлюза добавлен",
+    "gateway_exit_add_failed": "Добавление выхода шлюза не удалось",
+    "gateway_exit_remove_started": "Начато снятие выхода шлюза",
+    "gateway_exit_remove_completed": "Выход шлюза снят",
+    "gateway_exit_remove_failed": "Снятие выхода шлюза не удалось",
+    "gateway_exit_updated": "Изменён вес или лимит выхода шлюза",
+    "gateway_client_assigned": "Клиенту шлюза назначен выход",
+    "gateway_client_unassigned": "Клиент шлюза остался без выхода",
+    "gateway_client_moved": "Клиент шлюза перенесён на другой выход",
+    "gateway_failover": "Выход шлюза отказал — клиенты перенесены",
+    "gateway_all_exits_down": "Все выходы шлюза недоступны",
+    "gateway_exit_recovered": "Выход шлюза снова исправен",
+    "gateway_container_recreated": "Контейнер шлюза пересоздан — клиенты переподключатся",
+    "gateway_ru_applied": "«Россия напрямую» применена на шлюзе",
+    "gateway_ru_apply_failed": "«Россию напрямую» не удалось применить на шлюзе",
+    "geoip_list_updated": "Получен список «России напрямую»",
+    "geoip_list_activated": "Список «России напрямую» активирован",
+    "geoip_override_added": "Добавлено исключение «России напрямую»",
+    "geoip_override_removed": "Удалено исключение «России напрямую»"
   },
   "details": {
     "reason": "Причина",
@@ -90,7 +111,23 @@
     "unsupported": "Не поддерживаются",
     "conflict": "Конфликтов",
     "public_key": "Публичный ключ клиента",
-    "source": "Источник"
+    "source": "Источник",
+    "protocol_type": "Протокол",
+    "slot": "Слот выхода",
+    "from_slot": "С выхода",
+    "to_slot": "На выход",
+    "moved": "Перенесено клиентов",
+    "unassigned": "Осталось без выхода",
+    "routes": "Маршрутов на шлюзе",
+    "version": "Версия списка",
+    "count": "Диапазонов",
+    "sha256": "Контрольная сумма",
+    "status": "Итог",
+    "network": "Сеть",
+    "action": "Куда",
+    "weight": "Вес",
+    "force": "Принудительно",
+    "exits": "Выходов"
   },
   "actor": {
     "anonymous": "Аноним",
@@ -120,5 +157,36 @@
   },
   "loadingMore": "Загружаем…",
   "more": "Показать ещё",
-  "details_summary": "Подробности"
+  "details_summary": "Подробности",
+  "values": {
+    "protocol_type": {
+      "amnezia_wg": "AmneziaWG",
+      "amnezia_gateway": "Шлюз"
+    },
+    "action": {
+      "direct": "напрямую",
+      "tunnel": "через выход"
+    },
+    "status": {
+      "active": "активен",
+      "candidate": "ждёт подтверждения",
+      "superseded": "заменён",
+      "unchanged": "не изменился"
+    },
+    "reason": {
+      "issue": "выдан конфиг",
+      "drain": "выход снят",
+      "failover": "отказ выхода",
+      "failover_return": "возврат на закреплённый выход",
+      "manual": "вручную",
+      "sync": "сверка",
+      "pin": "закреплён",
+      "unpin": "закрепление снято",
+      "sysctl_mismatch": "устаревшие настройки ядра"
+    },
+    "force": {
+      "true": "да",
+      "false": "нет"
+    }
+  }
 }
