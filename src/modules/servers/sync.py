@@ -10,11 +10,15 @@ from core.exceptions import NotFoundError, SSHConnectionError, SSHTimeoutError
 from core.security import decrypt_secret
 from core.ssh_exception import CommandExecutionError, UnsupportedOperationError
 from infrastructure.vpn.amnezia import AmneziaInstaller
+from infrastructure.vpn.gateway import AmneziaGatewayProvider
 from infrastructure.vpn.provider import ProviderState, VPNClientInfo, VPNProvider
 from modules.access.models import CredentialSource
 from modules.access.models.vpn_credential import VPNCredential
 from modules.access.repository import VPNCredentialRepository
 from modules.access.service import CLIENT_NAME_PREFIX, client_name, inactive_reason
+from modules.gateway.exit_health import exit_report, record_exit_status
+from modules.gateway.naming import exit_client_name, is_exit_client_name
+from modules.gateway.repository import GatewayExitRepository
 from modules.protocols.models.protocol import APP_PROTOCOLS, ProtocolType, VPNProtocol
 from modules.protocols.repository import ProtocolRepository
 from modules.servers.reachability import mark_reachable, mark_unreachable
@@ -45,6 +49,7 @@ class ServerSyncService:
         self.servers = ServerRepository(session)
         self.protocols = ProtocolRepository(session)
         self.credentials = VPNCredentialRepository(session)
+        self.gateway_exits = GatewayExitRepository(session)
         self.connections = ServerConnectionService(session)
 
     async def sync(self, server_id: UUID) -> dict[str, Any]:
@@ -115,6 +120,27 @@ class ServerSyncService:
             return report
 
         report.update(await self._reconcile_clients(provider, protocol, snapshot.client_list, report["issues"]))
+        if isinstance(provider, AmneziaGatewayProvider):
+            report["exits"] = await self._report_exits(provider, protocol, report["issues"])
+        return report
+
+    async def _report_exits(
+        self, provider: AmneziaGatewayProvider, protocol: VPNProtocol, issues: list[str]
+    ) -> list[dict[str, Any]]:
+        """Сверка выходов шлюза: туннели на шлюзе против строк gateway_exits. Здесь только отчёт и обновление health /
+        рукопожатия в БД: автоматических действий нет (поднять упавший выход или перераспределить клиентов - failover
+        этапа 24.5)."""
+        exits = await self.gateway_exits.list_by_gateway(protocol.id)
+        try:
+            statuses = await provider.exit_status(expected=[gateway_exit.slot for gateway_exit in exits])
+        except CommandExecutionError:
+            # Не прочитали туннели: отчёт по клиентам не теряем, health выходов не трогаем (останется прежним).
+            issues.append("Failed to list exit tunnels on the gateway")
+            return []
+        now = datetime.now(timezone.utc)
+        record_exit_status(exits, statuses, now)
+        report, found = exit_report(exits, statuses)
+        issues.extend(found)
         return report
 
     async def _reconcile_clients(
@@ -133,6 +159,13 @@ class ServerSyncService:
                 live[credential.client_public_key] = (credential, grant.id)
 
         server_keys = {client.public_key for client in on_server}
+        # Внутренние клиенты шлюза: ключи нужных. Прочие `gw-<12 hex>` - сироты, иные `gw-*` - чужие.
+        exit_rows = (
+            await self.gateway_exits.list_live_for_exit_protocol(protocol.id)
+            if protocol.type == ProtocolType.AMNEZIA_WG
+            else []
+        )
+        exit_keys = {row.client_public_key for row in exit_rows if row.client_public_key}
         result: dict[str, list[dict[str, Any]]] = {
             "ok": [],
             "restored": [],
@@ -159,6 +192,12 @@ class ServerSyncService:
             elif client.public_key in revoked_keys:
                 await provider.revoke_client(client.public_key)
                 result["removed_revoked"].append(_client(client))
+            elif client.public_key in exit_keys:
+                result["ok"].append(_client(client))  # внутренний клиент шлюза: запись есть, peer живой
+            elif is_exit_client_name(client.name) and protocol.type == ProtocolType.AMNEZIA_WG:
+                # Наш внутренний клиент без записи о выходе (выход снят, пока сервер был недоступен; commit не дошёл).
+                await provider.revoke_client(client.public_key)
+                result["removed_orphans"].append(_client(client))
             elif client.name and client.name.startswith(CLIENT_NAME_PREFIX) and protocol.type not in APP_PROTOCOLS:
                 # Наш peer без записи в БД: упал commit после create_client или запись удалили.
                 await provider.revoke_client(client.public_key)
@@ -195,5 +234,18 @@ class ServerSyncService:
                 issues.append(f"Credential {credential.id} was not restored: {exc}")
                 continue
             result["restored"].append(_credential(credential))
+
+        for row in exit_rows:
+            # Внутренний клиент выхода пропал с сервера - возвращаем по сохранённому конфигу (туннель на шлюзе жив).
+            if row.client_public_key in server_keys or row.encrypted_config is None:
+                continue
+            try:
+                await provider.restore_client(exit_client_name(row.id), decrypt_secret(row.encrypted_config))
+            except (CommandExecutionError, UnsupportedOperationError, ValueError) as exc:
+                issues.append(f"Gateway exit {row.id} was not restored: {exc}")
+                continue
+            result["restored"].append(
+                {"exit_id": str(row.id), "address": row.client_address, "public_key": row.client_public_key}
+            )
 
         return result

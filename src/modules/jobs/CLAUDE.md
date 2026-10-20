@@ -15,7 +15,9 @@
   `admin_id` (инициатор, FK `jobs_admin_id_fkey`) — от его имени воркер пишет аудит.
 - Типы в работе: CREATE_USER, REVOKE_ACCESS, SYNC_SERVER, HEALTH_CHECK, INSTALL_SERVER, INSTALL_PROTOCOL,
   REMOVE_PROTOCOL, INSTALL_SSH_KEY, DISCOVER_VPN (только чтение, `result` = `{"protocols": [...]}`), IMPORT_CLIENTS (`params` — вход, `result` —
-  итог импорта). DELETE_USER и UNINSTALL_SERVER — наследие, не ставятся.
+  итог импорта), GATEWAY_ADD_EXIT / GATEWAY_REMOVE_EXIT (выходы шлюза, этап 24.2: `server_id` — сервер-шлюз, `params` — `exit_id`,
+  `exit_server_id`, `slot` (и `weight` у добавления), `result` — `{exit_id, exit_server_id, slot}` / `{…, peer_revoked}`; воркер
+  держит `ServerLock` шлюза, выход блокирует сервис внутри; занятый выход — задача в очередь, как `ServerBusyError`). DELETE_USER и UNINSTALL_SERVER — наследие, не ставятся.
 - `result` `IMPORT_CLIENTS`: `{protocol_id, imported: [{public_key, user_id, credential_id}], already: [public_key],
   gone: [public_key], unsupported: [public_key], conflict: [{public_key, reason}]}`. Секретов нет: ключи публичные,
   `reason` — фиксированный текст без параметров SQL.
@@ -33,7 +35,7 @@ Redis LIST `jobs:queue`: LPUSH + BRPOP = FIFO, в очереди только `j
 - `fail_stale_running` (RUNNING > 30 мин → FAILED), `requeue_lost_pending`, `purge_finished`.
 - Аудит `protocol_install_*` / `protocol_remove_*` (started, completed, failed) несёт в meta `protocol_type` - значение
 enum из `params` (без params - `amnezia_wg`; нераспознанное не пишется). `record_finished` пишет аудит started/completed/failed по таблицам `_STARTED/_COMPLETED/_FAILED`. Для INSTALL_SSH_KEY
-  результат задачи (fingerprint, username, replaced, removed_old) целиком попадает в meta аудита. Для DISCOVER_VPN в meta — только счётчики `protocols` и `clients`. Для IMPORT_CLIENTS — `protocol_id` и счётчики
+  результат задачи (fingerprint, username, replaced, removed_old) целиком попадает в meta аудита. Для DISCOVER_VPN в meta — только счётчики `protocols` и `clients`. Для GATEWAY_*_EXIT — `exit_id`, `exit_server_id`, `slot`, `weight` из `params` (ключей нет). Для IMPORT_CLIENTS — `protocol_id` и счётчики
   `imported`, `already`, `gone`, `unsupported`, `conflict` (ключей и имён в журнал не попадают).
 
 ## API

@@ -6,7 +6,7 @@
 
 from uuid import UUID, uuid4
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from core.database.postgres import engine, session_factory
@@ -605,3 +605,159 @@ async def test_gateway_migration_downgrade_keeps_the_unique_constraint_and_stays
     await _alembic("downgrade", BEFORE_GATEWAY)
     await _alembic("upgrade", "head")
     assert "AMNEZIA_GATEWAY" in await _labels(PROTOCOL_TYPES_SQL)
+
+
+# --- выходы шлюза (24.2): таблица gateway_exits и jobtype.GATEWAY_*_EXIT ---
+
+BEFORE_GATEWAY_EXITS = "a8c4e1f7b925"  # голова перед миграцией выходов
+EXIT_JOB_TYPES = {"GATEWAY_ADD_EXIT", "GATEWAY_REMOVE_EXIT"}
+EXITS_TABLE_SQL = text("SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename = 'gateway_exits'")
+EXITS_CONSTRAINTS_SQL = text(
+    "SELECT conname, contype::text FROM pg_constraint WHERE conrelid = 'gateway_exits'::regclass ORDER BY conname"
+)
+
+
+_INSERT_SERVER = text("INSERT INTO vpn_servers (id, name, host) VALUES (gen_random_uuid(), :n, 'h') RETURNING id")
+_INSERT_PROTOCOL = text("INSERT INTO protocols (id, server_id, type) VALUES (gen_random_uuid(), :s, :t) RETURNING id")
+
+
+async def _exit_scene() -> tuple[UUID, UUID, UUID, UUID]:
+    """Два сервера: на первом протокол шлюза, на втором AMNEZIA_WG. Возвращает (сервер, протокол) шлюза и выхода."""
+    ids: list[UUID] = []
+    async with engine.begin() as conn:
+        for name, protocol_type in (("gw-srv", "AMNEZIA_GATEWAY"), ("exit-srv", "AMNEZIA_WG")):
+            server_id = (await conn.execute(_INSERT_SERVER, {"n": name})).scalar_one()
+            protocol_id = (await conn.execute(_INSERT_PROTOCOL, {"s": server_id, "t": protocol_type})).scalar_one()
+            ids += [server_id, protocol_id]
+    return ids[0], ids[1], ids[2], ids[3]
+
+
+_INSERT_EXIT = text(
+    "INSERT INTO gateway_exits (id, gateway_protocol_id, exit_protocol_id, slot) "
+    "VALUES (gen_random_uuid(), :g, :e, :slot)"
+)
+
+
+async def test_gateway_exits_migration_creates_the_table_and_job_types() -> None:
+    assert await _query(EXITS_TABLE_SQL) == [("gateway_exits",)]
+    assert EXIT_JOB_TYPES <= await _labels(JOB_TYPES_SQL)
+    names = {row[0] for row in await _query(EXITS_CONSTRAINTS_SQL)}
+    assert {
+        "uq_gateway_exits_slot",
+        "uq_gateway_exits_exit",
+        "ck_gateway_exits_slot",
+        "ck_gateway_exits_weight",
+        "ck_gateway_exits_max_clients",
+        "gateway_exits_gateway_protocol_id_fkey",
+        "gateway_exits_exit_protocol_id_fkey",
+    } <= names
+
+
+async def test_gateway_exits_defaults_and_the_orm_agree() -> None:
+    from modules.gateway.models.gateway_exit import ExitState, GatewayExit
+
+    _, gateway, _, exit_protocol = await _exit_scene()
+    async with engine.begin() as conn:
+        await conn.execute(_INSERT_EXIT, {"g": gateway, "e": exit_protocol, "slot": 1})
+    async with session_factory() as session:
+        (row,) = (await session.execute(select(GatewayExit))).scalars().all()
+        assert (row.slot, row.weight, row.state, row.max_clients) == (1, 1, ExitState.PENDING, None)
+        assert row.client_public_key is None and row.encrypted_config is None and row.health is None
+        assert row.created_at is not None and row.updated_at is not None
+    assert await _query(text("SELECT state FROM gateway_exits")) == [("PENDING",)]
+
+
+async def test_gateway_exits_integrity_rules() -> None:
+    _, gateway, _, exit_protocol = await _exit_scene()
+    async with engine.begin() as conn:
+        await conn.execute(_INSERT_EXIT, {"g": gateway, "e": exit_protocol, "slot": 1})
+
+    async def refused(sql: object, params: dict[str, object]) -> str:
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(sql, params)  # type: ignore[call-overload]
+        except Exception as exc:  # noqa: BLE001 - нужен именно отказ БД
+            return str(exc).lower()
+        raise AssertionError("the database accepted a row it must refuse")
+
+    assert "uq_gateway_exits_exit" in await refused(_INSERT_EXIT, {"g": gateway, "e": exit_protocol, "slot": 2})
+    other = text(
+        "INSERT INTO protocols (id, server_id, type) SELECT gen_random_uuid(), server_id, 'AMNEZIA_APP_AWG' "
+        "FROM protocols WHERE id = :e RETURNING id"
+    )
+    async with engine.begin() as conn:
+        other_protocol = (await conn.execute(other, {"e": exit_protocol})).scalar_one()
+    assert "uq_gateway_exits_slot" in await refused(_INSERT_EXIT, {"g": gateway, "e": other_protocol, "slot": 1})
+    for bad_slot in (0, 201):
+        assert "ck_gateway_exits_slot" in await refused(
+            _INSERT_EXIT, {"g": gateway, "e": other_protocol, "slot": bad_slot}
+        )
+    for bad_weight in (0, 101):
+        sql = text(
+            "INSERT INTO gateway_exits (id, gateway_protocol_id, exit_protocol_id, slot, weight) "
+            "VALUES (gen_random_uuid(), :g, :e, 5, :w)"
+        )
+        assert "ck_gateway_exits_weight" in await refused(sql, {"g": gateway, "e": other_protocol, "w": bad_weight})
+    sql = text(
+        "INSERT INTO gateway_exits (id, gateway_protocol_id, exit_protocol_id, slot, max_clients) "
+        "VALUES (gen_random_uuid(), :g, :e, 5, 0)"
+    )
+    assert "ck_gateway_exits_max_clients" in await refused(sql, {"g": gateway, "e": other_protocol})
+
+
+async def test_gateway_exits_foreign_keys_restrict_the_exit_and_cascade_from_the_gateway() -> None:
+    _, gateway, _, exit_protocol = await _exit_scene()
+    async with engine.begin() as conn:
+        await conn.execute(_INSERT_EXIT, {"g": gateway, "e": exit_protocol, "slot": 1})
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text("DELETE FROM protocols WHERE id = :e"), {"e": exit_protocol})
+    except Exception as exc:  # noqa: BLE001 - RESTRICT: пока выход подключён, его протокол не удалить
+        assert "gateway_exits" in str(exc).lower()
+    else:
+        raise AssertionError("the exit protocol was deleted while a gateway uses it")
+    async with engine.begin() as conn:
+        await conn.execute(text("DELETE FROM protocols WHERE id = :g"), {"g": gateway})
+    assert await _query(text("SELECT count(*) FROM gateway_exits")) == [(0,)]
+
+
+async def test_gateway_exits_migration_downgrade_drops_the_table_and_the_job_types_then_upgrade_restores() -> None:
+    _, gateway, _, exit_protocol = await _exit_scene()
+    async with engine.begin() as conn:
+        await conn.execute(_INSERT_EXIT, {"g": gateway, "e": exit_protocol, "slot": 1})
+        for job_type in ("GATEWAY_ADD_EXIT", "GATEWAY_REMOVE_EXIT", "HEALTH_CHECK", "IMPORT_CLIENTS"):
+            await conn.execute(
+                text("INSERT INTO jobs (id, type, status) VALUES (gen_random_uuid(), :type, 'SUCCESS')"),
+                {"type": job_type},
+            )
+    await _alembic("downgrade", BEFORE_GATEWAY_EXITS)
+    try:
+        assert await _query(EXITS_TABLE_SQL) == []
+        assert not EXIT_JOB_TYPES & await _labels(JOB_TYPES_SQL)
+        assert sorted(row[0] for row in await _query(text("SELECT type::text FROM jobs"))) == [
+            "HEALTH_CHECK",
+            "IMPORT_CLIENTS",
+        ]
+        assert await _query(text("SELECT count(*) FROM protocols")) == [(2,)]  # протоколы на месте
+    finally:
+        await _alembic("upgrade", "head")
+    assert EXIT_JOB_TYPES <= await _labels(JOB_TYPES_SQL)
+    assert await _query(EXITS_TABLE_SQL) == [("gateway_exits",)]
+    assert await _query(text("SELECT count(*) FROM gateway_exits")) == [(0,)]  # выходы откат не переживают
+
+
+async def test_gateway_exits_migration_cycle_is_idempotent_and_keeps_the_job_default() -> None:
+    await _alembic("downgrade", BEFORE_GATEWAY_EXITS)
+    await _alembic("upgrade", "head")
+    await _alembic("downgrade", BEFORE_GATEWAY_EXITS)
+    try:
+        default = await _query(
+            text(
+                "SELECT column_default FROM information_schema.columns "
+                "WHERE table_name = 'jobs' AND column_name = 'type'"
+            )
+        )
+        assert "HEALTH_CHECK" in str(default)  # DEFAULT пересозданного enum на месте
+    finally:
+        await _alembic("upgrade", "head")
+    assert EXIT_JOB_TYPES <= await _labels(JOB_TYPES_SQL)

@@ -8,9 +8,23 @@ AmneziaWG и пересылает трафик на зарубежные сер�
 `ip rule` и `docker ps`.
 """
 
+import ipaddress
 import re
+from dataclasses import dataclass, field
+from datetime import datetime
 
-from infrastructure.vpn.config import CLIENT_DNS, ContainerLayout
+from infrastructure.vpn.awg_config import (
+    client_config_sections,
+    interface_values,
+    is_valid_public_key,
+    obfuscation_params,
+)
+from infrastructure.vpn.config import (
+    ACTIVE_HANDSHAKE_WINDOW_SECONDS,
+    CLIENT_DNS,
+    CLIENT_PERSISTENT_KEEPALIVE,
+    ContainerLayout,
+)
 
 GATEWAY_CONTAINER_NAME = "vpn-admin-gw"
 GATEWAY_HOST_DIR = "/opt/vpn-admin/gw"
@@ -33,7 +47,7 @@ GATEWAY_LAYOUT = ContainerLayout(
 )
 
 START_SCRIPT_NAME = "start.sh"
-EXITS_DIR_NAME = "exits"  # <папка шлюза>/exits/*.conf - туннели к выходам (этап 24.2); в 24.1 папки нет
+EXITS_DIR_NAME = "exits"  # <папка шлюза>/exits/gwx<слот>.conf - туннели к выходам (этап 24.2)
 
 # Приоритеты правил маршрутизации (ip rule) трафика клиентов. Меньше число - раньше проверяется.
 RU_TABLE = 200  # таблица «российское напрямую» (этап 24.4); пока пустая - правило её пропускает
@@ -200,3 +214,237 @@ def parse_published_ports(docker_ps_ports: str) -> list[tuple[int, int]]:
         if low <= high <= 65535:
             ranges.append((low, high))
     return ranges
+
+
+# --- выходы (этап 24.2) -----------------------------------------------------------------------------------------
+#
+# Шлюз - клиент своих выходов: на каждом выходе панель создаёт «внутреннего клиента» обычным create_client, а на шлюзе
+# поднимает AWG-интерфейс gwx<слот> с конфигом этого клиента. Слот - целое 1..200, из него и только из него строятся имя
+# интерфейса, имя файла и номер таблицы маршрутов: ничего пользовательского в командах и конфиге нет.
+
+EXIT_INTERFACE_PREFIX = "gwx"
+MAX_EXIT_SLOT = 200
+# Таблица маршрутов выхода = EXIT_TABLE_BASE + слот. База 1000, а не 100: 100 + слот попадал бы на зарезервированные
+# 253/254/255 (default/main/local - `ip route add ... table 254` изменил бы main хоста) и на RU_TABLE = 200 (слот 100).
+EXIT_TABLE_BASE = 1000
+EXIT_MTU = 1280  # туннель выхода вложен в туннель клиента и в физическую сеть; клиенты используют ещё меньше
+EXIT_ALLOWED_IPS = "0.0.0.0/0"  # шлюз отправляет в выход всё, что ему назначено таблицей (IPv6 на шлюзе выключен)
+EXIT_KEEPALIVE = CLIENT_PERSISTENT_KEEPALIVE  # рукопожатие сразу после up и дальше без трафика клиентов
+
+_EXIT_INTERFACE_RE = re.compile(rf"{EXIT_INTERFACE_PREFIX}([1-9][0-9]{{0,2}})")
+# Ключи [Interface] конфига, которые меняют сетевую часть: поменялись - интерфейс пересоздаётся, а не syncconf.
+_EXIT_RESTART_KEYS = ("Address", "MTU", "Table", "PostUp", "PostDown")
+# Значения обфускации (из конфига клиента, а он - из серверного конфига выхода): одна строка без служебных символов.
+_OBFUSCATION_VALUE_RE = re.compile(r"[\w<>=,:+/ .\-]{1,512}")
+_HOSTNAME_LABEL = r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+_HOST_RE = re.compile(rf"{_HOSTNAME_LABEL}(?:\.{_HOSTNAME_LABEL})*")
+_TRANSFER_RE = re.compile(r"\S+\s+(\d{1,18})\s+(\d{1,18})")
+
+
+def _slot(slot: int) -> int:
+    """Слот - только целое 1..MAX_EXIT_SLOT (bool и строки не годятся): остальное в команды не попадает."""
+    if isinstance(slot, bool) or not isinstance(slot, int) or not 1 <= slot <= MAX_EXIT_SLOT:
+        raise ValueError(f"Exit slot must be an integer from 1 to {MAX_EXIT_SLOT}")
+    return slot
+
+
+def exit_interface(slot: int) -> str:
+    return f"{EXIT_INTERFACE_PREFIX}{_slot(slot)}"
+
+
+def exit_table(slot: int) -> int:
+    return EXIT_TABLE_BASE + _slot(slot)
+
+
+def exit_slot_from_interface(name: str) -> int | None:
+    """Слот по имени интерфейса `gwx<N>` или None (другой интерфейс, в том числе `gw0`, и слот вне диапазона)."""
+    match = _EXIT_INTERFACE_RE.fullmatch(name)
+    if match is None:
+        return None
+    slot = int(match.group(1))
+    return slot if slot <= MAX_EXIT_SLOT else None
+
+
+def exit_host_dir(layout: ContainerLayout) -> str:
+    return f"{layout.host_config_dir}/{EXITS_DIR_NAME}"
+
+
+def exit_host_file(layout: ContainerLayout, slot: int) -> str:
+    """Файл туннеля выхода на хосте (папка шлюза смонтирована в контейнер целиком)."""
+    return f"{exit_host_dir(layout)}/{exit_interface(slot)}.conf"
+
+
+def exit_container_file(layout: ContainerLayout, slot: int) -> str:
+    return f"{layout.container_config_dir}/{EXITS_DIR_NAME}/{exit_interface(slot)}.conf"
+
+
+def exit_nat_rule(slot: int) -> str:
+    return f"POSTROUTING -o {exit_interface(slot)} -j MASQUERADE"
+
+
+def exit_post_up(slot: int) -> str:
+    """Подмена адреса клиентов на адрес внутреннего клиента на выходе. Идемпотентно: повторный up не плодит правил."""
+    rule = exit_nat_rule(slot)
+    return f"iptables -t nat -C {rule} 2>/dev/null || iptables -t nat -A {rule}"
+
+
+def exit_post_down(slot: int) -> str:
+    """Снятие правила; `|| true`: уже снятое правило не должно срывать `awg-quick down` (в нём `set -e`)."""
+    return f"iptables -t nat -D {exit_nat_rule(slot)} 2>/dev/null || true"
+
+
+def format_endpoint(host: str, port: int) -> str:
+    """`host:port` для Endpoint; адрес IPv6 - в скобках. Проверяется в render_exit_config."""
+    return f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
+
+
+def _validated_endpoint(endpoint: str) -> str:
+    """Endpoint идёт прямо в конфиг, а host сервера вводит админ: допускаются только имя хоста / IPv4 / IPv6 в скобках
+    и порт 1..65535 - никаких пробелов, переводов строки и `#` (иначе в конфиг попала бы лишняя строка)."""
+    host, separator, port = endpoint.rpartition(":")
+    if not separator or not port.isascii() or not port.isdigit() or not 1 <= int(port) <= 65535:
+        raise ValueError("Invalid exit endpoint")
+    if host.startswith("[") and host.endswith("]"):
+        try:
+            ipaddress.IPv6Address(host[1:-1])
+        except ValueError:
+            raise ValueError("Invalid exit endpoint") from None
+    elif not _HOST_RE.fullmatch(host) or len(host) > 253:
+        raise ValueError("Invalid exit endpoint")
+    return f"{host}:{int(port)}"
+
+
+@dataclass(frozen=True)
+class ExitTunnel:
+    """Туннель шлюза к выходу: слот, конфиг внутреннего клиента на выходе (результат create_client; секрет - не в repr)
+    и адрес выхода `host:port`."""
+
+    slot: int
+    client_config: str = field(repr=False)
+    endpoint: str
+
+
+@dataclass(frozen=True)
+class ExitTunnelStatus:
+    """Состояние туннеля выхода на шлюзе. Ключей нет: слот, счётчики и время рукопожатия можно показывать."""
+
+    slot: int
+    interface_up: bool
+    latest_handshake: datetime | None
+    rx_bytes: int = 0
+    tx_bytes: int = 0
+
+
+def render_exit_config(tunnel: ExitTunnel) -> str:
+    """Конфиг интерфейса gwx<слот> для `awg-quick` на шлюзе - из конфига внутреннего клиента на выходе.
+
+    Из [Interface] берутся PrivateKey, Address (/32 клиента) и обфускация по белому списку (тот же, что при выдаче
+    конфига клиенту); DNS, PostUp, Table и прочее из чужого конфига не попадают. `Table = EXIT_TABLE_BASE + слот`:
+    awg-quick кладёт маршрут по умолчанию в эту таблицу и не трогает main хоста. Ошибка формата - ValueError без
+    содержимого конфига (в нём ключи).
+    """
+    slot = _slot(tunnel.slot)
+    endpoint = _validated_endpoint(tunnel.endpoint)
+    interface, peer = client_config_sections(tunnel.client_config)
+    try:
+        private_key, public_key, psk = interface["PrivateKey"], peer["PublicKey"], peer["PresharedKey"]
+        address = ipaddress.ip_interface(interface["Address"].split(",")[0].strip()).ip
+    except (KeyError, ValueError):
+        raise ValueError("Client config is malformed") from None
+    if not (is_valid_public_key(private_key) and is_valid_public_key(public_key) and is_valid_public_key(psk)):
+        raise ValueError("Client config is malformed")
+    if not isinstance(address, ipaddress.IPv4Address):
+        raise ValueError("Client config address must be IPv4")
+    obfuscation = obfuscation_params(interface)
+    if not all(_OBFUSCATION_VALUE_RE.fullmatch(value) for value in obfuscation.values()):
+        raise ValueError("Client config is malformed")
+    lines = [
+        "[Interface]",
+        f"PrivateKey = {private_key}",
+        f"Address = {address}/32",
+        *(f"{key} = {value}" for key, value in obfuscation.items()),
+        f"MTU = {EXIT_MTU}",
+        f"Table = {exit_table(slot)}",
+        f"PostUp = {exit_post_up(slot)}",
+        f"PostDown = {exit_post_down(slot)}",
+        "",
+        "[Peer]",
+        f"PublicKey = {public_key}",
+        f"PresharedKey = {psk}",
+        f"Endpoint = {endpoint}",
+        f"AllowedIPs = {EXIT_ALLOWED_IPS}",
+        f"PersistentKeepalive = {EXIT_KEEPALIVE}",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def exit_needs_restart(old_config: str | None, new_config: str) -> bool:
+    """Нужно ли пересоздавать интерфейс: поменялись Address / MTU / Table / хуки (syncconf их не применяет). Ключи,
+    обфускация и Endpoint меняются на живом интерфейсе. Старого конфига нет или он не разбирается - пересоздаём."""
+    if old_config is None:
+        return True
+    try:
+        old, new = interface_values(old_config), interface_values(new_config)
+    except ValueError:
+        return True
+    return any(old.get(key) != new.get(key) for key in _EXIT_RESTART_KEYS)
+
+
+def exit_up_command(layout: ContainerLayout, slot: int) -> str:
+    return f"docker exec {layout.container_name} awg-quick up {exit_container_file(layout, slot)}"
+
+
+def exit_down_command(layout: ContainerLayout, slot: int) -> str:
+    return f"docker exec {layout.container_name} awg-quick down {exit_container_file(layout, slot)}"
+
+
+def exit_delete_link_command(layout: ContainerLayout, slot: int) -> str:
+    """Запасной путь, когда файла туннеля нет, а интерфейс остался: `awg-quick down` без файла не работает."""
+    return f"docker exec {layout.container_name} ip link delete dev {exit_interface(slot)}"
+
+
+def exit_nat_cleanup_command(layout: ContainerLayout, slot: int) -> str:
+    """Снять правило NAT туннеля вручную: `ip link delete` не выполняет PostDown, и правило висело бы без интерфейса.
+    `|| true` - на стороне хоста: отсутствие правила не ошибка."""
+    return f"docker exec {layout.container_name} iptables -t nat -D {exit_nat_rule(slot)} || true"
+
+
+def exit_show_command(layout: ContainerLayout, slot: int, what: str) -> str:
+    """`awg show gwx<N> latest-handshakes|transfer` (what - одна из двух констант)."""
+    if what not in ("latest-handshakes", "transfer"):
+        raise ValueError("Unsupported awg show field")
+    return f"docker exec {layout.container_name} awg show {exit_interface(slot)} {what}"
+
+
+def exit_sync_command(layout: ContainerLayout, slot: int) -> str:
+    """Применить изменённый конфиг выхода к живому интерфейсу без пересоздания. Безопасный вариант (23.3): strip во
+    временный файл `&&` syncconf. Никогда `syncconf <(strip)`: при упавшем strip он получает пустой конфиг и сносит
+    всех peer'ов. Файл с приватным ключом удаляется при любом исходе."""
+    interface = exit_interface(slot)
+    stripped = f"/tmp/{interface}.stripped"
+    # umask 077: во временном файле приватный ключ, а umask контейнера дал бы 0644.
+    script = (
+        f"umask 077; awg-quick strip {exit_container_file(layout, slot)} > {stripped}"
+        f" && awg syncconf {interface} {stripped}; rc=$?; rm -f {stripped}; exit $rc"
+    )
+    return f"docker exec {layout.container_name} sh -c '{script}'"
+
+
+def parse_transfer(output: str) -> tuple[int, int]:
+    """Сумма (принято, отправлено) байт по peer'ам из `awg show <iface> transfer`; кривые строки пропускаются."""
+    rx = tx = 0
+    for line in output.splitlines():
+        match = _TRANSFER_RE.fullmatch(line.strip())
+        if match:
+            rx, tx = rx + int(match.group(1)), tx + int(match.group(2))
+    return rx, tx
+
+
+def exit_health_label(status: ExitTunnelStatus | None, now: datetime) -> str:
+    """ok / stale (рукопожатие старше окна) / no_handshake (ещё не было) / down (интерфейса нет)."""
+    if status is None or not status.interface_up:
+        return "down"
+    if status.latest_handshake is None:
+        return "no_handshake"
+    age = (now - status.latest_handshake).total_seconds()
+    return "ok" if age <= ACTIVE_HANDSHAKE_WINDOW_SECONDS else "stale"

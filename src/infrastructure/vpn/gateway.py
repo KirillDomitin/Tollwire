@@ -5,7 +5,9 @@
 import contextlib
 import logging
 import posixpath
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import ClassVar
 
 from core.ssh_exception import CommandExecutionError
@@ -13,6 +15,7 @@ from infrastructure.vpn.amnezia import AmneziaWGProvider
 from infrastructure.vpn.awg_config import (
     generate_secret_keys,
     interface_values,
+    parse_latest_handshakes,
     pick_udp_port,
     render_awg_config,
 )
@@ -23,12 +26,27 @@ from infrastructure.vpn.gateway_config import (
     GATEWAY_LAYOUT,
     IP_RULE_SHOW,
     PORT_PICK_ATTEMPTS,
+    ExitTunnel,
+    ExitTunnelStatus,
     apply_rules_command,
     container_start_script,
-    exit_interfaces,
+    exit_delete_link_command,
+    exit_down_command,
+    exit_health_label,
+    exit_host_dir,
+    exit_host_file,
+    exit_interface,
+    exit_nat_cleanup_command,
+    exit_needs_restart,
+    exit_show_command,
+    exit_slot_from_interface,
+    exit_sync_command,
+    exit_up_command,
     has_kill_switch,
     host_start_script,
     parse_published_ports,
+    parse_transfer,
+    render_exit_config,
     render_start_script,
     sysctl_flags,
 )
@@ -173,10 +191,145 @@ class AmneziaGatewayProvider(AmneziaWGProvider):
             f"{AMNEZIAWG_IMAGE} bash {container_start_script(layout)}"
         )
 
+    # --- выходы (этап 24.2) -------------------------------------------------------------------------------------
+
+    async def _require_running(self) -> None:
+        """Выходы поднимаются внутри работающего контейнера нашего шлюза; чужой контейнер с этим именем не трогаем."""
+        await self._require_own_container()
+        state = (await self.ssh_client.execute(self._ps("State"))).stdout.strip()
+        if state != "running":
+            raise CommandExecutionError(f"Container '{self.layout.container_name}' is not running")
+
+    async def _exit_slots_up(self) -> set[int]:
+        """Слоты поднятых туннелей выходов: `awg show interfaces` без клиентского gw0 и чужих имён."""
+        result = await self.ssh_client.execute(f"docker exec {self.layout.container_name} {AWG_SHOW_INTERFACES}")
+        if result.exit_status != 0:
+            raise CommandExecutionError("Failed to list interfaces of the gateway container")
+        slots = (exit_slot_from_interface(name) for name in result.stdout.split())
+        return {slot for slot in slots if slot is not None}
+
+    async def apply_exits(self, exits: Sequence[ExitTunnel]) -> None:
+        """Приводит туннели выходов на шлюзе к заданным: файл `exits/gwx<слот>.conf` и поднятый интерфейс.
+
+        Идемпотентно: тот же конфиг у поднятого интерфейса - ничего не делается; другой ключ/Endpoint - `syncconf` на
+        живом интерфейсе; другой Address/Table/MTU - пересоздание. Вызывающий держит ServerLock шлюза. Первый
+        упавший туннель прерывает вызов (предыдущие остаются применёнными).
+        """
+        if not exits:
+            return
+        await self._require_running()
+        await self.ssh_client.ensure_private_dir(exit_host_dir(self.layout))
+        up = await self._exit_slots_up()
+        for tunnel in exits:
+            await self._apply_exit(tunnel, up)
+
+    async def _apply_exit(self, tunnel: ExitTunnel, up: set[int]) -> None:
+        """Один туннель. Порядок: (пересоздание: down по СТАРОМУ файлу) -> запись файла -> up / syncconf. Сбой
+        возвращает прежнее состояние: у нового выхода файл удаляется, у существующего восстанавливается старый
+        конфиг, чтобы файл не оставался без интерфейса, а интерфейс - без файла."""
+        layout, slot = self.layout, tunnel.slot
+        interface = exit_interface(slot)
+        path = exit_host_file(layout, slot)
+        new_config = render_exit_config(tunnel)
+        old_config = await self.ssh_client.read_file_optional(path)
+        is_up = slot in up
+        if is_up and old_config == new_config:
+            return
+        restart = is_up and exit_needs_restart(old_config, new_config)
+        if restart:
+            await self._exit_down(slot, have_file=old_config is not None)
+            up.discard(slot)
+        wrote = False
+        try:
+            await self.ssh_client.write_file(path, new_config)
+            wrote = True
+            if slot in up:
+                await self._exit_run(exit_sync_command(layout, slot), f"Failed to apply the config of {interface}")
+            else:
+                await self._exit_run(exit_up_command(layout, slot), f"Failed to bring up {interface}")
+                up.add(slot)
+        except BaseException:
+            await self._rollback_exit(slot, old_config, wrote=wrote, restarted=restart, up=up)
+            raise
+
+    async def _rollback_exit(
+        self, slot: int, old_config: str | None, *, wrote: bool, restarted: bool, up: set[int]
+    ) -> None:
+        """Возвращает файл и интерфейс как были до вызова. Ошибки отката не заменяют исходную."""
+        layout = self.layout
+        with contextlib.suppress(Exception):
+            if old_config is None:
+                if slot in up:
+                    await self._exit_down(slot, have_file=wrote)
+                    up.discard(slot)
+                await self.ssh_client.execute(f"rm -f {exit_host_file(layout, slot)}")
+                return
+            if wrote:
+                await self.ssh_client.write_file(exit_host_file(layout, slot), old_config)
+            if restarted:
+                await self._exit_run(exit_up_command(layout, slot), "rollback")
+                up.add(slot)
+
+    async def _exit_run(self, command: str, error: str) -> None:
+        """Константная команда над туннелем. stderr в исключение не идёт: wg/awg цитирует строку конфига с ошибкой, а
+        в конфиге приватный ключ."""
+        result = await self.ssh_client.execute(command)
+        if result.exit_status != 0:
+            raise CommandExecutionError(f"{error} (exit code {result.exit_status})")
+
+    async def _exit_down(self, slot: int, *, have_file: bool) -> None:
+        """Снять интерфейс: по файлу (отработает PostDown) или, если файла нет, прямым удалением ссылки."""
+        layout = self.layout
+        interface = exit_interface(slot)
+        if have_file:
+            await self._exit_run(exit_down_command(layout, slot), f"Failed to bring down {interface}")
+        else:
+            # Файла нет - PostDown не выполнится: правило NAT снимаем сами, потом ссылку.
+            await self.ssh_client.execute(exit_nat_cleanup_command(layout, slot))
+            await self._exit_run(exit_delete_link_command(layout, slot), f"Failed to delete {interface}")
+        if slot in await self._exit_slots_up():
+            raise CommandExecutionError(f"{interface} is still up after the attempt to remove it")
+
+    async def remove_exit(self, slot: int) -> None:
+        """Снимает туннель выхода: интерфейс и файл. Идемпотентно (нет интерфейса / файла - не ошибка). Файл удаляется
+        только после того, как интерфейс снят: упавший `down` оставляет пару (файл, интерфейс) целой."""
+        layout = self.layout
+        path = exit_host_file(layout, slot)  # проверяет слот
+        await self._require_own_container()
+        state = (await self.ssh_client.execute(self._ps("State"))).stdout.strip()
+        if state == "running" and slot in await self._exit_slots_up():
+            have_file = (await self.ssh_client.execute(f"test -f {path}")).exit_status == 0
+            await self._exit_down(slot, have_file=have_file)
+        removed = await self.ssh_client.execute(f"rm -f {path}")
+        if removed.exit_status != 0:
+            raise CommandExecutionError(f"Failed to remove the config of {exit_interface(slot)}")
+
+    async def exit_status(self, expected: Iterable[int] = ()) -> list[ExitTunnelStatus]:
+        """Состояние туннелей выходов: поднятые интерфейсы gwx<N> (рукопожатие, счётчики) плюс `expected` - ожидаемые
+        слоты (из БД панели), которых нет среди поднятых: для них interface_up=False. Только чтение."""
+        layout = self.layout
+        up = await self._exit_slots_up()
+        statuses = []
+        for slot in sorted(up | set(expected)):
+            if slot not in up:
+                statuses.append(ExitTunnelStatus(slot, False, None))
+                continue
+            handshakes = await self.ssh_client.execute(exit_show_command(layout, slot, "latest-handshakes"))
+            transfer = await self.ssh_client.execute(exit_show_command(layout, slot, "transfer"))
+            if handshakes.exit_status != 0:  # интерфейс пропал между перечислением и чтением
+                statuses.append(ExitTunnelStatus(slot, False, None))
+                continue
+            seen = [value for value in parse_latest_handshakes(handshakes.stdout).values() if value is not None]
+            rx, tx = parse_transfer(transfer.stdout) if transfer.exit_status == 0 else (0, 0)
+            statuses.append(ExitTunnelStatus(slot, True, max(seen) if seen else None, rx, tx))
+        return statuses
+
     async def health_check(self) -> ProviderHealth:
         """Проверки обычного протокола и два шлюзовых: правило kill-switch и туннели выходов.
 
-        Пока выходов нет (этап 24.1), `exits` не пройдена: шлюз без выхода клиентам ничего не отдаёт.
+        `exits` пройдена, если есть хотя бы один исправный выход: интерфейс поднят и рукопожатие свежее
+        (ACTIVE_HANDSHAKE_WINDOW_SECONDS). В деталях - состояние каждого туннеля по слоту, без ключей. Пока выходов нет,
+        `exits` не пройдена: шлюз без выхода клиентам ничего не отдаёт.
         """
         health = await super().health_check()
         container_running = any(check.name == "container" and check.ok for check in health.checks)
@@ -190,9 +343,18 @@ class AmneziaGatewayProvider(AmneziaWGProvider):
                 "kill_switch", present, "prohibit rule present" if present else "no prohibit rule: clients may leak"
             )
         )
-        interfaces = await self.ssh_client.execute(f"docker exec {layout.container_name} {AWG_SHOW_INTERFACES}")
-        exits = exit_interfaces(interfaces.stdout, layout.interface_name) if interfaces.exit_status == 0 else []
-        health.checks.append(
-            HealthCheck("exits", bool(exits), f"{len(exits)} exit tunnel(s)" if exits else "no exit tunnels")
-        )
+        try:
+            statuses = await self.exit_status()
+        except CommandExecutionError:
+            health.checks.append(HealthCheck("exits", False, "failed to list exit tunnels"))
+            return health
+        now = datetime.now(timezone.utc)
+        labels = {status.slot: exit_health_label(status, now) for status in statuses}
+        healthy = sum(1 for label in labels.values() if label == "ok")
+        if not statuses:
+            detail = "no exit tunnels"
+        else:
+            states = ", ".join(f"{exit_interface(slot)} {label}" for slot, label in labels.items())
+            detail = f"{len(statuses)} exit tunnel(s), {healthy} healthy: {states}"
+        health.checks.append(HealthCheck("exits", healthy > 0, detail))
         return health

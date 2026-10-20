@@ -20,6 +20,7 @@ from modules.access.import_service import ClientImportService
 from modules.access.models.vpn_credential import VPNCredential
 from modules.access.service import VPNCredentialService
 from modules.audit.actor import AuditActor
+from modules.gateway.service import GatewayExitService
 from modules.jobs.models.job import Job, JobStatus, JobType
 from modules.jobs.queue import JobQueue
 from modules.jobs.service import JobService, job_error_text
@@ -100,6 +101,8 @@ class JobWorker:
                 JobType.INSTALL_SSH_KEY,
                 JobType.DISCOVER_VPN,
                 JobType.IMPORT_CLIENTS,
+                JobType.GATEWAY_ADD_EXIT,
+                JobType.GATEWAY_REMOVE_EXIT,
             ]:
                 if not job.server_id:
                     await self._reject(session, job, f"Job with type '{job.type.value}' must have server_id")
@@ -143,6 +146,15 @@ class JobWorker:
                         case JobType.IMPORT_CLIENTS:
                             async with ServerLock(server_id):
                                 job.result = await ClientImportService(session, actor).run(job)
+
+                        case JobType.GATEWAY_ADD_EXIT:
+                            # ServerLock шлюза; выход блокируется внутри сервиса (порядок всегда шлюз -> выход).
+                            async with ServerLock(server_id):
+                                job.result = await GatewayExitService(session, actor).run_add(job)
+
+                        case JobType.GATEWAY_REMOVE_EXIT:
+                            async with ServerLock(server_id):
+                                job.result = await GatewayExitService(session, actor).run_remove(job)
 
                         case JobType.REVOKE_ACCESS:
                             async with ServerLock(server_id):

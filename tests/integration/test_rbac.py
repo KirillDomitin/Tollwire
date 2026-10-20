@@ -202,6 +202,10 @@ CRITICAL = {
     "POST /api/v1/servers/{server_id}/discover": Permission.SERVERS_CHECK,  # как health: запуск проверки
     "GET /api/v1/servers/{server_id}/discovery": Permission.SERVERS_READ,
     "POST /api/v1/servers/{server_id}/import": Permission.SERVERS_MANAGE,  # пишет в БД панели: как установка
+    "GET /api/v1/servers/{server_id}/gateway/exits": Permission.SERVERS_READ,
+    "POST /api/v1/servers/{server_id}/gateway/exits": Permission.SERVERS_MANAGE,  # ставит клиента на выход и туннель
+    "PATCH /api/v1/servers/{server_id}/gateway/exits/{exit_id}": Permission.SERVERS_MANAGE,
+    "DELETE /api/v1/servers/{server_id}/gateway/exits/{exit_id}": Permission.SERVERS_MANAGE,
     "POST /api/v1/admins": Permission.ADMINS_MANAGE,
     "PATCH /api/v1/admins/{admin_id}": Permission.ADMINS_MANAGE,
     "GET /api/v1/audit-logs": Permission.AUDIT_READ,

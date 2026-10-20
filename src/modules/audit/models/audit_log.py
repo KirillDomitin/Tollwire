@@ -79,6 +79,14 @@ class AuditAction(enum.Enum):
     CLIENTS_IMPORT_STARTED = "clients_import_started"
     CLIENTS_IMPORT_COMPLETED = "clients_import_completed"
     CLIENTS_IMPORT_FAILED = "clients_import_failed"
+    # Выходы шлюза: подключение зарубежного сервера к шлюзу (задачи) и правка весов/пределов (без задачи)
+    GATEWAY_EXIT_ADD_STARTED = "gateway_exit_add_started"
+    GATEWAY_EXIT_ADD_COMPLETED = "gateway_exit_add_completed"
+    GATEWAY_EXIT_ADD_FAILED = "gateway_exit_add_failed"
+    GATEWAY_EXIT_REMOVE_STARTED = "gateway_exit_remove_started"
+    GATEWAY_EXIT_REMOVE_COMPLETED = "gateway_exit_remove_completed"
+    GATEWAY_EXIT_REMOVE_FAILED = "gateway_exit_remove_failed"
+    GATEWAY_EXIT_UPDATED = "gateway_exit_updated"
 
 
 class AuditEntity:

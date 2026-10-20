@@ -17,5 +17,6 @@
 - Провайдер по типу протокола выбирает `provider_class()` в `modules/servers/service.py` (`match`; неизвестный
   тип → `UnsupportedProtocolError`). Новый протокол = новый класс `VPNProvider` в `infrastructure/vpn/` + ветка
   в фабрике + значение enum (миграция enum-типа — см. `alembic/CLAUDE.md`).
+- Выходы шлюза (`modules/gateway`) ссылаются на протоколы: шлюз - CASCADE, выход (`AMNEZIA_WG`) - RESTRICT (снять нельзя, пока подключён).
 - Удаление протокола каскадом удаляет гранты и credential'ы — поэтому снять протокол с живыми клиентами нельзя
   (проверка в `ServerService.schedule`).

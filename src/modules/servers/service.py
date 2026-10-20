@@ -27,6 +27,7 @@ from modules.access.repository import VPNCredentialRepository
 from modules.audit.actor import SYSTEM_ACTOR, AuditActor
 from modules.audit.models.audit_log import AuditAction, AuditEntity
 from modules.audit.service import AuditService, diff_changes
+from modules.gateway.repository import GatewayExitRepository
 from modules.jobs.models.job import Job, JobType
 from modules.jobs.service import JobService
 from modules.protocols.models.protocol import ProtocolType, VPNProtocol
@@ -52,6 +53,13 @@ def provider_class(protocol_type: ProtocolType) -> type[VPNProvider]:
             return AmneziaGatewayProvider
         case _:
             raise UnsupportedProtocolError(f"Unsupported protocol '{protocol_type}'")
+
+
+async def ensure_not_a_gateway_exit(session: AsyncSession, server_id: UUID) -> None:
+    """Пока шлюз подключён к серверу как к выходу, нельзя снять его AMNEZIA_WG и удалить сервер: у шлюза остался бы
+    туннель в никуда, а на сервере - внутренний клиент. Сначала снять выход (DELETE .../gateway/exits/{id})."""
+    if await GatewayExitRepository(session).exists_for_exit_server(server_id):
+        raise LiveCredentialExistsError("Server is an exit of a gateway, remove the exit from the gateway first")
 
 
 def panel_key_warning(credential: ServerCredential) -> dict[str, object]:
@@ -139,6 +147,8 @@ class ServerService:
             raise CredentialNotFound("SSH credentials are not set for this server")
         if job_type == JobType.REMOVE_PROTOCOL:
             await self._ensure_no_live_clients(server_id, protocol_type)
+            if protocol_type == ProtocolType.AMNEZIA_WG:
+                await ensure_not_a_gateway_exit(self.session, server_id)
         params = None
         if job_type in (JobType.INSTALL_PROTOCOL, JobType.REMOVE_PROTOCOL) and protocol_type != ProtocolType.AMNEZIA_WG:
             params = {"protocol_type": protocol_type.value}
@@ -162,6 +172,7 @@ class ServerService:
     async def delete(self, server_id: UUID) -> None:
         server = await self.get(server_id)
         await self._ensure_no_live_clients(server_id)
+        await ensure_not_a_gateway_exit(self.session, server_id)
         meta: dict[str, object] = {"name": server.name, "host": server.host}
         credential = await self.credentials.get_by_server_id(server_id)
         if credential is not None:
@@ -338,6 +349,9 @@ class ServerConnectionService:
     async def protocol_uninstall(
         self, server_id: UUID, protocol_type: ProtocolType = ProtocolType.AMNEZIA_WG
     ) -> ProviderStatus:
+        # Повторная проверка уже в воркере: выход могли подключить между постановкой задачи и её выполнением.
+        if protocol_type == ProtocolType.AMNEZIA_WG:
+            await ensure_not_a_gateway_exit(self.session, server_id)
         ssh_client = await self.create_ssh_client(server_id)
         provider = self.build_provider(ssh_client, protocol_type)
         try:

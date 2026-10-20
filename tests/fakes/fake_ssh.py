@@ -20,6 +20,7 @@ from core.exceptions import SSHAuthError, SSHConnectionError
 from infrastructure.monitoring.host_metrics import HOST_METRICS_COMMAND
 from infrastructure.ssh.client import CommandResult
 from infrastructure.vpn.awg_config import (
+    client_config_sections,
     generate_secret_keys,
     interface_values,
     is_valid_public_key,
@@ -41,6 +42,13 @@ from infrastructure.vpn.gateway_config import (
     KILL_SWITCH_PRIORITY,
     RU_RULE_PRIORITY,
     RU_TABLE,
+    exit_container_file,
+    exit_host_dir,
+    exit_host_file,
+    exit_interface,
+    exit_slot_from_interface,
+    exit_sync_command,
+    exit_table,
     render_start_script,
 )
 
@@ -328,6 +336,15 @@ class FakeServer:
     ip_rules: list[str] = field(default_factory=list)  # правила `ip rule show` в контейнере шлюза, по строке на правило
     firewall: set[str] = field(default_factory=set)  # правила iptables шлюза: "mss", "isolation"
     exit_interfaces: list[str] = field(default_factory=list)  # поднятые туннели выходов (кроме клиентского)
+    # Выходы шлюза (24.2). Фейк не исполняет awg-quick: `up` по файлу `exits/gwx<N>.conf` разбирает конфиг и поднимает
+    # интерфейс, `syncconf` перечитывает файл. Всё строго по константам панели; незнакомая команда - AssertionError.
+    exit_configs: dict[str, str] = field(default_factory=dict)  # интерфейс -> конфиг, применённый к живому туннелю
+    exit_handshakes: dict[int, int] = field(default_factory=dict)  # слот -> unix-время рукопожатия (нет записи - 0)
+    exit_transfer: dict[int, tuple[int, int]] = field(default_factory=dict)  # слот -> (принято, отправлено) байт
+    exit_up_fails: set[int] = field(default_factory=set)  # `awg-quick up` этих слотов падает (код 1)
+    exit_down_fails: set[int] = field(default_factory=set)  # `awg-quick down` этих слотов падает
+    exit_nat_cleanups: list[str] = field(default_factory=list)  # интерфейсы, чьё правило NAT снято вручную
+    exit_sync_fails: set[int] = field(default_factory=set)  # strip/syncconf этих слотов падает
     start_script_runs: list[str] = field(default_factory=list)  # режимы запусков start.sh: "run" / "apply"
 
     def add_amnezia_app(
@@ -448,6 +465,7 @@ class FakeServer:
         self.interface_peers = self.config_peer_keys()
         self.nat_rule = self.layout.nat_post_up in self.files.get(self.config_file, "")
         if self.container_commands.get(name, "").endswith("/start.sh"):  # контейнер шлюза: bash <путь>/start.sh
+            self.exit_interfaces, self.exit_configs = [], {}  # новый запуск контейнера: интерфейсов ещё нет
             if not self._run_start_script("run"):
                 self.containers[name] = "exited"  # скрипт упал - контейнер вышел (restart policy в фейке не крутится)
                 self.interface_peers, self.nat_rule = set(), False
@@ -473,7 +491,40 @@ class FakeServer:
         )
         self.ip_rules += [rule for rule in rules if rule not in self.ip_rules]
         self.firewall |= {"isolation", "mss"}
+        # Туннели выходов: каждый exits/*.conf, которого ещё нет среди поднятых; упавший контейнер не роняет.
+        for path in sorted(self.files):
+            slot = self._exit_slot_of_host_file(path)
+            if slot is not None and exit_interface(slot) not in self.exit_interfaces and slot not in self.exit_up_fails:
+                self._bring_up_exit(slot)
         return True
+
+    def _exit_slot_of_host_file(self, path: str) -> int | None:
+        match = re.fullmatch(rf"{re.escape(exit_host_dir(self.layout))}/(gwx[1-9]\d*)\.conf", path)
+        return exit_slot_from_interface(match.group(1)) if match else None
+
+    def _bring_up_exit(self, slot: int) -> CommandResult:
+        """`awg-quick up` над файлом выхода: интерфейс поднят, если конфиг разбирается (иначе код 1)."""
+        name = exit_interface(slot)
+        text = self.files.get(exit_host_file(self.layout, slot))
+        if text is None:
+            return _fail(f"`{exit_container_file(self.layout, slot)}' does not exist", 1)
+        if name in self.exit_interfaces:
+            return _fail(f"awg-quick: `{name}' already exists", 1)
+        try:
+            interface, peer = client_config_sections(text)
+            valid = (
+                is_valid_public_key(interface["PrivateKey"])
+                and is_valid_public_key(peer["PublicKey"])
+                and interface["Table"] == str(exit_table(slot))
+                and "Endpoint" in peer
+            )
+        except KeyError:
+            valid = False
+        if not valid:
+            return _fail("Configuration parsing error", 1)
+        self.exit_interfaces.append(name)
+        self.exit_configs[name] = text
+        return _ok()
 
     def run(self, command: str) -> CommandResult:
         layout = self.layout
@@ -571,7 +622,7 @@ class FakeServer:
             self.container_ports.pop(container, None)
             self.interface_peers = set()
             self.nat_rule = False
-            self.ip_rules, self.firewall, self.exit_interfaces = [], set(), []
+            self.ip_rules, self.firewall, self.exit_interfaces, self.exit_configs = [], set(), [], {}
             return _ok()
         if cmd == f"rm -rf {layout.host_config_dir}":
             self.files = {
@@ -588,9 +639,13 @@ class FakeServer:
         if cmd == f"mkdir -p {_STAGE_PARENT}":
             return _ok()
         if match := re.fullmatch(r"rm -f (\S+)", cmd):
-            gateway_files = {layout.host_config_file, f"{layout.host_config_dir}/start.sh"}
-            if not _STAGE_FILE.fullmatch(match.group(1)) and match.group(1) not in gateway_files:
-                # удалять можно только промежуточные файлы панели и файлы шлюза (откат первой установки)
+            # Файлы шлюза (откат первой установки) - только в шлюзовой раскладке; конфиг обычного протокола - нет.
+            gateway_files = (
+                set() if layout == DEFAULT_LAYOUT else {layout.host_config_file, f"{layout.host_config_dir}/start.sh"}
+            )
+            exit_file = self._exit_slot_of_host_file(match.group(1)) is not None
+            if not _STAGE_FILE.fullmatch(match.group(1)) and match.group(1) not in gateway_files and not exit_file:
+                # удалять можно только промежуточные файлы панели, файлы шлюза и файлы его выходов
                 raise AssertionError(f"FakeServer: rm -f outside the stage folder: {command!r}")
             pattern = match.group(1)  # как настоящий rm -f: нет файла — не ошибка; `*` раскрывает оболочка
             for path in [p for p in self.files if fnmatch.fnmatchcase(p, pattern)]:
@@ -692,6 +747,54 @@ class FakeServer:
             return _ok(app.handshakes_output())
         raise AssertionError(f"FakeServer: unexpected docker exec in {app.container}: {inner!r}")
 
+    def _exit_quick(self, action: str, container_path: str, inner: str) -> CommandResult:
+        """`awg-quick up|down <exits/gwx<N>.conf>`: путь и команда строго такие, как их собирает провайдер."""
+        match = re.fullmatch(
+            rf"{re.escape(self.layout.container_config_dir)}/exits/(gwx[1-9]\d*)\.conf", container_path
+        )
+        slot = exit_slot_from_interface(match.group(1)) if match else None
+        if slot is None:
+            raise AssertionError(f"FakeServer: awg-quick on an unexpected path: {inner!r}")
+        name = exit_interface(slot)
+        if action == "up":
+            if slot in self.exit_up_fails:
+                return _fail("awg-quick: failed to bring up", 1)
+            return self._bring_up_exit(slot)
+        if name not in self.exit_interfaces or slot in self.exit_down_fails:
+            return _fail(f"awg-quick: `{name}' is not a WireGuard interface", 1)
+        self.exit_interfaces.remove(name)
+        self.exit_configs.pop(name, None)
+        return _ok()
+
+    def _exit_peer_key(self, name: str) -> str:
+        _, peer = client_config_sections(self.exit_configs[name])
+        return peer["PublicKey"]
+
+    def _exit_show(self, name: str, field_name: str, inner: str) -> CommandResult:
+        slot = exit_slot_from_interface(name)
+        if slot is None:
+            raise AssertionError(f"FakeServer: awg show of an unexpected interface: {inner!r}")
+        if name not in self.exit_interfaces:
+            return _fail(f"Unable to access interface: No such device ({name})", 1)
+        key = self._exit_peer_key(name)
+        if field_name == "latest-handshakes":
+            return _ok(f"{key}\t{self.exit_handshakes.get(slot, 0)}\n")
+        rx, tx = self.exit_transfer.get(slot, (0, 0))
+        return _ok(f"{key}\t{rx}\t{tx}\n")
+
+    def _exit_syncconf(self, name: str, inner: str) -> CommandResult:
+        """strip -> временный файл `&&` syncconf (безопасный вариант 23.3): живой конфиг берётся из файла."""
+        slot = exit_slot_from_interface(name)
+        if slot is None or inner != exit_sync_command(self.layout, slot).removeprefix(
+            f"docker exec {self.layout.container_name} "
+        ):
+            raise AssertionError(f"FakeServer: unexpected exit sync command: {inner!r}")
+        text = self.files.get(exit_host_file(self.layout, slot))
+        if name not in self.exit_interfaces or text is None or slot in self.exit_sync_fails:
+            return _fail("Configuration parsing error", 1)
+        self.exit_configs[name] = text
+        return _ok()
+
     def _exec(self, inner: str) -> CommandResult:
         layout = self.layout
         iface = layout.interface_name
@@ -713,6 +816,26 @@ class FakeServer:
             return _ok(" ".join([iface, *self.exit_interfaces]) + "\n")
         if inner == f"bash {layout.container_config_dir}/start.sh apply":
             return _ok() if self._run_start_script("apply") else _fail("bash: start.sh: No such file", 127)
+        if match := re.fullmatch(r"awg-quick (up|down) (\S+)", inner):
+            return self._exit_quick(match.group(1), match.group(2), inner)
+        if match := re.fullmatch(r"iptables -t nat -D POSTROUTING -o (gwx\S+) -j MASQUERADE \|\| true", inner):
+            if exit_slot_from_interface(match.group(1)) is None:
+                raise AssertionError(f"FakeServer: NAT cleanup of a non-exit interface: {inner!r}")
+            self.exit_nat_cleanups.append(match.group(1))
+            return _ok()
+        if match := re.fullmatch(r"ip link delete dev (\S+)", inner):
+            slot = exit_slot_from_interface(match.group(1))
+            if slot is None:
+                raise AssertionError(f"FakeServer: ip link delete of a non-exit interface: {inner!r}")
+            if match.group(1) not in self.exit_interfaces:
+                return _fail(f'Cannot find device "{match.group(1)}"', 1)
+            self.exit_interfaces.remove(match.group(1))
+            self.exit_configs.pop(match.group(1), None)
+            return _ok()
+        if match := re.fullmatch(r"awg show (gwx\S+) (latest-handshakes|transfer)", inner):
+            return self._exit_show(match.group(1), match.group(2), inner)
+        if match := re.fullmatch(r"sh -c 'umask 077; awg-quick strip (\S+) > /tmp/(gwx\S+)\.stripped .*", inner):
+            return self._exit_syncconf(match.group(2), inner)
         if inner == f"awg show {iface} listen-port":
             return _ok(self._port() + "\n")
         if inner == f"awg show {iface} latest-handshakes":

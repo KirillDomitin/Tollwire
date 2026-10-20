@@ -4,7 +4,7 @@
   (NULL — система), `ip_address`, `meta` (JSONB, колонка и поле API называются `metadata`), `created_at`.
 - `action` хранится как VARCHAR (`Enum(native_enum=False)`) — новое событие добавляется в enum без миграции.
 - События: серверы (`server_*`), учётки (`server_credentials_*`), ключ хоста (`server_host_key_*`), ключ панели
-  (`server_ssh_key_install_*`), протоколы (`protocol_*`), доступы (`credential_issue_*/credential_revoke_*`).
+  (`server_ssh_key_install_*`), протоколы (`protocol_*`), выходы шлюза (`gateway_exit_*`), доступы (`credential_issue_*/credential_revoke_*`).
 - Кто действует — `AuditActor(admin_id, ip)`, передаётся в конструктор сервисов через `Depends(get_audit_actor)`;
   для входа — `get_anonymous_actor`; планировщик — `SYSTEM_ACTOR`; воркер — от имени инициатора задачи
   (`jobs.admin_id`).

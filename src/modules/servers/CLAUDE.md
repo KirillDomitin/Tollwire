@@ -80,6 +80,21 @@ CRUD; `PUT/GET/DELETE /{id}/credentials`; `POST /{id}/test-connection`; `POST /{
   записи в БД - в отчёт не попадает). Шлюз без выходов даёт проверку `exits` = false и сервер DEGRADED. Поиск Amnezia
   (`discover`) шлюз игнорирует. Мониторинг суммирует клиентов всех протоколов сервера.
 
+### Выходы шлюза (этап 24.2)
+
+Подробно - `modules/gateway/CLAUDE.md`. Здесь изменилось поведение сервера:
+
+- `ServerService.delete` и `schedule(REMOVE_PROTOCOL, AMNEZIA_WG)` отказывают (409, `LiveCredentialExistsError`), пока
+  сервер - выход какого-либо шлюза (`GatewayExitRepository.exists_for_exit_server`); воркер проверяет то же перед
+  снятием контейнера (`protocol_uninstall`). Удаление сервера-шлюза и снятие протокола шлюза удаляют его выходы каскадом.
+- Sync (`sync.py`): на `AMNEZIA_WG` внутренние клиенты шлюза (имя строго `gw-` + 12 hex, иные `gw-*` - чужие, в `foreign`) с записью в `gateway_exits` (peer_created / active /
+  draining) живые - при потере возвращаются по сохранённому конфигу; без такой записи - сироты и снимаются. У шлюза
+  в отчёт протокола добавляется `exits` (по слоту: `exit_id, slot, state, interface_up, health`), а в `issues` -
+  "Exit gwxN is down/missing on the gateway" для `active` без интерфейса и "Unknown exit tunnel" для чужого туннеля; сбой чтения туннелей - issue "Failed to list exit tunnels", отчёт по клиентам сохраняется;
+  обновляются `health` / `last_handshake_at` / `checked_at` строк. Действий нет (failover - 24.5).
+- Health (`health.py`): проверка `exits` шлюза - хотя бы один туннель с интерфейсом и рукопожатием не старше 180 с; те же
+  поля строк выходов обновляются и здесь (если контейнер шлюза не отвечает - остаются прежними).
+
 ## Поиск установки AmneziaVPN (`discovery.py`)
 
 Поиск только читает сервер. Найденное приложение панель не ставит, не удаляет и не меняет его клиентов. Перенос
@@ -131,5 +146,5 @@ CRUD; `PUT/GET/DELETE /{id}/credentials`; `POST /{id}/test-connection`; `POST /{
 
 `server_created/updated/deleted`, `server_credentials_set/deleted`, `server_host_key_pinned/reset/mismatch`,
 `server_install_*`, `server_sync_*`, `server_discover_*`, `server_ssh_key_install_*` (started/completed/failed), `protocol_install_*`,
-`protocol_remove_*`. Meta: `panel_key_left_on_server: <fingerprint>` при удалении учётки или сервера с ключом панели. У `server_discover_*` meta — счётчики `protocols` и `clients`
+`protocol_remove_*`, `gateway_exit_*` (см. `modules/gateway/CLAUDE.md`). Meta: `panel_key_left_on_server: <fingerprint>` при удалении учётки или сервера с ключом панели. У `server_discover_*` meta — счётчики `protocols` и `clients`
 (без ключей и адресов).

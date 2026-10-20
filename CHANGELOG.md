@@ -15,6 +15,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- Gateway exits: `POST/GET/PATCH/DELETE /api/v1/servers/{id}/gateway/exits` connect foreign panel servers (with the
+  AmneziaWG protocol) to a gateway. For each exit the panel creates an internal client on it and brings up a `gwxN`
+  tunnel on the gateway (own routing table, MTU 1280, NAT on the tunnel). Adding runs in two resumable phases, removal
+  hands clients over (a stub until the next step) and cleans both ends; the weight and client limit are edited without
+  a job. An exit server cannot be deleted or lose its AmneziaWG while a gateway uses it; sync restores a lost internal
+  client and removes orphaned ones, and reports tunnels that are down. Which clients use which exit comes next.
 - Gateway protocol (`amnezia_gateway`), first step: a separate `vpn-admin-gw` container next to the regular protocol,
   with its own port, `gw0` interface and `10.77.0.0/22` client subnet. `POST/DELETE /api/v1/servers/{id}/protocol`
   take an optional body `{"type": "amnezia_wg" | "amnezia_gateway"}` (without it nothing changes). The container runs a

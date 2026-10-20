@@ -29,6 +29,8 @@ _STARTED: dict[JobType, AuditAction] = {
     JobType.INSTALL_SSH_KEY: AuditAction.SERVER_SSH_KEY_INSTALL_STARTED,
     JobType.DISCOVER_VPN: AuditAction.SERVER_DISCOVER_STARTED,
     JobType.IMPORT_CLIENTS: AuditAction.CLIENTS_IMPORT_STARTED,
+    JobType.GATEWAY_ADD_EXIT: AuditAction.GATEWAY_EXIT_ADD_STARTED,
+    JobType.GATEWAY_REMOVE_EXIT: AuditAction.GATEWAY_EXIT_REMOVE_STARTED,
 }
 _COMPLETED: dict[JobType, AuditAction] = {
     JobType.INSTALL_SERVER: AuditAction.SERVER_INSTALL_COMPLETED,
@@ -38,6 +40,8 @@ _COMPLETED: dict[JobType, AuditAction] = {
     JobType.INSTALL_SSH_KEY: AuditAction.SERVER_SSH_KEY_INSTALL_COMPLETED,
     JobType.DISCOVER_VPN: AuditAction.SERVER_DISCOVER_COMPLETED,
     JobType.IMPORT_CLIENTS: AuditAction.CLIENTS_IMPORT_COMPLETED,
+    JobType.GATEWAY_ADD_EXIT: AuditAction.GATEWAY_EXIT_ADD_COMPLETED,
+    JobType.GATEWAY_REMOVE_EXIT: AuditAction.GATEWAY_EXIT_REMOVE_COMPLETED,
 }
 _FAILED: dict[JobType, AuditAction] = {
     JobType.INSTALL_SERVER: AuditAction.SERVER_INSTALL_FAILED,
@@ -49,10 +53,15 @@ _FAILED: dict[JobType, AuditAction] = {
     JobType.INSTALL_SSH_KEY: AuditAction.SERVER_SSH_KEY_INSTALL_FAILED,
     JobType.DISCOVER_VPN: AuditAction.SERVER_DISCOVER_FAILED,
     JobType.IMPORT_CLIENTS: AuditAction.CLIENTS_IMPORT_FAILED,
+    JobType.GATEWAY_ADD_EXIT: AuditAction.GATEWAY_EXIT_ADD_FAILED,
+    JobType.GATEWAY_REMOVE_EXIT: AuditAction.GATEWAY_EXIT_REMOVE_FAILED,
 }
 # Задачи, чей result (без секретов) целиком попадает в meta аудита: итог виден в журнале, а не только в задаче.
 _RESULT_IN_AUDIT = frozenset({JobType.INSTALL_SSH_KEY})
 _IMPORT_COUNTED = ("imported", "already", "gone", "unsupported", "conflict")
+# Задачи выходов шлюза: в meta аудита идут только эти поля params (id выхода и сервера-выхода, слот, вес) - не ключи.
+_EXIT_JOBS = (JobType.GATEWAY_ADD_EXIT, JobType.GATEWAY_REMOVE_EXIT)
+_EXIT_META_FIELDS = ("exit_id", "exit_server_id", "slot", "weight")
 _ERROR_MAX_LENGTH = 500
 
 
@@ -92,7 +101,7 @@ class JobService:
         await self.jobs.create(job)
         await self.session.flush()
         if job_type in _STARTED:
-            started_meta: dict[str, Any] = {"job_id": job.id, **self._protocol_meta(job_type, params)}
+            started_meta: dict[str, Any] = {"job_id": job.id, **self._job_meta(job_type, params)}
             self.audit.record(_STARTED[job_type], AuditEntity.SERVER, server_id, started_meta)
         await self.session.commit()
         await self.job_queue.enqueue(job.id)
@@ -157,8 +166,11 @@ class JobService:
         return deleted
 
     @staticmethod
-    def _protocol_meta(job_type: JobType, params: dict[str, Any] | None) -> dict[str, Any]:
-        """Какой протокол ставили/снимали: значение enum из params (без params - обычный). Другого в журнал не идёт."""
+    def _job_meta(job_type: JobType, params: dict[str, Any] | None) -> dict[str, Any]:
+        """Несекретные поля params для аудита. Протокольные задачи: какой протокол ставили/снимали (значение enum, без
+        params - обычный; другого в журнал не идёт). Задачи выходов шлюза: id выхода и сервера-выхода, слот и вес."""
+        if job_type in _EXIT_JOBS:
+            return {key: params[key] for key in _EXIT_META_FIELDS if params and key in params}
         if job_type not in (JobType.INSTALL_PROTOCOL, JobType.REMOVE_PROTOCOL):
             return {}
         try:
@@ -170,7 +182,7 @@ class JobService:
 
     @staticmethod
     def _meta(job: Job) -> dict[str, Any]:
-        meta: dict[str, Any] = {"job_id": job.id, **JobService._protocol_meta(job.type, job.params)}
+        meta: dict[str, Any] = {"job_id": job.id, **JobService._job_meta(job.type, job.params)}
         if job.type in _RESULT_IN_AUDIT and job.result:
             meta.update(job.result)
         if job.type == JobType.DISCOVER_VPN and job.result:

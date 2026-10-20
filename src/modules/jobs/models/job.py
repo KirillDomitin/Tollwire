@@ -33,6 +33,9 @@ class JobType(enum.Enum):
     INSTALL_SSH_KEY = "install_ssh_key"
     DISCOVER_VPN = "discover_vpn"
     IMPORT_CLIENTS = "import_clients"
+    # Выходы шлюза (24.2): server_id задачи - сервер-шлюз, params["exit_id"] - строка gateway_exits.
+    GATEWAY_ADD_EXIT = "gateway_add_exit"
+    GATEWAY_REMOVE_EXIT = "gateway_remove_exit"
 
 
 class Job(UuidPkMixin, TimestampMixin, Base):

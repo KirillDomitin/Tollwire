@@ -9,8 +9,12 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions import NotFoundError, SSHConnectionError, SSHError, SSHTimeoutError
+from core.ssh_exception import CommandExecutionError
 from infrastructure.vpn.amnezia import AmneziaInstaller
+from infrastructure.vpn.gateway import AmneziaGatewayProvider
 from infrastructure.vpn.provider import HealthCheck, VPNProvider
+from modules.gateway.exit_health import record_exit_status
+from modules.gateway.repository import GatewayExitRepository
 from modules.protocols.models.protocol import APP_PROTOCOLS, ProtocolType, VPNProtocol
 from modules.protocols.repository import ProtocolRepository
 from modules.servers.models.server import HealthStatus, VPNServer
@@ -92,6 +96,8 @@ class ServerHealthService:
                     "port_matches_db", health.port == protocol.port, f"db {protocol.port}, server {health.port}"
                 )
             )
+        if protocol is not None and isinstance(provider, AmneziaGatewayProvider):
+            await self._record_exits(provider, protocol)
         return {
             "type": protocol_type.value,
             "in_db": protocol is not None,
@@ -99,6 +105,18 @@ class ServerHealthService:
             "clients": {"total": health.clients_total, "active": health.clients_active},
             "checks": [asdict(check) for check in checks],
         }
+
+    async def _record_exits(self, provider: AmneziaGatewayProvider, protocol: VPNProtocol) -> None:
+        """Освежает health / рукопожатие выходов в БД (их показывает GET .../gateway/exits). Только эти поля, состояние
+        выходов не трогаем. Шлюз не отвечает - данные остаются прежними, health-проверка уже сообщила о сбое."""
+        exits = await GatewayExitRepository(self.session).list_by_gateway(protocol.id)
+        if not exits:
+            return
+        try:
+            statuses = await provider.exit_status(expected=[gateway_exit.slot for gateway_exit in exits])
+        except CommandExecutionError:
+            return
+        record_exit_status(exits, statuses, datetime.now(timezone.utc))
 
     async def _save(
         self,

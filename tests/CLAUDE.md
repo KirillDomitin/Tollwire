@@ -91,6 +91,24 @@ git (локальный «сервер» + второй клон, из кото�
   шлюза.
 - `services/test_migrations.py` - миграция шлюза (значение enum, ORM, downgrade с данными и каскадом, уникальность).
 
+## Выходы шлюза (этап 24.2)
+
+- `gateway_support.py` - общее: `client_config()` (конфиг внутреннего клиента от настоящего `AmneziaWGProvider` на отдельном
+  фейке), `exit_tunnel()`, `apply_exits()`, `add_live_exit()` (файл + интерфейс + свежее рукопожатие на фейковом шлюзе).
+- `unit/test_gateway_exits.py` - конфиг выхода строка в строку и по правилам (белый список, `Table`, MTU, хуки, отказ от
+  враждебного Endpoint и битого конфига без цитат), слоты и таблицы (нет пересечения с 253-255 и `RU_TABLE`), команды
+  провайдера по regexp-списку констант, идемпотентность, syncconf вместо пересоздания, откаты при сбоях up/syncconf,
+  `remove_exit`, `exit_status`, health, перезапуск контейнера. `integration/test_gateway_exits_api.py` - API, воркер
+  (две фазы, повтор, `ServerBusy`, порядок блокировок шлюз -> выход), снятие (в том числе при недоступном выходе), PATCH,
+  GET без секретов, аудит, защиты 409, sync выходов и шлюза, health. Сцена: шлюз `FakeServer(layout=GATEWAY_LAYOUT)` и
+  выходы с обычной раскладкой - несколько `FakeServer` одновременно через `world.fakes`.
+- Фейк умеет для выходов: `awg-quick up|down` по файлу `exits/gwx<N>.conf` (конфиг разбирается: ключи, `Table`, Endpoint),
+  `ip link delete dev`, `awg show gwxN latest-handshakes|transfer`, strip -> syncconf (строго команда
+  `exit_sync_command`), `rm -f` файлов выходов; `start.sh` поднимает все `exits/*.conf` при запуске контейнера. Сбои:
+  `exit_up_fails`, `exit_down_fails`, `exit_sync_fails` (наборы слотов); `exit_handshakes`, `exit_transfer`,
+  `exit_configs` (применённые конфиги). Незнакомая команда - `AssertionError`.
+- `services/test_migrations.py` - миграция выходов (таблица, ограничения, каскад/RESTRICT, downgrade, цикл).
+
 ## Правила
 
 - Гонки проверять детерминированно (окно через monkeypatch), а не через `asyncio.gather` по ASGI.

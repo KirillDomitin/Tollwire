@@ -31,6 +31,13 @@
 - Downgrade удаляет строки `protocols` шлюза (каскадом уходят их гранты и credential'ы) и пересоздаёт enum из трёх
   прежних значений (как `d3a7c9e15b42`); уникальность `(server_id, type)` сохраняется.
 
+## Выходы шлюза (`c7e1b4d8a932`)
+
+- `jobtype` += `GATEWAY_ADD_EXIT`, `GATEWAY_REMOVE_EXIT` — в `autocommit_block`, с `IF NOT EXISTS`.
+- Таблица `gateway_exits` (FK на `protocols`: шлюз CASCADE, выход RESTRICT; UNIQUE `(шлюз, слот)` и `(шлюз, выход)`; CHECK слота
+  1..200, веса 1..100, `max_clients > 0`; `state` — VARCHAR(16), не Postgres-enum; индекс по `exit_protocol_id`).
+- Downgrade: удаляет таблицу, задачи этих типов и пересоздаёт `jobtype` (DEFAULT `HEALTH_CHECK` возвращается).
+
 ## Импорт клиентов (`f6b2d8a41c73`)
 
 - `jobtype` += `IMPORT_CLIENTS` — в `autocommit_block`, с `IF NOT EXISTS`.

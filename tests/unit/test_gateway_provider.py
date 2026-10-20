@@ -38,6 +38,7 @@ from infrastructure.vpn.gateway_config import (
 )
 from infrastructure.vpn.provider import HealthCheck, ProviderState
 from tests.fakes.fake_ssh import FakeServer, FakeSSHClient
+from tests.gateway_support import add_live_exit
 
 CONFIG = "/opt/vpn-admin/gw/gw0.conf"
 START = "/opt/vpn-admin/gw/start.sh"
@@ -702,15 +703,15 @@ async def test_health_of_a_fresh_gateway_fails_only_because_there_are_no_exits()
 
 async def test_health_passes_when_an_exit_tunnel_is_up() -> None:
     fake = await installed()
-    fake.exit_interfaces = ["ex1"]
+    await add_live_exit(fake)
     health = await call(fake, "health_check")
     assert all(check.ok for check in health.checks), health.checks
-    assert checks(health)["exits"].detail == "1 exit tunnel(s)"
+    assert checks(health)["exits"].detail == "1 exit tunnel(s), 1 healthy: gwx1 ok"
 
 
 async def test_health_detects_a_missing_kill_switch() -> None:
     fake = await installed()
-    fake.exit_interfaces = ["ex1"]
+    await add_live_exit(fake)
     fake.ip_rules = [rule for rule in fake.ip_rules if "prohibit" not in rule]
     health = await call(fake, "health_check")
     assert [name for name, check in checks(health).items() if not check.ok] == ["kill_switch"]
@@ -718,7 +719,7 @@ async def test_health_detects_a_missing_kill_switch() -> None:
 
 async def test_health_ignores_a_prohibit_rule_of_a_different_subnet() -> None:
     fake = await installed()
-    fake.exit_interfaces = ["ex1"]
+    await add_live_exit(fake)
     fake.ip_rules = ["9000:\tfrom 10.8.1.0/24 prohibit"]
     assert not checks(await call(fake, "health_check"))["kill_switch"].ok
 
