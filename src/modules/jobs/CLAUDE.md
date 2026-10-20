@@ -17,7 +17,9 @@
   REMOVE_PROTOCOL, INSTALL_SSH_KEY, DISCOVER_VPN (только чтение, `result` = `{"protocols": [...]}`), IMPORT_CLIENTS (`params` — вход, `result` —
   итог импорта), GATEWAY_ADD_EXIT / GATEWAY_REMOVE_EXIT (выходы шлюза, этап 24.2: `server_id` — сервер-шлюз, `params` — `exit_id`,
   `exit_server_id`, `slot` (и `weight` у добавления), `result` — `{exit_id, exit_server_id, slot}` / `{…, peer_revoked}`; воркер
-  держит `ServerLock` шлюза, выход блокирует сервис внутри; занятый выход — задача в очередь, как `ServerBusyError`). DELETE_USER и UNINSTALL_SERVER — наследие, не ставятся. GEOIP_UPDATE (этап 24.4, глобальная: `server_id` нет, ServerLock не берётся; `result` - итог приёма списка) и
+  держит `ServerLock` шлюза, выход блокирует сервис внутри; занятый выход — задача в очередь, как `ServerBusyError`). DELETE_USER и UNINSTALL_SERVER — наследие, не ставятся. GEOIP_UPDATE GATEWAY_APPLY (этап 24.5: failover и ручной перенос клиентов шлюза; `server_id` - шлюз, `params` `{check: true}` у «проверить сейчас»,
+  `result` `{moved, returned, stranded}`; воркер держит `ServerLock` шлюза, дедуп - `has_unfinished_for_server`), GEOIP_UPDATE
+  (этап 24.4, глобальная: `server_id` нет, ServerLock не берётся; `result` - итог приёма списка) и
   GATEWAY_APPLY_RU (`server_id` — шлюз, без `params`; `result` — `{routes, table, prefixes}`; воркер держит `ServerLock` шлюза;
   в аудите `gateway_ru_applied` с числом маршрутов). Дубли: `has_unfinished_of_type` (GEOIP_UPDATE) и `has_unfinished_for_server`
   (GATEWAY_APPLY_RU).

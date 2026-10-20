@@ -993,3 +993,90 @@ async def test_geoip_migration_cycle_is_idempotent_and_keeps_the_job_default() -
         assert "HEALTH_CHECK" in str(default)
     finally:
         await _alembic("upgrade", "head")
+
+
+# --- failover выходов (24.5): consecutive_failures, healthy_since и jobtype.GATEWAY_APPLY ---
+
+BEFORE_FAILOVER = "e5a1c9f3b207"  # голова перед миграцией failover
+FAILOVER_COLUMNS_SQL = text(
+    "SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns "
+    "WHERE table_name = 'gateway_exits' "
+    "AND column_name IN ('consecutive_failures', 'healthy_since', 'failure_notified') "
+    "ORDER BY column_name"
+)
+
+
+async def test_failover_migration_adds_the_columns_and_the_job_type() -> None:
+    rows = {row[0]: row for row in await _query(FAILOVER_COLUMNS_SQL)}
+    assert set(rows) == {"consecutive_failures", "healthy_since", "failure_notified"}
+    assert rows["failure_notified"][1:3] == ("boolean", "NO") and "false" in str(rows["failure_notified"][3])
+    assert rows["consecutive_failures"][1:3] == ("integer", "NO") and "0" in str(rows["consecutive_failures"][3])
+    assert rows["healthy_since"][1:3] == ("timestamp with time zone", "YES")
+    assert "GATEWAY_APPLY" in await _labels(JOB_TYPES_SQL)
+
+
+async def test_failover_defaults_and_the_orm_agree() -> None:
+    from modules.gateway.models.gateway_exit import GatewayExit
+
+    _, gateway, _, exit_protocol = await _exit_scene()
+    async with engine.begin() as conn:
+        await conn.execute(_INSERT_EXIT, {"g": gateway, "e": exit_protocol, "slot": 1})
+    async with session_factory() as session:
+        (row,) = (await session.execute(select(GatewayExit))).scalars().all()
+        assert row.consecutive_failures == 0 and row.healthy_since is None and row.failure_notified is False
+
+
+async def test_failover_job_type_is_usable_by_the_orm() -> None:
+    server_id = await _add_server()
+    async with session_factory() as session:
+        session.add(Job(type=JobType.GATEWAY_APPLY, status=JobStatus.PENDING, server_id=server_id))
+        await session.commit()
+    assert await _query(text("SELECT type::text FROM jobs")) == [("GATEWAY_APPLY",)]
+
+
+async def test_failover_migration_downgrade_drops_the_columns_and_the_job_type_then_upgrade_restores() -> None:
+    server_id = await _add_server()
+    async with engine.begin() as conn:
+        for job_type in ("GATEWAY_APPLY", "GATEWAY_APPLY_RU", "HEALTH_CHECK"):
+            await conn.execute(
+                text(
+                    "INSERT INTO jobs (id, type, status, server_id) VALUES (gen_random_uuid(), :type, 'SUCCESS', :sid)"
+                ),
+                {"type": job_type, "sid": server_id},
+            )
+    await _alembic("downgrade", BEFORE_FAILOVER)
+    try:
+        assert await _query(FAILOVER_COLUMNS_SQL) == []
+        assert "GATEWAY_APPLY" not in await _labels(JOB_TYPES_SQL) and "GATEWAY_APPLY_RU" in await _labels(
+            JOB_TYPES_SQL
+        )
+        assert sorted(row[0] for row in await _query(text("SELECT type::text FROM jobs"))) == [
+            "GATEWAY_APPLY_RU",
+            "HEALTH_CHECK",
+        ]
+    finally:
+        await _alembic("upgrade", "head")
+    assert len(await _query(FAILOVER_COLUMNS_SQL)) == 3 and "GATEWAY_APPLY" in await _labels(JOB_TYPES_SQL)
+
+
+async def test_failover_migration_cycle_is_idempotent_and_keeps_the_job_default() -> None:
+    await _alembic("downgrade", BEFORE_FAILOVER)
+    await _alembic("upgrade", "head")
+    await _alembic("downgrade", BEFORE_FAILOVER)
+    try:
+        default = await _query(
+            text(
+                "SELECT column_default FROM information_schema.columns "
+                "WHERE table_name = 'jobs' AND column_name = 'type'"
+            )
+        )
+        assert "HEALTH_CHECK" in str(default)
+    finally:
+        await _alembic("upgrade", "head")
+
+
+async def test_the_failover_reason_fits_the_assignment_column() -> None:
+    """failover_return (15 символов) помещается в VARCHAR(16) колонки reason."""
+    from modules.gateway.models.gateway_assignment import AssignReason
+
+    assert max(len(reason.name) for reason in AssignReason) <= 16

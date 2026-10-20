@@ -10,7 +10,7 @@
   PENDING → RUNNING → SUCCESS/FAILED. Одна сессия БД на задачу; любая ошибка → FAILED с текстом
   (`job_error_text`: redact + обрезка), цикл живёт дальше.
 - Диспетчер `match JobType`: `CREATE_USER`, `REVOKE_ACCESS`, `SYNC_SERVER`, `HEALTH_CHECK`, `INSTALL_SERVER`,
-  `INSTALL_PROTOCOL`, `REMOVE_PROTOCOL`, `INSTALL_SSH_KEY`, `DISCOVER_VPN`, `GATEWAY_ADD_EXIT` / `GATEWAY_REMOVE_EXIT` / `GATEWAY_APPLY_RU` (под `ServerLock` шлюза), `GEOIP_UPDATE` (глобальная: без `server_id` и блокировки) (`DELETE_USER` — заглушка;`IMPORT_CLIENTS` (`DELETE_USER` — заглушка; `UNINSTALL_SERVER` не
+  `INSTALL_PROTOCOL`, `REMOVE_PROTOCOL`, `INSTALL_SSH_KEY`, `DISCOVER_VPN`, `GATEWAY_ADD_EXIT` / `GATEWAY_REMOVE_EXIT` / `GATEWAY_APPLY_RU` (под `ServerLock` шлюза), `GATEWAY_APPLY` (failover и ручной перенос шлюза, под `ServerLock` шлюза), `GEOIP_UPDATE` (глобальная: без `server_id` и блокировки) (`DELETE_USER` — заглушка;`IMPORT_CLIENTS` (`DELETE_USER` — заглушка; `UNINSTALL_SERVER` не
   обрабатывается → явный FAILED). Серверная задача без `server_id` → FAILED (`_reject`).
 - `DISCOVER_VPN` — без ServerLock, только чтение (`ServerDiscoveryService.discover`). `INSTALL_SERVER` после
   установки делает тот же поиск внутри своей задачи: сбой поиска логируется (warning), установка остаётся SUCCESS.
@@ -44,6 +44,7 @@ interval) — несколько воркеров не дублируют раб
 | `sync` | задачи SYNC_SERVER серверам с протоколом — **меняет** серверы (удаляет «сирот») |
 | `retention` | удаление старых задач и аудита |
 | `geoip` | раз в неделю задача `GEOIP_UPDATE`, только если на панели есть шлюз (нет шлюзов - пропуск; незавершённая такая же - пропуск) |
+| `gateway_watch` | раз в минуту: чтение туннелей выходов шлюзов ПАРАЛЛЕЛЬНО (до 5, не дольше 20 с на шлюз; SSH, только чтение), счётчики отказов; при отказе / восстановлении / переносах - задача `GATEWAY_APPLY` (без дублей). Ошибка или срок одного шлюза остальные не задерживают и счётчики не меняют |
 | `metrics` | замер серверов по SSH (только чтение) — прямо в планировщике, не задачей |
 | `metrics_rollup` | почасовая свёртка метрик и чистка старых |
 

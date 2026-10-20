@@ -13,13 +13,23 @@ from core.exceptions import (
     InvalidDataError,
     JobAlreadyRunningError,
     NotFoundError,
+    ServerBusyError,
+    StateConflictError,
 )
+from core.ssh_exception import SSHServerError
 from modules.audit.actor import AuditActor
 from modules.audit.dependencies import get_audit_actor
 from modules.auth.dependencies import get_current_admin, require
 from modules.auth.permissions import Permission
+from modules.gateway.failover import GatewayFailoverService
 from modules.gateway.ru import GatewayRuService
-from modules.gateway.schemas import GatewayAssignmentRead, GatewayExitCreate, GatewayExitRead, GatewayExitUpdate
+from modules.gateway.schemas import (
+    GatewayAssignmentMove,
+    GatewayAssignmentRead,
+    GatewayExitCreate,
+    GatewayExitRead,
+    GatewayExitUpdate,
+)
 from modules.gateway.service import GatewayExitService
 from modules.jobs.models.job import Job
 from modules.jobs.schemas import JobRead
@@ -125,6 +135,55 @@ async def apply_ru(
     `gateway_apply_ru`. Нужен активный список (`GET /api/v1/geoip`)."""
     try:
         return await GatewayRuService(session, actor).schedule_apply(server_id)
+    except NotFoundError as exc:
+        raise HTTPException(404, detail=str(exc))
+    except CredentialNotFound:
+        raise HTTPException(409, detail="Credentials do not exist to perform this operation")
+    except (GatewayExitError, JobAlreadyRunningError) as exc:
+        raise HTTPException(409, detail=str(exc))
+
+
+@router.patch(
+    "/assignments/{credential_id}",
+    dependencies=[Depends(require(Permission.ACCESS_MANAGE))],
+    response_model=GatewayAssignmentRead,
+)
+async def move_client(
+    server_id: UUID,
+    credential_id: UUID,
+    body: GatewayAssignmentMove,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[AuditActor, Depends(get_audit_actor)],
+) -> GatewayAssignmentRead:
+    """Переносит клиента шлюза на указанный ACTIVE-выход (причина `manual`) и / или закрепляет за выходом
+    (`pin`). Применяется сразу, под блокировкой шлюза; ответ - итоговое назначение. `exit_id: null, pin: false` только
+    снимает закрепление."""
+    try:
+        return await GatewayFailoverService(session, actor).move_client(
+            server_id, credential_id, body.exit_id, body.pin
+        )
+    except NotFoundError as exc:
+        raise HTTPException(404, detail=str(exc))
+    except (GatewayExitError, StateConflictError) as exc:
+        raise HTTPException(409, detail=str(exc))
+    except ServerBusyError:
+        raise HTTPException(409, detail="The gateway is busy, try again")
+    except SSHServerError:
+        # Общий текст: подробности SSH / Docker (пути, вывод команд) наружу не отдаём.
+        raise HTTPException(502, detail="The gateway is unreachable or failed to apply the change")
+
+
+@router.post(
+    "/check", dependencies=[Depends(require(Permission.SERVERS_CHECK))], response_model=JobRead, status_code=202
+)
+async def check_now(
+    server_id: UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[AuditActor, Depends(get_audit_actor)],
+) -> Job:
+    """«Проверить сейчас»: задача `gateway_apply` с проверкой выходов и переносом клиентов, если выход отказал."""
+    try:
+        return await GatewayFailoverService(session, actor).schedule_check(server_id)
     except NotFoundError as exc:
         raise HTTPException(404, detail=str(exc))
     except CredentialNotFound:

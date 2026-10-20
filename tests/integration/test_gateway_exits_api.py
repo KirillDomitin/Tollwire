@@ -483,6 +483,7 @@ async def test_get_lists_exits_by_slot_with_server_names_and_no_secrets(
         "health",
         "last_handshake_at",
         "checked_at",
+        "healthy_since",
         "weight",
         "max_clients",
         "assigned_clients",

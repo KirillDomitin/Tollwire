@@ -39,9 +39,20 @@ class GatewayExitRead(BaseModel):
     health: str | None
     last_handshake_at: datetime | None
     checked_at: datetime | None
+    healthy_since: datetime | None  # с какого момента проверки выхода непрерывно хорошие (failover, 24.5)
     weight: int
     max_clients: int | None
     assigned_clients: int  # сколько живых клиентов шлюза идёт через этот выход
+
+
+class GatewayAssignmentMove(BaseModel):
+    """Тело PATCH .../assignments/{credential_id}: перенос клиента на выход и / или закрепление.
+
+    `exit_id` - выход, на который перенести (ACTIVE этого шлюза); null - не переносить. `pin` - закрепить клиента за
+    целевым выходом (без `exit_id` - за текущим); false снимает закрепление."""
+
+    exit_id: UUID | None = None
+    pin: bool = False
 
 
 class GatewayAssignmentRead(BaseModel):
@@ -52,3 +63,4 @@ class GatewayAssignmentRead(BaseModel):
     slot: int
     reason: AssignReason
     assigned_at: datetime
+    pinned_exit_id: UUID | None = None  # закреплённый выход: после отказа клиент вернётся на него (24.5)

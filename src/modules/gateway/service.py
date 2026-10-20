@@ -97,6 +97,7 @@ class GatewayExitService:
             health=gateway_exit.health,
             last_handshake_at=gateway_exit.last_handshake_at,
             checked_at=gateway_exit.checked_at,
+            healthy_since=gateway_exit.healthy_since,
             weight=gateway_exit.weight,
             max_clients=gateway_exit.max_clients,
             assigned_clients=assigned,
@@ -130,6 +131,7 @@ class GatewayExitService:
                 slot=slot,
                 reason=assignment.reason,
                 assigned_at=assignment.assigned_at,
+                pinned_exit_id=assignment.pinned_exit_id,
             )
             for assignment, slot in await self.assignments.list_for_gateway(gateway.id)
         ]

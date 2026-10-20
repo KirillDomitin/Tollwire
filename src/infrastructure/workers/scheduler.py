@@ -15,6 +15,7 @@ from modules.access.service import SubscriptionService
 from modules.audit.actor import SYSTEM_ACTOR
 from modules.audit.service import AuditService
 from modules.auth.service import AuthService
+from modules.gateway.failover import GatewayFailoverService
 from modules.geoip.service import GeoipService
 from modules.jobs.service import JobService
 from modules.monitoring.service import MetricsCollector, rollup_and_prune
@@ -136,6 +137,53 @@ async def schedule_geoip_update() -> str:
     return "queued geoip update"
 
 
+WATCH_CONCURRENCY = 5  # шлюзов, опрашиваемых одновременно
+WATCH_TIMEOUT_SECONDS = 20  # на один шлюз целиком (SSH, чтение, запись счётчиков, постановка задачи)
+
+
+async def _watch_one(protocol_id: UUID, server_id: UUID, semaphore: asyncio.Semaphore) -> tuple[int, int, int]:
+    """Проверка одного шлюза со своей сессией, под семафором и с общим сроком. Возвращает (проверен, поставлена задача,
+    недоступен). Ошибка или срок одного шлюза не влияют на остальных и не меняют его счётчики (запись - в конце
+    одной транзакции `check`: отмена до commit откатывает её)."""
+    async with semaphore:
+        try:
+            async with session_factory() as session:
+                gateway = await ProtocolRepository(session).get_by_id(protocol_id)
+                if gateway is None:
+                    return 0, 0, 0
+                result = await asyncio.wait_for(
+                    GatewayFailoverService(session, SYSTEM_ACTOR).watch(gateway), WATCH_TIMEOUT_SECONDS
+                )
+        except Exception as exc:  # noqa: BLE001 - один недоступный шлюз не должен останавливать остальные
+            logger.warning(
+                "gateway watch failed",
+                extra={"server_id": str(server_id), "error": type(exc).__name__ + ": " + str(exc)[:200]},
+            )
+            return 0, 0, 1
+    return int(result.checked), int(result.queued), 0
+
+
+async def watch_gateways() -> str:
+    """Проверка выходов шлюзов (этап 24.5): раз в минуту читает туннели (SSH, только чтение), ведёт счётчики отказов и
+    ставит GATEWAY_APPLY, когда выход отказал / восстановился или есть кого переносить. Шлюзы без выходов не
+    опрашиваются.
+    Шлюзы опрашиваются параллельно (до `WATCH_CONCURRENCY`), на каждый - не больше `WATCH_TIMEOUT_SECONDS`: недоступные
+    шлюзы не задерживают остальные правила планировщика."""
+    async with session_factory() as session:
+        gateways = [
+            (item.id, item.server_id)
+            for item in await ProtocolRepository(session).list_by_type(ProtocolType.AMNEZIA_GATEWAY)
+        ]
+    semaphore = asyncio.Semaphore(WATCH_CONCURRENCY)
+    outcomes = await asyncio.gather(
+        *(_watch_one(protocol_id, server_id, semaphore) for protocol_id, server_id in gateways)
+    )
+    checked = sum(item[0] for item in outcomes)
+    queued = sum(item[1] for item in outcomes)
+    failed = sum(item[2] for item in outcomes)
+    return f"checked {checked} gateways, queued {queued} applies, {failed} unreachable"
+
+
 async def fail_stale_jobs(max_age_seconds: int) -> str:
     async with session_factory() as session:
         failed = await JobService(session, SYSTEM_ACTOR).fail_stale_running(max_age_seconds)
@@ -179,6 +227,7 @@ def build_rules(settings: Settings) -> list[Rule]:
         ),
         # Мониторинг: замер серверов (только чтение по SSH) и свёртка истории по часам.
         Rule("geoip", settings.geoip_update_interval_seconds, schedule_geoip_update),
+        Rule("gateway_watch", settings.gateway_watch_interval_seconds, watch_gateways),
         Rule("metrics", settings.metrics_interval_seconds, MetricsCollector().collect_all),
         Rule("metrics_rollup", settings.metrics_rollup_interval_seconds, rollup_and_prune),
     ]

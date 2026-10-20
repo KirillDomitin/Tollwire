@@ -101,7 +101,8 @@ class GatewayAssignmentService:
                 max_clients=row.max_clients,
                 assigned=counts.get(row.id, 0),
                 state=row.state,
-                health=row.health,
+                # плохие проверки failover (24.5): выход под подозрением новых клиентов не получает
+                health="down" if row.consecutive_failures > 0 else row.health,
             )
             for row in exits
             if row.id != skip

@@ -96,6 +96,13 @@ class AuditAction(enum.Enum):
     GEOIP_OVERRIDE_REMOVED = "geoip_override_removed"
     GATEWAY_RU_APPLIED = "gateway_ru_applied"  # список применён на шлюзе (число маршрутов)
     GATEWAY_RU_APPLY_FAILED = "gateway_ru_apply_failed"
+    # Failover (24.5)
+    GATEWAY_CLIENT_MOVED = "gateway_client_moved"  # клиент перенесён на другой выход (failover, возврат, вручную)
+    GATEWAY_FAILOVER = "gateway_failover"  # выход отказал: сколько клиентов перенесено / осталось без выхода
+    GATEWAY_ALL_EXITS_DOWN = (
+        "gateway_all_exits_down"  # плохи все ACTIVE-выходы шлюза сразу (перезапуск / тотальный отказ)
+    )
+    GATEWAY_EXIT_RECOVERED = "gateway_exit_recovered"  # отказавший выход снова исправен
     GATEWAY_CONTAINER_RECREATED = "gateway_container_recreated"  # контейнер шлюза пересоздан (клиенты переподключаются)
 
 

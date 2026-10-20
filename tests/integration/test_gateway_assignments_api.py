@@ -469,7 +469,7 @@ async def test_assignments_api_shows_no_addresses_or_keys(
     response = await api.get(f"/api/v1/servers/{gw.sid}/gateway/assignments")
 
     (item,) = response.json()
-    assert set(item) == {"credential_id", "exit_id", "slot", "reason", "assigned_at"}
+    assert set(item) == {"credential_id", "exit_id", "slot", "reason", "assigned_at", "pinned_exit_id"}
     assert "10.77" not in response.text and "PrivateKey" not in response.text
 
 

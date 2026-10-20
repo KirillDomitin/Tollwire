@@ -53,6 +53,13 @@
 - Downgrade удаляет таблицы (списки скачиваются заново), задачи двух новых типов и пересоздаёт `jobtype` из прежних значений
   с `DEFAULT 'HEALTH_CHECK'` (как миграции выходов).
 
+## Failover выходов (`f3b8d2a6c914`)
+
+- `gateway_exits.consecutive_failures` (INTEGER NOT NULL DEFAULT 0), `healthy_since` (timestamptz, NULL) и `failure_notified`
+  (BOOLEAN NOT NULL DEFAULT false: событие `gateway_failover` за отказ уже записано); `jobtype` +=
+  `GATEWAY_APPLY` (`autocommit_block`, `IF NOT EXISTS`). Значения `AssignReason` (`failover_return`) - VARCHAR(16), миграции не нужно.
+- Downgrade удаляет колонки (счётчики производные), задачи `GATEWAY_APPLY` и пересоздаёт `jobtype` с `DEFAULT 'HEALTH_CHECK'`.
+
 ## Импорт клиентов (`f6b2d8a41c73`)
 
 - `jobtype` += `IMPORT_CLIENTS` — в `autocommit_block`, с `IF NOT EXISTS`.

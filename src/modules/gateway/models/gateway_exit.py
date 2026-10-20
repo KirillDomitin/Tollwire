@@ -5,6 +5,7 @@ from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     Enum,
@@ -66,6 +67,12 @@ class GatewayExit(UuidPkMixin, TimestampMixin, Base):
     health: Mapped[str | None] = mapped_column(String(16), default=None)
     last_handshake_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    # Failover (24.5): подряд плохих проверок (рукопожатие устарело / нет туннеля / сервер-выход DOWN); отказавшим выход
+    # считается при FAILURE_THRESHOLD плохих подряд. healthy_since - с какого момента проверки непрерывно хорошие.
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    healthy_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    # Событие `gateway_failover` за этот отказ уже записано; сбрасывается при восстановлении.
+    failure_notified: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
     # Внутренний клиент на выходе. Публичный ключ и адрес - не секрет; конфиг (приватный ключ) - только Fernet.
     client_public_key: Mapped[str | None] = mapped_column(String(64), default=None)
     client_address: Mapped[str | None] = mapped_column(String(64), default=None)

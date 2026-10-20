@@ -20,6 +20,7 @@ from modules.access.import_service import ClientImportService
 from modules.access.models.vpn_credential import VPNCredential
 from modules.access.service import VPNCredentialService
 from modules.audit.actor import AuditActor
+from modules.gateway.failover import GatewayFailoverService
 from modules.gateway.ru import GatewayRuService
 from modules.gateway.service import GatewayExitService
 from modules.geoip.service import GeoipService
@@ -106,6 +107,7 @@ class JobWorker:
                 JobType.GATEWAY_ADD_EXIT,
                 JobType.GATEWAY_REMOVE_EXIT,
                 JobType.GATEWAY_APPLY_RU,
+                JobType.GATEWAY_APPLY,
             ]:
                 if not job.server_id:
                     await self._reject(session, job, f"Job with type '{job.type.value}' must have server_id")
@@ -162,6 +164,10 @@ class JobWorker:
                         case JobType.GATEWAY_APPLY_RU:
                             async with ServerLock(server_id):
                                 job.result = await GatewayRuService(session, actor).run_apply(job)
+
+                        case JobType.GATEWAY_APPLY:
+                            async with ServerLock(server_id):
+                                job.result = await GatewayFailoverService(session, actor).run_apply(job)
 
                         case JobType.GEOIP_UPDATE:
                             # Глобальная задача без сервера: качает список; применение на шлюзах ставит сам сервис.

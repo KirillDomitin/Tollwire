@@ -39,6 +39,8 @@ class JobType(enum.Enum):
     # Список российских префиксов (24.4): обновление (глобальная, без сервера) и применение на шлюзе.
     GEOIP_UPDATE = "geoip_update"
     GATEWAY_APPLY_RU = "gateway_apply_ru"
+    # Failover и ручной перенос клиентов шлюза (24.5): server_id - сервер-шлюз; решение пересчитывается под ServerLock.
+    GATEWAY_APPLY = "gateway_apply"
 
 
 class Job(UuidPkMixin, TimestampMixin, Base):

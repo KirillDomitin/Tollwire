@@ -65,6 +65,11 @@ class Settings(BaseSettings):
     # Раз в неделю; ставится, только если на панели есть хотя бы один шлюз. 0 - выключено.
     geoip_update_interval_seconds: int = 7 * 24 * 3600
 
+    # Failover выходов шлюза (24.5): проверка раз в минуту (0 - выключено); закреплённый клиент возвращается на свой
+    # выход, когда тот непрерывно исправен столько секунд.
+    gateway_watch_interval_seconds: int = 60
+    gateway_failover_return_after_seconds: int = 600
+
     # Мониторинг серверов: замер по SSH (только чтение) и свёртка истории по часам.
     metrics_interval_seconds: int = 60
     metrics_rollup_interval_seconds: int = 300

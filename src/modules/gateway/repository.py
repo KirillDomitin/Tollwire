@@ -165,6 +165,17 @@ class GatewayAssignmentRepository:
         )
         return [(row[0], row[1]) for row in (await self.session.execute(query)).all()]
 
+    async def list_live(self, gateway_protocol_id: UUID) -> Sequence[GatewayAssignment]:
+        """Живые назначения шлюза (без слота): для плана failover."""
+        query = (
+            select(GatewayAssignment)
+            .join(GatewayExit, GatewayExit.id == GatewayAssignment.exit_id)
+            .join(VPNCredential, VPNCredential.id == GatewayAssignment.credential_id)
+            .where(GatewayExit.gateway_protocol_id == gateway_protocol_id, VPNCredential.revoked_at.is_(None))
+            .order_by(GatewayAssignment.credential_id)
+        )
+        return (await self.session.execute(query)).scalars().all()
+
     async def list_for_exit(self, exit_id: UUID) -> Sequence[GatewayAssignment]:
         query = (
             select(GatewayAssignment)

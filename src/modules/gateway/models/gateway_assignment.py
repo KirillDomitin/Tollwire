@@ -13,7 +13,8 @@ from core.database.base import Base
 class AssignReason(enum.Enum):
     ISSUE = "issue"  # клиенту выдан конфиг, выход выбран при выдаче (или позже, когда появился исправный выход)
     DRAIN = "drain"  # выход снимают, клиент перенесён на другой
-    FAILOVER = "failover"  # выход вышел из строя, клиент перенесён (этап 24.5)
+    FAILOVER = "failover"  # выход отказал, клиент перенесён на исправный (24.5)
+    FAILOVER_RETURN = "failover_return"  # закреплённый клиент вернулся на свой выход (24.5)
     MANUAL = "manual"  # назначил админ
     SYNC = "sync"  # назначен сверкой шлюза
 
@@ -29,7 +30,7 @@ class GatewayAssignment(Base):
         Uuid, ForeignKey("vpn_credentials.id", ondelete="CASCADE"), primary_key=True
     )
     exit_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("gateway_exits.id", ondelete="CASCADE"), index=True)
-    # Закреплённый выход (задел под этап 24.5): выход удалили - закрепление снимается.
+    # Закреплённый выход (24.5): при отказе клиент уезжает, потом возвращается; выход удалили - закрепление снимается.
     pinned_exit_id: Mapped[UUID | None] = mapped_column(
         Uuid, ForeignKey("gateway_exits.id", ondelete="SET NULL"), default=None
     )

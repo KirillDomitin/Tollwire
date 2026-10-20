@@ -208,6 +208,8 @@ CRITICAL = {
     "PATCH /api/v1/servers/{server_id}/gateway/exits/{exit_id}": Permission.SERVERS_MANAGE,
     "DELETE /api/v1/servers/{server_id}/gateway/exits/{exit_id}": Permission.SERVERS_MANAGE,
     "POST /api/v1/servers/{server_id}/gateway/ru/apply": Permission.SERVERS_MANAGE,  # меняет маршруты шлюза
+    "PATCH /api/v1/servers/{server_id}/gateway/assignments/{credential_id}": Permission.ACCESS_MANAGE,  # перенос
+    "POST /api/v1/servers/{server_id}/gateway/check": Permission.SERVERS_CHECK,  # проверка выходов и failover
     "GET /api/v1/geoip": Permission.SERVERS_READ,
     "GET /api/v1/geoip/overrides": Permission.SERVERS_READ,
     "POST /api/v1/geoip/update": Permission.SERVERS_MANAGE,  # ходит на внешний источник и перестраивает шлюзы
