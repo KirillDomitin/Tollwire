@@ -106,7 +106,7 @@ describe("gateway section", () => {
 
     await userEvent.click(within(row).getByRole("button", { name: "Повторить" }));
     await waitFor(() => expect(api.bodies[`POST ${base}/gateway/exits`]).toHaveLength(1));
-    expect(api.bodies[`POST ${base}/gateway/exits`][0]).toEqual({
+    expect(api.bodies[`POST ${base}/gateway/exits`]?.[0]).toEqual({
       exit_server_id: FRA,
       weight: 3,
       max_clients: null,
@@ -262,7 +262,7 @@ describe("adding an exit", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Добавить" }));
 
     await waitFor(() => expect(api.bodies[`POST ${base}/gateway/exits`]).toHaveLength(1));
-    expect(api.bodies[`POST ${base}/gateway/exits`][0]).toEqual({
+    expect(api.bodies[`POST ${base}/gateway/exits`]?.[0]).toEqual({
       exit_server_id: AMS,
       weight: 5,
       max_clients: 10,
@@ -282,7 +282,7 @@ describe("adding an exit", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Добавить" }));
 
     await waitFor(() => expect(api.bodies[`POST ${base}/gateway/exits`]).toHaveLength(1));
-    expect(api.bodies[`POST ${base}/gateway/exits`][0]).toEqual({
+    expect(api.bodies[`POST ${base}/gateway/exits`]?.[0]).toEqual({
       exit_server_id: AMS,
       weight: 1,
       max_clients: null,
@@ -319,7 +319,7 @@ describe("changing an exit", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Сохранить" }));
 
     await waitFor(() => expect(api.bodies[`PATCH ${base}/gateway/exits/${EXIT2}`]).toHaveLength(1));
-    expect(api.bodies[`PATCH ${base}/gateway/exits/${EXIT2}`][0]).toEqual({ weight: 7, max_clients: null });
+    expect(api.bodies[`PATCH ${base}/gateway/exits/${EXIT2}`]?.[0]).toEqual({ weight: 7, max_clients: null });
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(within(await rowOf("Amsterdam")).getByText("7")).toBeInTheDocument();
   });
