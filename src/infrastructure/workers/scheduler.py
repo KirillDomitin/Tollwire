@@ -8,14 +8,18 @@ from uuid import UUID
 
 from core.config import Settings
 from core.database.postgres import session_factory
+from core.exceptions import JobAlreadyRunningError
 from core.log import bind
 from core.redis import get_redis
 from modules.access.service import SubscriptionService
 from modules.audit.actor import SYSTEM_ACTOR
 from modules.audit.service import AuditService
 from modules.auth.service import AuthService
+from modules.geoip.service import GeoipService
 from modules.jobs.service import JobService
 from modules.monitoring.service import MetricsCollector, rollup_and_prune
+from modules.protocols.models.protocol import ProtocolType
+from modules.protocols.repository import ProtocolRepository
 from modules.servers.maintenance import ServerMaintenanceService
 
 logger = logging.getLogger("scheduler")
@@ -119,6 +123,19 @@ async def schedule_syncs() -> str:
     return f"queued {len(jobs)} syncs"
 
 
+async def schedule_geoip_update() -> str:
+    """Раз в неделю обновить российский список (этап 24.4), но только если есть хотя бы один шлюз: без шлюзов список
+    не нужен, а лишний поход на RIPE не делаем."""
+    async with session_factory() as session:
+        if not await ProtocolRepository(session).list_by_type(ProtocolType.AMNEZIA_GATEWAY):
+            return "no gateways, geoip update skipped"
+        try:
+            await GeoipService(session, SYSTEM_ACTOR).schedule_update()
+        except JobAlreadyRunningError:
+            return "geoip update is already running"
+    return "queued geoip update"
+
+
 async def fail_stale_jobs(max_age_seconds: int) -> str:
     async with session_factory() as session:
         failed = await JobService(session, SYSTEM_ACTOR).fail_stale_running(max_age_seconds)
@@ -161,6 +178,7 @@ def build_rules(settings: Settings) -> list[Rule]:
             lambda: apply_retention(settings.job_retention_days, settings.audit_retention_days),
         ),
         # Мониторинг: замер серверов (только чтение по SSH) и свёртка истории по часам.
+        Rule("geoip", settings.geoip_update_interval_seconds, schedule_geoip_update),
         Rule("metrics", settings.metrics_interval_seconds, MetricsCollector().collect_all),
         Rule("metrics_rollup", settings.metrics_rollup_interval_seconds, rollup_and_prune),
     ]

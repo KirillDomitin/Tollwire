@@ -45,6 +45,14 @@
 - Также `gateway_exits.drained_moved` / `drained_unassigned` (INTEGER NOT NULL DEFAULT 0): итог переноса клиентов при снятии выхода.
 - Downgrade удаляет эти колонки и таблицу (производные данные: карту на шлюзе панель собирает из БД).
 
+## «Россия напрямую» (`e5a1c9f3b207`)
+
+- `jobtype` += `GEOIP_UPDATE`, `GATEWAY_APPLY_RU` (в `autocommit_block`, `IF NOT EXISTS`). Таблицы `geoip_lists` (статус -
+  VARCHAR(16), не Postgres-enum; частичный уникальный индекс `uq_geoip_lists_one_active` по `status = 'ACTIVE'`) и
+  `geoip_overrides` (UNIQUE `uq_geoip_overrides_network`; `action` - VARCHAR(16)).
+- Downgrade удаляет таблицы (списки скачиваются заново), задачи двух новых типов и пересоздаёт `jobtype` из прежних значений
+  с `DEFAULT 'HEALTH_CHECK'` (как миграции выходов).
+
 ## Импорт клиентов (`f6b2d8a41c73`)
 
 - `jobtype` += `IMPORT_CLIENTS` — в `autocommit_block`, с `IF NOT EXISTS`.

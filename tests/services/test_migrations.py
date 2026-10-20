@@ -896,3 +896,100 @@ async def test_assignments_migration_adds_the_drain_counters_with_zero_defaults_
     finally:
         await _alembic("upgrade", "head")
     assert len(await _query(columns_sql)) == 2
+
+
+# --- «Россия напрямую» (24.4): geoip_lists, geoip_overrides и jobtype.GEOIP_UPDATE / GATEWAY_APPLY_RU ---
+
+BEFORE_GEOIP = "d2f8a6c3b514"  # голова перед миграцией geoip
+GEOIP_JOB_TYPES = {"GEOIP_UPDATE", "GATEWAY_APPLY_RU"}
+GEOIP_TABLES_SQL = text(
+    "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'geoip\\_%' ORDER BY tablename"
+)
+_INSERT_LIST = text(
+    "INSERT INTO geoip_lists (id, source, version, sha256, prefixes_count, addresses_count, data, status) "
+    "VALUES (gen_random_uuid(), 'ripe', '20261020', :sha, 3000, 3000000, '1.0.0.0/24', :status)"
+)
+_INSERT_OVERRIDE = text(
+    "INSERT INTO geoip_overrides (id, network, action) VALUES (gen_random_uuid(), :network, 'DIRECT')"
+)
+
+
+async def _refused(sql: object, params: dict[str, object]) -> str:
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(sql, params)  # type: ignore[call-overload]
+    except Exception as exc:  # noqa: BLE001 - нужен именно отказ БД
+        return str(exc).lower()
+    raise AssertionError("the database accepted a row it must refuse")
+
+
+async def test_geoip_migration_creates_the_tables_and_job_types() -> None:
+    assert await _query(GEOIP_TABLES_SQL) == [("geoip_lists",), ("geoip_overrides",)]
+    assert GEOIP_JOB_TYPES <= await _labels(JOB_TYPES_SQL)
+
+
+async def test_geoip_migration_defaults_and_the_orm_agree() -> None:
+    from modules.geoip.models.geoip import GeoipList, GeoipOverride, GeoipStatus, OverrideAction
+
+    async with engine.begin() as conn:
+        await conn.execute(_INSERT_LIST, {"sha": "a" * 64, "status": "ACTIVE"})
+        await conn.execute(_INSERT_OVERRIDE, {"network": "5.45.200.0/24"})
+    async with session_factory() as session:
+        (row,) = (await session.execute(select(GeoipList))).scalars().all()
+        assert (row.status, row.prefixes_count, row.addresses_count) == (GeoipStatus.ACTIVE, 3000, 3000000)
+        assert row.created_at is not None and row.activated_at is None
+        (override,) = (await session.execute(select(GeoipOverride))).scalars().all()
+        assert (override.network, override.action, override.note) == ("5.45.200.0/24", OverrideAction.DIRECT, None)
+
+
+async def test_geoip_allows_one_active_list_but_any_number_of_the_others() -> None:
+    async with engine.begin() as conn:
+        await conn.execute(_INSERT_LIST, {"sha": "a" * 64, "status": "ACTIVE"})
+        for status in ("CANDIDATE", "CANDIDATE", "SUPERSEDED", "SUPERSEDED"):
+            await conn.execute(_INSERT_LIST, {"sha": "b" * 64, "status": status})
+    assert "uq_geoip_lists_one_active" in await _refused(_INSERT_LIST, {"sha": "c" * 64, "status": "ACTIVE"})
+
+
+async def test_geoip_override_networks_are_unique() -> None:
+    async with engine.begin() as conn:
+        await conn.execute(_INSERT_OVERRIDE, {"network": "5.45.200.0/24"})
+    assert "uq_geoip_overrides_network" in await _refused(_INSERT_OVERRIDE, {"network": "5.45.200.0/24"})
+
+
+async def test_geoip_migration_downgrade_drops_the_tables_and_the_job_types_then_upgrade_restores() -> None:
+    async with engine.begin() as conn:
+        await conn.execute(_INSERT_LIST, {"sha": "a" * 64, "status": "ACTIVE"})
+        for job_type in ("GEOIP_UPDATE", "GATEWAY_APPLY_RU", "HEALTH_CHECK", "GATEWAY_ADD_EXIT"):
+            await conn.execute(
+                text("INSERT INTO jobs (id, type, status) VALUES (gen_random_uuid(), :type, 'SUCCESS')"),
+                {"type": job_type},
+            )
+    await _alembic("downgrade", BEFORE_GEOIP)
+    try:
+        assert await _query(GEOIP_TABLES_SQL) == []
+        assert not GEOIP_JOB_TYPES & await _labels(JOB_TYPES_SQL)
+        assert sorted(row[0] for row in await _query(text("SELECT type::text FROM jobs"))) == [
+            "GATEWAY_ADD_EXIT",
+            "HEALTH_CHECK",
+        ]
+    finally:
+        await _alembic("upgrade", "head")
+    assert GEOIP_JOB_TYPES <= await _labels(JOB_TYPES_SQL)
+    assert await _query(GEOIP_TABLES_SQL) == [("geoip_lists",), ("geoip_overrides",)]
+    assert await _query(text("SELECT count(*) FROM geoip_lists")) == [(0,)]
+
+
+async def test_geoip_migration_cycle_is_idempotent_and_keeps_the_job_default() -> None:
+    await _alembic("downgrade", BEFORE_GEOIP)
+    await _alembic("upgrade", "head")
+    await _alembic("downgrade", BEFORE_GEOIP)
+    try:
+        default = await _query(
+            text(
+                "SELECT column_default FROM information_schema.columns "
+                "WHERE table_name = 'jobs' AND column_name = 'type'"
+            )
+        )
+        assert "HEALTH_CHECK" in str(default)
+    finally:
+        await _alembic("upgrade", "head")

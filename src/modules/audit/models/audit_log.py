@@ -89,6 +89,13 @@ class AuditAction(enum.Enum):
     GATEWAY_EXIT_UPDATED = "gateway_exit_updated"
     GATEWAY_CLIENT_ASSIGNED = "gateway_client_assigned"  # клиенту шлюза назначен выход (выдача, перенос)
     GATEWAY_CLIENT_UNASSIGNED = "gateway_client_unassigned"  # клиент остался без выхода (снят последний/нет места)
+    # Россия напрямую (24.4)
+    GEOIP_LIST_UPDATED = "geoip_list_updated"  # получен новый список (версия, число префиксов, sha256, статус)
+    GEOIP_LIST_ACTIVATED = "geoip_list_activated"
+    GEOIP_OVERRIDE_ADDED = "geoip_override_added"
+    GEOIP_OVERRIDE_REMOVED = "geoip_override_removed"
+    GATEWAY_RU_APPLIED = "gateway_ru_applied"  # список применён на шлюзе (число маршрутов)
+    GATEWAY_RU_APPLY_FAILED = "gateway_ru_apply_failed"
     GATEWAY_CONTAINER_RECREATED = "gateway_container_recreated"  # контейнер шлюза пересоздан (клиенты переподключаются)
 
 
@@ -101,6 +108,7 @@ class AuditEntity:
     SUBSCRIPTION = "subscription"
     ACCESS_GRANT = "access_grant"
     VPN_CREDENTIAL = "vpn_credential"
+    GEOIP = "geoip"
 
 
 class AuditLog(UuidPkMixin, Base):

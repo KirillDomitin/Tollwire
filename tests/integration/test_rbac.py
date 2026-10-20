@@ -207,6 +207,14 @@ CRITICAL = {
     "POST /api/v1/servers/{server_id}/gateway/exits": Permission.SERVERS_MANAGE,  # ставит клиента на выход и туннель
     "PATCH /api/v1/servers/{server_id}/gateway/exits/{exit_id}": Permission.SERVERS_MANAGE,
     "DELETE /api/v1/servers/{server_id}/gateway/exits/{exit_id}": Permission.SERVERS_MANAGE,
+    "POST /api/v1/servers/{server_id}/gateway/ru/apply": Permission.SERVERS_MANAGE,  # меняет маршруты шлюза
+    "GET /api/v1/geoip": Permission.SERVERS_READ,
+    "GET /api/v1/geoip/overrides": Permission.SERVERS_READ,
+    "POST /api/v1/geoip/update": Permission.SERVERS_MANAGE,  # ходит на внешний источник и перестраивает шлюзы
+    "POST /api/v1/geoip/upload": Permission.SERVERS_MANAGE,
+    "POST /api/v1/geoip/{list_id}/activate": Permission.SERVERS_MANAGE,
+    "POST /api/v1/geoip/overrides": Permission.SERVERS_MANAGE,
+    "DELETE /api/v1/geoip/overrides/{override_id}": Permission.SERVERS_MANAGE,
     "POST /api/v1/admins": Permission.ADMINS_MANAGE,
     "PATCH /api/v1/admins/{admin_id}": Permission.ADMINS_MANAGE,
     "GET /api/v1/audit-logs": Permission.AUDIT_READ,

@@ -15,6 +15,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- Gateway: Russia goes direct. Clients of a gateway reach Russian addresses from the gateway's own address; everything else
+  still goes through the assigned exit. The list comes from RIPE (`delegated-ripencc-extended-latest`, https only, size
+  limit), is checked strictly (record and prefix thresholds, nothing that overlaps private or reserved ranges, nothing larger than /12) and is applied
+  atomically on the gateway: a spare routing table is filled with one `ip -batch` and then switched, so clients never see a
+  moment without a rule, and a failed apply leaves the working table untouched. A list that differs from the active one by
+  more than 20% (or that replaces a fifth of the covered addresses with foreign ones) waits for an admin (`POST /api/v1/geoip/{id}/activate`). `GET /api/v1/geoip`, `POST /geoip/update`
+  (weekly on the scheduler while a gateway exists), `POST /geoip/upload` (fallback without access to RIPE), per-network
+  overrides `GET/POST/DELETE /geoip/overrides` (`direct` / `tunnel`), `POST /servers/{id}/gateway/ru/apply`. Sync, health and
+  reinstall restore the routes. The country in RIPE is the registration country of a block: CDN-hosted Russian services and
+  DNS (which goes through the exit) are not covered.
+- Gateway: client traffic now goes through the exits.### Added
+
 - Gateway: client traffic now goes through the exits. Each client gets an exit when its config is issued (the least loaded
   healthy exit, by weight and client limit); the mapping lives in the DB and is applied to the gateway as a whole
   (`assign.rules`, restored after a container restart). A client without an exit has no internet (kill-switch), never a

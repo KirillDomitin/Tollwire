@@ -25,6 +25,10 @@ class ProtocolRepository:
         result = await self.session.execute(select(VPNProtocol).where(VPNProtocol.server_id == server_id))
         return result.scalars().all()
 
+    async def list_by_type(self, protocol_type: ProtocolType) -> Sequence[VPNProtocol]:
+        result = await self.session.execute(select(VPNProtocol).where(VPNProtocol.type == protocol_type))
+        return result.scalars().all()
+
     async def create(self, protocol: VPNProtocol) -> VPNProtocol:
         old_protocol = await self.get_by_server_and_type(protocol.server_id, protocol.type)
         if old_protocol:

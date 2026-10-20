@@ -20,7 +20,9 @@ from modules.access.import_service import ClientImportService
 from modules.access.models.vpn_credential import VPNCredential
 from modules.access.service import VPNCredentialService
 from modules.audit.actor import AuditActor
+from modules.gateway.ru import GatewayRuService
 from modules.gateway.service import GatewayExitService
+from modules.geoip.service import GeoipService
 from modules.jobs.models.job import Job, JobStatus, JobType
 from modules.jobs.queue import JobQueue
 from modules.jobs.service import JobService, job_error_text
@@ -103,6 +105,7 @@ class JobWorker:
                 JobType.IMPORT_CLIENTS,
                 JobType.GATEWAY_ADD_EXIT,
                 JobType.GATEWAY_REMOVE_EXIT,
+                JobType.GATEWAY_APPLY_RU,
             ]:
                 if not job.server_id:
                     await self._reject(session, job, f"Job with type '{job.type.value}' must have server_id")
@@ -155,6 +158,14 @@ class JobWorker:
                         case JobType.GATEWAY_REMOVE_EXIT:
                             async with ServerLock(server_id):
                                 job.result = await GatewayExitService(session, actor).run_remove(job)
+
+                        case JobType.GATEWAY_APPLY_RU:
+                            async with ServerLock(server_id):
+                                job.result = await GatewayRuService(session, actor).run_apply(job)
+
+                        case JobType.GEOIP_UPDATE:
+                            # Глобальная задача без сервера: качает список; применение на шлюзах ставит сам сервис.
+                            job.result = await GeoipService(session, actor).run_update()
 
                         case JobType.REVOKE_ACCESS:
                             async with ServerLock(server_id):
@@ -276,4 +287,8 @@ class JobWorker:
         self, session: AsyncSession, server_id: UUID, protocol_type: ProtocolType
     ) -> VPNProtocol:
         protocol = VPNProtocol(server_id=server_id, type=protocol_type)
-        return await ServerConnectionService(session).protocol_install(protocol)
+        installed = await ServerConnectionService(session).protocol_install(protocol)
+        if protocol_type == ProtocolType.AMNEZIA_GATEWAY:
+            # Переустановленный шлюз: российские маршруты вернуть из активного списка (сбой не отменяет установку).
+            await GatewayRuService(session, AuditActor(admin_id=None)).ensure_server(server_id)
+        return installed

@@ -46,6 +46,16 @@ class GatewayExitRepository:
         query = select(GatewayExit).where(GatewayExit.gateway_protocol_id == gateway_protocol_id)
         return (await self.session.execute(query.order_by(GatewayExit.slot))).scalars().all()
 
+    async def exit_hosts(self, gateway_protocol_id: UUID) -> list[str]:
+        """Адреса (поле host) серверов-выходов шлюза."""
+        query = (
+            select(VPNServer.host)
+            .join(VPNProtocol, VPNProtocol.server_id == VPNServer.id)
+            .join(GatewayExit, GatewayExit.exit_protocol_id == VPNProtocol.id)
+            .where(GatewayExit.gateway_protocol_id == gateway_protocol_id)
+        )
+        return list((await self.session.execute(query)).scalars())
+
     async def list_with_server_names(self, gateway_protocol_id: UUID) -> Sequence[tuple[GatewayExit, UUID, str]]:
         """Выходы шлюза вместе с id и именем сервера-выхода (для GET)."""
         query = (

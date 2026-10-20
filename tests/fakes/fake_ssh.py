@@ -43,6 +43,9 @@ from infrastructure.vpn.gateway_config import (
     KILL_SWITCH_PRIORITY,
     RU_RULE_PRIORITY,
     RU_TABLE,
+    RU_TABLES,
+    apply_ru_command,
+    apply_ru_script_file,
     assign_apply_command,
     assign_host_file,
     assign_show_command,
@@ -56,7 +59,10 @@ from infrastructure.vpn.gateway_config import (
     exit_slot_from_interface,
     exit_sync_command,
     exit_table,
+    render_apply_ru_script,
     render_start_script,
+    ru_applied_file,
+    ru_prefixes_file,
     sysctls_command,
 )
 
@@ -374,6 +380,14 @@ class FakeServer:
     assign_chain: dict[str, int] = field(default_factory=dict)  # адрес клиента -> метка в живой цепочке GW_ASSIGN
     assign_test_fails: bool = False  # `iptables-restore --test` падает
     assign_apply_fails: bool = False  # настоящее применение падает (после успешного --test)
+    # Россия напрямую (24.4). Фейк не исполняет bash: apply-ru.sh «выполняется» как действие, если файл на хосте равен
+    # тексту панели; список читается из ru.prefixes и строго проверяется (иначе ip -batch упал бы: код 1, таблица цела).
+    ru_tables: dict[int, list[str]] = field(
+        default_factory=dict
+    )  # таблица (200/201) -> маршруты "cidr via GW dev eth0"
+    ru_apply_fails: bool = False  # ip -batch падает на любом списке
+    ru_applies: int = 0  # сколько раз таблица переключена
+    default_gateway: str = "172.17.0.1"  # шлюз контейнера по умолчанию
     docker_run_fails: int = 0  # сколько ближайших `docker run` нашего контейнера упадут
     assign_applies: int = 0  # сколько раз цепочка заменена целиком
     exit_nat_cleanups: list[str] = field(default_factory=list)  # интерфейсы, чьё правило NAT снято вручную
@@ -499,7 +513,8 @@ class FakeServer:
         self.nat_rule = self.layout.nat_post_up in self.files.get(self.config_file, "")
         if self.container_commands.get(name, "").endswith("/start.sh"):  # контейнер шлюза: bash <путь>/start.sh
             self.exit_interfaces, self.exit_configs = [], {}  # новый запуск контейнера: интерфейсов ещё нет
-            self.assign_chain, self.firewall = {}, set()
+            self.assign_chain, self.firewall, self.ru_tables = {}, set(), {}
+            self.ip_rules = [rule for rule in self.ip_rules if not rule.startswith(f"{RU_RULE_PRIORITY}:")]
             self.ip_rules = [rule for rule in self.ip_rules if not rule.startswith(f"{EXIT_RULE_PRIORITY}:")]
             if not self._run_start_script("run"):
                 self.containers[name] = "exited"  # скрипт упал - контейнер вышел (restart policy в фейке не крутится)
@@ -524,8 +539,16 @@ class FakeServer:
             f"{RU_RULE_PRIORITY}:\tfrom {subnet} lookup {RU_TABLE}",
             f"{KILL_SWITCH_PRIORITY}:\tfrom {subnet} prohibit",
         )
-        self.ip_rules += [rule for rule in rules if rule not in self.ip_rules]
+        has_ru_rule = any(item.startswith(f"{RU_RULE_PRIORITY}:") for item in self.ip_rules)
+        self.ip_rules += [
+            rule
+            for rule in rules
+            if rule not in self.ip_rules
+            and not (has_ru_rule and "lookup" in rule and rule.startswith(f"{RU_RULE_PRIORITY}:"))
+        ]
         self.firewall |= {"isolation", "mss", "assign", "assign_hooks", "ct_guard"}
+        if mode == "run" and ru_prefixes_file(layout) in self.files and apply_ru_script_file(layout) in self.files:
+            self._apply_ru()  # start.sh: bash apply-ru.sh (сбой не роняет контейнер)
         saved = self.files.get(assign_host_file(layout))
         if saved is not None and (parsed := _parse_assign_rules(saved)) is not None:
             self.assign_chain = parsed  # start.sh: iptables-restore --noflush < assign.rules
@@ -676,7 +699,7 @@ class FakeServer:
             self.interface_peers = set()
             self.nat_rule = False
             self.ip_rules, self.firewall, self.exit_interfaces, self.exit_configs = [], set(), [], {}
-            self.assign_chain = {}
+            self.assign_chain, self.ru_tables = {}, {}
             return _ok()
         if cmd == f"rm -rf {layout.host_config_dir}":
             self.files = {
@@ -697,7 +720,14 @@ class FakeServer:
             gateway_files = (
                 set()
                 if layout == DEFAULT_LAYOUT
-                else {layout.host_config_file, f"{layout.host_config_dir}/start.sh", assign_host_file(layout)}
+                else {
+                    layout.host_config_file,
+                    f"{layout.host_config_dir}/start.sh",
+                    assign_host_file(layout),
+                    apply_ru_script_file(layout),
+                    ru_prefixes_file(layout),
+                    ru_applied_file(layout),
+                }
             )
             exit_file = self._exit_slot_of_host_file(match.group(1)) is not None
             if not _STAGE_FILE.fullmatch(match.group(1)) and match.group(1) not in gateway_files and not exit_file:
@@ -803,6 +833,45 @@ class FakeServer:
             return _ok(app.handshakes_output())
         raise AssertionError(f"FakeServer: unexpected docker exec in {app.container}: {inner!r}")
 
+    def _apply_ru(self) -> CommandResult:
+        """`bash apply-ru.sh`: список из ru.prefixes -> запасная таблица -> переключение правила 100. Строка, которую не
+        примет `ip -batch`, - код 1, активная таблица и правило не тронуты."""
+        layout = self.layout
+        if self.files.get(apply_ru_script_file(layout)) != render_apply_ru_script(layout):
+            return _fail("bash: apply-ru.sh: No such file", 127)
+        text = self.files.get(ru_prefixes_file(layout))
+        if text is None:
+            return _fail("apply-ru.sh: ru.prefixes is missing", 1)
+        routes = []
+        first = text.splitlines()[0] if text else ""
+        digest_match = re.fullmatch(r"# sha256=([0-9a-f]{64})", first)
+        for line in text.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            try:
+                ipaddress.IPv4Network(line, strict=True)
+            except ValueError:
+                return _fail("Error: inet prefix is badly formatted.", 1)
+            routes.append(f"{line} via {self.default_gateway} dev eth0")
+        if not routes:
+            return _fail("apply-ru.sh: the list is empty", 1)
+        if self.ru_apply_fails:
+            return _fail("RTNETLINK answers: Network is unreachable", 1)
+        active = next((int(rule.split("lookup ")[1]) for rule in self.ip_rules if rule.startswith("100:")), None)
+        spare = RU_TABLES[1] if active != RU_TABLES[1] else RU_TABLES[0]
+        self.ru_tables[spare] = routes
+        self.ip_rules = [rule for rule in self.ip_rules if not rule.startswith("100:")]
+        self.ip_rules.append(f"100:\tfrom {layout.tunnel_subnet} lookup {spare}")
+        if active is not None and active != spare:
+            self.ru_tables.pop(active, None)
+        self.ru_applies += 1
+        if digest_match:
+            self.files[ru_applied_file(layout)] = digest_match.group(1) + "\n"
+        else:
+            self.files.pop(ru_applied_file(layout), None)
+        return _ok(f"apply-ru.sh: {len(routes)} routes in table {spare}\n")
+
     def _assign_apply(self) -> CommandResult:
         """`iptables-restore --test --noflush < assign.rules && iptables-restore --noflush < assign.rules`."""
         text = self.files.get(assign_host_file(self.layout))
@@ -889,6 +958,13 @@ class FakeServer:
             return _ok() if self._run_start_script("apply") else _fail("bash: start.sh: No such file", 127)
         if inner == assign_apply_command(layout).removeprefix(f"docker exec {layout.container_name} "):
             return self._assign_apply()
+        if inner == apply_ru_command(layout).removeprefix(f"docker exec {layout.container_name} "):
+            return self._apply_ru()
+        if match := re.fullmatch(r"ip route show table (\d+)", inner):
+            table = int(match.group(1))
+            if table not in RU_TABLES:
+                raise AssertionError(f"FakeServer: ip route show of an unexpected table: {inner!r}")
+            return _ok("".join(f"{route}{chr(10)}" for route in self.ru_tables.get(table, [])))
         if inner == "iptables -t mangle -S PREROUTING":
             lines = ["-P PREROUTING ACCEPT"]
             if "assign_hooks" in self.firewall:

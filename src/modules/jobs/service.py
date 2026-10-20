@@ -42,6 +42,7 @@ _COMPLETED: dict[JobType, AuditAction] = {
     JobType.IMPORT_CLIENTS: AuditAction.CLIENTS_IMPORT_COMPLETED,
     JobType.GATEWAY_ADD_EXIT: AuditAction.GATEWAY_EXIT_ADD_COMPLETED,
     JobType.GATEWAY_REMOVE_EXIT: AuditAction.GATEWAY_EXIT_REMOVE_COMPLETED,
+    JobType.GATEWAY_APPLY_RU: AuditAction.GATEWAY_RU_APPLIED,
 }
 _FAILED: dict[JobType, AuditAction] = {
     JobType.INSTALL_SERVER: AuditAction.SERVER_INSTALL_FAILED,
@@ -55,6 +56,7 @@ _FAILED: dict[JobType, AuditAction] = {
     JobType.IMPORT_CLIENTS: AuditAction.CLIENTS_IMPORT_FAILED,
     JobType.GATEWAY_ADD_EXIT: AuditAction.GATEWAY_EXIT_ADD_FAILED,
     JobType.GATEWAY_REMOVE_EXIT: AuditAction.GATEWAY_EXIT_REMOVE_FAILED,
+    JobType.GATEWAY_APPLY_RU: AuditAction.GATEWAY_RU_APPLY_FAILED,
 }
 # Задачи, чей result (без секретов) целиком попадает в meta аудита: итог виден в журнале, а не только в задаче.
 _RESULT_IN_AUDIT = frozenset({JobType.INSTALL_SSH_KEY})
@@ -188,6 +190,8 @@ class JobService:
             for name in ("moved", "unassigned"):
                 if name in job.result:
                     meta[name] = job.result[name]
+        if job.type == JobType.GATEWAY_APPLY_RU and job.result:
+            meta["routes"] = job.result.get("routes")  # число маршрутов; самих префиксов в журнале нет
         if job.type in _RESULT_IN_AUDIT and job.result:
             meta.update(job.result)
         if job.type == JobType.DISCOVER_VPN and job.result:

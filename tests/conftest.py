@@ -60,6 +60,19 @@ def no_container_wait(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     yield
 
 
+@pytest.fixture(autouse=True)
+def no_geoip_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Задача GEOIP_UPDATE (её ставит установка шлюза без списка и планировщик) не должна ходить в сеть: по умолчанию
+    скачивание падает; тесты geoip подменяют его сами."""
+    from infrastructure.geoip import DownloadError
+    from modules.geoip import service as geoip_service
+
+    async def refuse(url: str, max_bytes: int, timeout: int = 120) -> str:
+        raise DownloadError("The network is disabled in tests")
+
+    monkeypatch.setattr(geoip_service, "download_text", refuse)
+
+
 def run_alembic(*args: str) -> None:
     """Alembic в отдельном процессе: его env.py сам делает asyncio.run, а внутри нашего цикла так нельзя."""
     result = subprocess.run(

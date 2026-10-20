@@ -16,6 +16,7 @@ from modules.auth.models.admin import Admin  # noqa
 from modules.auth.models.admin_session import AdminSession  # noqa
 from modules.gateway.models.gateway_assignment import GatewayAssignment  # noqa
 from modules.gateway.models.gateway_exit import GatewayExit  # noqa
+from modules.geoip.models.geoip import GeoipList, GeoipOverride  # noqa
 from modules.jobs.models.job import Job  # noqa
 from modules.monitoring.models.metrics import ServerMetric, ServerMetricHourly  # noqa
 from modules.protocols.models.protocol import VPNProtocol  # noqa

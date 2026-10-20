@@ -21,6 +21,7 @@ from modules.gateway.assignment import GatewayAssignmentService
 from modules.gateway.exit_health import exit_report, record_exit_status
 from modules.gateway.naming import exit_client_name, is_exit_client_name
 from modules.gateway.repository import GatewayExitRepository
+from modules.gateway.ru import GatewayRuService
 from modules.protocols.models.protocol import APP_PROTOCOLS, ProtocolType, VPNProtocol
 from modules.protocols.repository import ProtocolRepository
 from modules.servers.reachability import mark_reachable, mark_unreachable
@@ -125,7 +126,19 @@ class ServerSyncService:
         if isinstance(provider, AmneziaGatewayProvider):
             report["exits"] = await self._report_exits(provider, protocol, report["issues"])
             report["assignments"] = await self._reconcile_assignments(provider, protocol, report["issues"])
+            report["ru"] = await self._reconcile_ru(provider, report["issues"], protocol.server_id)
         return report
+
+    async def _reconcile_ru(
+        self, provider: AmneziaGatewayProvider, issues: list[str], server_id: UUID
+    ) -> dict[str, Any]:
+        """«Россия напрямую»: есть активный список, а таблица на шлюзе пуста или устарела - применить его.
+        Нет активного списка - ничего. Сбой применения не роняет sync, он попадает в issues."""
+        try:
+            return await GatewayRuService(self.session, SYSTEM_ACTOR).ensure(provider, issues, server_id)
+        except SSHServerError as exc:
+            issues.append(f"Failed to check the Russian routes: {str(exc)[:200]}")
+            return {"error": True}
 
     async def _reconcile_assignments(
         self, provider: AmneziaGatewayProvider, protocol: VPNProtocol, issues: list[str]

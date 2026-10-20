@@ -31,6 +31,7 @@ from core.exceptions import (
     LiveCredentialExistsError,
     NotFoundError,
     SSHHostKeyNotPinnedError,
+    StateConflictError,
 )
 from core.log import setup_logging
 from core.middleware import RequestContextMiddleware
@@ -41,6 +42,7 @@ from modules.audit.api.v1.router import router as audit_router
 from modules.auth.api.v1.admins import router as admins_router
 from modules.auth.api.v1.router import router as auth_router
 from modules.gateway.api.v1.router import router as gateway_router
+from modules.geoip.api.v1.router import router as geoip_router
 from modules.jobs.api.v1.router import router as job_router
 from modules.monitoring.api.v1.router import router as monitoring_router
 from modules.servers.api.v1.router import router as server_router
@@ -86,6 +88,7 @@ _STATUS_BY_ERROR: dict[type[AppError], int] = {
     ConfigUnavailableError: 409,  # импортированный клиент: конфига нет
     ImportNotAllowedError: 409,  # ключа нет в отчёте поиска или peer не поддерживается
     GatewayExitError: 409,  # шлюз не установлен / выход не подходит / уже добавлен
+    StateConflictError: 409,  # действие невозможно в текущем состоянии объекта
 }
 
 
@@ -126,6 +129,7 @@ app.include_router(auth_router)
 app.include_router(admins_router)
 app.include_router(server_router)
 app.include_router(gateway_router)
+app.include_router(geoip_router)
 app.include_router(job_router)
 app.include_router(vpn_user_router)
 app.include_router(access_router)

@@ -13,8 +13,10 @@ from core.ssh_exception import CommandExecutionError
 from infrastructure.vpn.amnezia import AmneziaInstaller
 from infrastructure.vpn.gateway import AmneziaGatewayProvider
 from infrastructure.vpn.provider import HealthCheck, VPNProvider
+from modules.audit.actor import SYSTEM_ACTOR
 from modules.gateway.exit_health import record_exit_status
 from modules.gateway.repository import GatewayExitRepository
+from modules.gateway.ru import GatewayRuService
 from modules.protocols.models.protocol import APP_PROTOCOLS, ProtocolType, VPNProtocol
 from modules.protocols.repository import ProtocolRepository
 from modules.servers.models.server import HealthStatus, VPNServer
@@ -98,6 +100,9 @@ class ServerHealthService:
             )
         if protocol is not None and isinstance(provider, AmneziaGatewayProvider):
             await self._record_exits(provider, protocol)
+            ru = await GatewayRuService(self.session, SYSTEM_ACTOR).health_check(provider, protocol.server_id)
+            if ru is not None:
+                checks.append(ru)
         return {
             "type": protocol_type.value,
             "in_db": protocol is not None,

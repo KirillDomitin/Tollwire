@@ -8,7 +8,7 @@ import posixpath
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from ipaddress import IPv4Address
+from ipaddress import IPv4Address, IPv4Network
 from typing import ClassVar
 
 from core.ssh_exception import CommandExecutionError, DockerError
@@ -30,6 +30,9 @@ from infrastructure.vpn.gateway_config import (
     PORT_PICK_ATTEMPTS,
     ExitTunnel,
     ExitTunnelStatus,
+    RuStatus,
+    apply_ru_command,
+    apply_ru_script_file,
     apply_rules_command,
     assign_apply_command,
     assign_host_file,
@@ -55,9 +58,15 @@ from infrastructure.vpn.gateway_config import (
     parse_published_ports,
     parse_transfer,
     prerouting_show_command,
+    render_apply_ru_script,
     render_assign_rules,
     render_exit_config,
+    render_ru_file,
     render_start_script,
+    ru_active_table,
+    ru_applied_file,
+    ru_prefixes_file,
+    ru_routes_command,
     sysctl_flags,
     sysctls_command,
 )
@@ -117,6 +126,8 @@ class AmneziaGatewayProvider(AmneziaWGProvider):
             created.files.append(layout.host_config_file)
             await self.ssh_client.write_file(host_start_script(layout), render_start_script(layout))
             created.files.append(host_start_script(layout))
+            await self.ssh_client.write_file(apply_ru_script_file(layout), render_apply_ru_script(layout))
+            created.files.append(apply_ru_script_file(layout))
             created.container = True  # с этой строки docker run мог создать контейнер, даже если вернул ошибку
             await self._run_container(port)
         except BaseException:
@@ -165,9 +176,16 @@ class AmneziaGatewayProvider(AmneziaWGProvider):
         if await self.ssh_client.read_file_optional(host_start_script(layout)) != script:
             await self.ssh_client.write_file(host_start_script(layout), script)
 
+    async def _write_apply_ru_script(self) -> None:
+        layout = self.layout
+        script = render_apply_ru_script(layout)
+        if await self.ssh_client.read_file_optional(apply_ru_script_file(layout)) != script:
+            await self.ssh_client.write_file(apply_ru_script_file(layout), script)
+
     async def _repair(self, port: int) -> None:
         """Повторная установка: чинит то, что отстало от кода панели, не трогая ключи, порт и клиентов."""
         await self._write_start_script()
+        await self._write_apply_ru_script()
         await self._recreate_if_outdated(port)
         state = (await self.ssh_client.execute(self._ps("State"))).stdout.strip()
         if state != "running":
@@ -426,6 +444,53 @@ class AmneziaGatewayProvider(AmneziaWGProvider):
         if result.exit_status != 0:
             raise CommandExecutionError("The assignment chain is missing on the gateway")
         return parse_assign_chain(result.stdout)
+
+    # --- Россия напрямую (этап 24.4) ----------------------------------------------------------------------------
+
+    async def apply_ru(self, prefixes: Iterable[IPv4Network]) -> RuStatus:
+        """Заменяет российские маршруты шлюза списком `prefixes` (атомарно: запасная таблица 200/201, затем переключение
+        `ip rule 100`). Файл `ru.prefixes` (SFTP, 0600) и скрипт `apply-ru.sh` пишутся перед запуском; сбой возвращает
+        прежний список в файле (активная таблица скрипт не трогает, так что при перезапуске контейнера загрузится
+        тот же список, что работает сейчас). Вызывающий держит ServerLock шлюза. Возвращает итоговое состояние."""
+        layout = self.layout
+        text, _ = render_ru_file(prefixes)
+        if not text:
+            raise ValueError("The Russian-direct list is empty")
+        await self._require_running()
+        script_path, list_path = apply_ru_script_file(layout), ru_prefixes_file(layout)
+        script = render_apply_ru_script(layout)
+        if await self.ssh_client.read_file_optional(script_path) != script:
+            await self.ssh_client.write_file(script_path, script)
+        old = await self.ssh_client.read_file_optional(list_path)
+        await self.ssh_client.write_file(list_path, text)
+        try:
+            result = await self.ssh_client.execute(apply_ru_command(layout), timeout=300)
+            if result.exit_status != 0:
+                raise CommandExecutionError(f"Failed to apply the Russian routes (exit code {result.exit_status})")
+        except BaseException:
+            with contextlib.suppress(Exception):
+                if old is None:
+                    await self.ssh_client.execute(f"rm -f {list_path}")
+                else:
+                    await self.ssh_client.write_file(list_path, old)
+            raise
+        return await self.ru_status()
+
+    async def ru_status(self) -> RuStatus:
+        """Активная таблица `ru`, число маршрутов и отпечаток применённого списка. Нет правила 100 - (None, 0)."""
+        layout = self.layout
+        rules = await self.ssh_client.execute(f"docker exec {layout.container_name} {IP_RULE_SHOW}")
+        if rules.exit_status != 0:
+            raise CommandExecutionError("Failed to read ip rules of the gateway")
+        table = ru_active_table(rules.stdout, layout.tunnel_subnet)
+        if table is None:
+            return RuStatus(None, 0)
+        routes = await self.ssh_client.execute(ru_routes_command(layout, table))
+        if routes.exit_status != 0:
+            raise CommandExecutionError("Failed to read the Russian routes of the gateway")
+        applied = await self.ssh_client.read_file_optional(ru_applied_file(layout))
+        digest = applied.strip() if applied and applied.strip() else None
+        return RuStatus(table, sum(1 for line in routes.stdout.splitlines() if line.strip()), digest)
 
     async def assignments_in_sync(self, desired: Mapping[IPv4Address, int]) -> bool:
         """Карта в цепочке GW_ASSIGN и файл assign.rules (его загрузит start.sh после перезапуска) совпадают с желаемой.

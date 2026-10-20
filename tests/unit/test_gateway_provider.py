@@ -43,6 +43,7 @@ from tests.gateway_support import add_live_exit
 
 CONFIG = "/opt/vpn-admin/gw/gw0.conf"
 START = "/opt/vpn-admin/gw/start.sh"
+APPLY_RU = "/opt/vpn-admin/gw/apply-ru.sh"
 
 
 @pytest.fixture(autouse=True)
@@ -118,7 +119,7 @@ def test_start_script_uses_only_tools_that_exist_in_the_image() -> None:
 def test_start_script_installs_the_routing_rules_and_kill_switch() -> None:
     text = script()
     assert "SUBNET=10.77.0.0/22" in text and "GW_IF=gw0" in text and "GW_DIR=/etc/vpn-admin/gw" in text
-    assert "ensure_rule 100 'lookup (200|ru)' lookup 200" in text
+    assert "ensure_rule 100 'lookup (200|201|ru)' lookup 200" in text
     assert "ensure_rule 9000 prohibit prohibit" in text
     assert 'ip rule add priority "$prio" from "$SUBNET" "$@"' in text
     # Повторный запуск не плодит правила: перед add - проверка по ip rule show.
@@ -325,7 +326,7 @@ async def test_install_runs_the_container_with_sysctls_and_the_start_script() ->
 
 async def test_install_writes_config_then_start_script_before_docker_run_with_closed_permissions() -> None:
     fake = await installed()
-    assert fake.writes == [CONFIG, START]  # конфиг, скрипт; docker run - после (иначе контейнер вышел бы)
+    assert fake.writes == [CONFIG, START, APPLY_RU]  # конфиг, скрипты; docker run - после (иначе контейнер вышел бы)
     assert fake.running and fake.start_script_runs == ["run"]
     assert fake.files[START] == render_start_script(GATEWAY_LAYOUT)
     assert fake.file_modes[START] == fake.file_modes[CONFIG] == 0o600
@@ -471,7 +472,7 @@ async def test_existing_container_without_config_is_an_error_not_a_first_install
     commands_before = len(fake.commands)
     with pytest.raises(CommandExecutionError, match="exists but .*gw0.conf is missing"):
         await call(fake, "install")
-    assert fake.files == before_files and fake.writes == [CONFIG, START]  # новых записей нет
+    assert fake.files == before_files and fake.writes == [CONFIG, START, APPLY_RU]  # новых записей нет
     assert fake.containers == {NAME: "running"} and fake.container_ports[NAME] == before_port
     new = fake.commands[commands_before:]
     assert not any(c.startswith(("docker run", "docker stop", "docker rm", "rm ", "mkdir")) for c in new)

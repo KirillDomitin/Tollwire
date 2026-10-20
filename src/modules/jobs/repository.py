@@ -53,6 +53,13 @@ class JobRepository:
         result = cast(CursorResult[Any], await self.session.execute(query))
         return int(result.rowcount)
 
+    async def has_unfinished_of_type(self, job_type: JobType) -> bool:
+        """Незавершённая задача этого типа есть (для глобальных задач без сервера)."""
+        query = (
+            select(Job.id).where(Job.type == job_type, Job.status.in_((JobStatus.PENDING, JobStatus.RUNNING))).limit(1)
+        )
+        return (await self.session.execute(query)).first() is not None
+
     async def has_unfinished_for_server(self, job_type: JobType, server_id: UUID) -> bool:
         query = (
             select(Job.id)

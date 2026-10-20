@@ -18,6 +18,7 @@ from modules.audit.actor import AuditActor
 from modules.audit.dependencies import get_audit_actor
 from modules.auth.dependencies import get_current_admin, require
 from modules.auth.permissions import Permission
+from modules.gateway.ru import GatewayRuService
 from modules.gateway.schemas import GatewayAssignmentRead, GatewayExitCreate, GatewayExitRead, GatewayExitUpdate
 from modules.gateway.service import GatewayExitService
 from modules.jobs.models.job import Job
@@ -110,3 +111,23 @@ async def list_assignments(server_id: UUID, service: Service) -> list[GatewayAss
         return await service.list_assignments(server_id)
     except NotFoundError as exc:
         raise HTTPException(404, detail=str(exc))
+
+
+@router.post(
+    "/ru/apply", dependencies=[Depends(require(Permission.SERVERS_MANAGE))], response_model=JobRead, status_code=202
+)
+async def apply_ru(
+    server_id: UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    actor: Annotated[AuditActor, Depends(get_audit_actor)],
+) -> Job:
+    """Применяет на шлюзе эффективный список «Россия напрямую» (активный список и исключения): задача
+    `gateway_apply_ru`. Нужен активный список (`GET /api/v1/geoip`)."""
+    try:
+        return await GatewayRuService(session, actor).schedule_apply(server_id)
+    except NotFoundError as exc:
+        raise HTTPException(404, detail=str(exc))
+    except CredentialNotFound:
+        raise HTTPException(409, detail="Credentials do not exist to perform this operation")
+    except (GatewayExitError, JobAlreadyRunningError) as exc:
+        raise HTTPException(409, detail=str(exc))

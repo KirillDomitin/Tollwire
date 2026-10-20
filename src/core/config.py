@@ -57,6 +57,14 @@ class Settings(BaseSettings):
     job_retention_days: int = 90
     audit_retention_days: int = 365
 
+    # Список российских префиксов для «России напрямую» на шлюзе (этап 24.4). Адрес - только из настроек и только https.
+    geoip_source_url: str = "https://ftp.ripe.net/pub/stats/ripencc/delegated-ripencc-extended-latest"
+    geoip_download_max_bytes: int = 20 * 1024 * 1024
+    geoip_download_timeout_seconds: int = 120
+    geoip_upload_max_bytes: int = 5 * 1024 * 1024
+    # Раз в неделю; ставится, только если на панели есть хотя бы один шлюз. 0 - выключено.
+    geoip_update_interval_seconds: int = 7 * 24 * 3600
+
     # Мониторинг серверов: замер по SSH (только чтение) и свёртка истории по часам.
     metrics_interval_seconds: int = 60
     metrics_rollup_interval_seconds: int = 300
@@ -65,6 +73,13 @@ class Settings(BaseSettings):
     metrics_concurrency: int = 5  # сколько серверов опрашивать одновременно
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    @field_validator("geoip_source_url")
+    @classmethod
+    def _geoip_url_is_https(cls, value: str) -> str:
+        if not value.startswith("https://"):
+            raise ValueError("GEOIP_SOURCE_URL must be an https URL")
+        return value
 
     @field_validator("jwt_secret_key")
     @classmethod

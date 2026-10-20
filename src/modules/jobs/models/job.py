@@ -36,6 +36,9 @@ class JobType(enum.Enum):
     # Выходы шлюза (24.2): server_id задачи - сервер-шлюз, params["exit_id"] - строка gateway_exits.
     GATEWAY_ADD_EXIT = "gateway_add_exit"
     GATEWAY_REMOVE_EXIT = "gateway_remove_exit"
+    # Список российских префиксов (24.4): обновление (глобальная, без сервера) и применение на шлюзе.
+    GEOIP_UPDATE = "geoip_update"
+    GATEWAY_APPLY_RU = "gateway_apply_ru"
 
 
 class Job(UuidPkMixin, TimestampMixin, Base):

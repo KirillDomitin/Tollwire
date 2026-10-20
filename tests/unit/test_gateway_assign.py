@@ -222,7 +222,7 @@ def test_start_script_creates_the_chain_and_the_three_hooks_idempotently_before_
 def test_start_script_loads_the_map_in_both_modes_but_a_bad_file_does_not_stop_the_container() -> None:
     text = render_start_script(GATEWAY_LAYOUT)
     load = text.index("iptables-restore -w --noflush")
-    assert load < text.index('if [ "$MODE" != apply ]')  # и run, и apply
+    assert load < text.index('if [ "$MODE" != apply ]; then')  # и run, и apply (до подъёма gw0)
     assert '|| echo "start.sh: assignments were not loaded" >&2' in text
 
 
