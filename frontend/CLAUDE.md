@@ -47,8 +47,7 @@ npm run typecheck && npm run lint && npm test && npm run build
 - Только визуальный редизайн: данных, которых нет в API (тарифы, имя/телефон, уровни логов INFO/WARN/ERROR, ёмкость сервера),
   не рисуем и не выдумываем — берём аналоги из реальных данных.
 - Таблицы — только через `DataTable.module.css` (`wrap`, `table`, `stack` + `data-label` на узком экране); состояния — `StatusPill` или пилюля в стиле `StatusPill` (`.badge` в `Gateway.module.css`, `ImportClientsDialog.module.css`).
-- **Долг (в API нет — не рисуем):** имя/фамилия/телефон/Telegram и тариф пользователя, «автопродление», уровни логов INFO/WARN/ERROR, лимит клиентов у сервера («78/200»), uptime сервера, число доступов в списке пользователей, блокировка пользователя из списка, «Настройки» в сайдбаре.
-- **Долг: статус пользователя «Отключён».** Плашка в списке пользователей показывает `VPNUser.status = disabled`, но бэкенд этот статус нигде не проверяет (доступ определяют подписка и отзыв доступа), а по умолчанию у вручную созданного пользователя он `disabled`. Плашка вводит в заблуждение. Решить: либо убрать плашку, либо сделать блокировку настоящей (см. `src/modules/vpn_users/CLAUDE.md`, «Известные проблемы»).
+- **Долг интерфейса ведётся в GitHub Issues** (метка `tech-debt`): профиль пользователя ([#3](https://github.com/KirillDomitin/Tollwire/issues/3)), тарифы ([#4](https://github.com/KirillDomitin/Tollwire/issues/4)), уровни журнала и поиск ([#7](https://github.com/KirillDomitin/Tollwire/issues/7)), лимит клиентов и uptime сервера ([#8](https://github.com/KirillDomitin/Tollwire/issues/8)), «Настройки», число доступов и действия в списке пользователей ([#9](https://github.com/KirillDomitin/Tollwire/issues/9)), статус «Отключён» без эффекта ([#2](https://github.com/KirillDomitin/Tollwire/issues/2)). Чего нет в API — в интерфейсе не рисуем.
 - Lighthouse «Доступность» = 100 — держать. Мобильная ширина без горизонтальной прокрутки.
 
 ## Правила
