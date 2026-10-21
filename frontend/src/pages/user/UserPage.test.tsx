@@ -146,8 +146,74 @@ describe("UsersPage", () => {
     expect(link).toHaveAttribute("href", `/users/${USER}`);
     const row = link.closest("tr")!;
     expect(row).toHaveAttribute("data-signal", "ok");
-    expect(within(row).getByText(/^До /)).toBeInTheDocument();
+    expect(within(row).getByText("Действует")).toBeInTheDocument();
+    expect(within(row).getByText(/^осталось \d+ дн/)).toBeInTheDocument();
     expect(screen.getByText("1 пользователь — 1 с доступом")).toBeInTheDocument();
+    expect(screen.getByText("Показано 1 из 1")).toBeInTheDocument();
+  });
+});
+
+describe("UsersPage search", () => {
+  it("filters the table by name or email", async () => {
+    mockApi();
+    renderWithProviders(<UsersPage />);
+
+    expect(await screen.findByRole("link", { name: "alice" })).toBeInTheDocument();
+    const search = screen.getByRole("searchbox", { name: "Поиск по имени или email" });
+    await userEvent.type(search, "zzz");
+    expect(screen.getByText("Ничего не найдено. Измените запрос.")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "alice" })).not.toBeInTheDocument();
+
+    await userEvent.clear(search);
+    await userEvent.type(search, "ALICE@exa");
+    expect(screen.getByRole("link", { name: "alice" })).toBeInTheDocument();
+  });
+});
+
+describe("UserPage layout: header, tiles and tabs", () => {
+  it("shows the title with the subscription pill, the summary tiles and the tabs", async () => {
+    mockApi();
+    renderCard();
+
+    const heading = await screen.findByRole("heading", { level: 1, name: "Пользователь: alice" });
+    expect(heading.parentElement).toHaveTextContent("Действует");
+    expect(screen.getByRole("link", { name: "Назад к списку" })).toHaveAttribute("href", "/users");
+    const tiles = within(screen.getByRole("group", { name: "Сводка по пользователю" }));
+    expect(tiles.getByRole("group", { name: "Создан" })).toBeInTheDocument();
+    expect(tiles.getByRole("group", { name: "Подписка до" })).toBeInTheDocument();
+    await vi.waitFor(() =>
+      expect(tiles.getByRole("group", { name: "Серверов в доступе" })).toHaveTextContent("1"),
+    );
+    for (const name of ["Основное", "Подписка", "Доступы"]) {
+      expect(screen.getByRole("tab", { name })).toBeInTheDocument();
+    }
+  });
+
+  it("opens on the access tab with a subscription and on the subscription tab without one", async () => {
+    mockApi();
+    const { unmount } = renderCard();
+    expect(await screen.findByRole("tab", { name: "Доступы" })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByRole("button", { name: "Показать конфиг" })).toBeInTheDocument();
+    unmount();
+
+    mockApi({ subscriptions: [], grants: [], credentials: [] });
+    renderCard();
+    expect(await screen.findByRole("tab", { name: "Подписка" })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByRole("button", { name: "Выдать доступ" })).toBeInTheDocument();
+  });
+
+  it("keeps the details and the danger zone on the general tab and the period on the subscription tab", async () => {
+    mockApi();
+    renderCard();
+
+    await userEvent.click(await screen.findByRole("tab", { name: "Основное" }));
+    expect(screen.getByRole("heading", { name: "Данные пользователя" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Удалить пользователя" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Показать конфиг" })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("tab", { name: "Подписка" }));
+    expect(screen.getByRole("button", { name: "Изменить срок" })).toBeInTheDocument();
+    expect(screen.getByText(/^осталось \d+ дн/)).toBeInTheDocument();
   });
 });
 
@@ -160,7 +226,7 @@ describe("users without an email (taken over from AmneziaVPN)", () => {
     unmount();
 
     renderCard();
-    expect(await screen.findByRole("heading", { level: 1, name: "alice" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Пользователь: alice" })).toBeInTheDocument();
     expect(screen.getByText("—")).toBeInTheDocument();
   });
 
@@ -177,7 +243,9 @@ describe("users without an email (taken over from AmneziaVPN)", () => {
     await userEvent.type(within(dialog).getByLabelText("Имя"), "Alice B");
     await userEvent.click(within(dialog).getByRole("button", { name: "Сохранить" }));
 
-    expect(await screen.findByRole("heading", { level: 1, name: "Alice B" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Пользователь: Alice B" }),
+    ).toBeInTheDocument();
     expect(calls).toContain('PATCH body {"username":"Alice B","description":null}');
   });
 
@@ -462,7 +530,9 @@ describe("UserPage", () => {
     await userEvent.type(within(dialog).getByLabelText("Заметка (необязательно)"), "из бухгалтерии");
     await userEvent.click(within(dialog).getByRole("button", { name: "Сохранить" }));
 
-    expect(await screen.findByRole("heading", { level: 1, name: "Alice B" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Пользователь: Alice B" }),
+    ).toBeInTheDocument();
     expect(calls).toContain(
       'PATCH body {"username":"Alice B","email":"alice@example.com","description":"из бухгалтерии"}',
     );
@@ -576,11 +646,12 @@ describe("users in English", () => {
 
     expect(await screen.findByRole("heading", { name: "Users" })).toBeInTheDocument();
     expect(await screen.findByText("1 user — 1 with access")).toBeInTheDocument();
-    for (const name of ["User", "Access", "Note"]) {
+    for (const name of ["User", "Subscription", "Valid until", "Note"]) {
       expect(screen.getByRole("columnheader", { name })).toBeInTheDocument();
     }
     const row = screen.getByRole("link", { name: "alice" }).closest("tr")!;
-    expect(within(row).getByText(/^Until /)).toBeInTheDocument();
+    expect(within(row).getByText("Active")).toBeInTheDocument();
+    expect(within(row).getByText(/days left$/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add user" })).toBeInTheDocument();
   });
 
@@ -592,12 +663,15 @@ describe("users in English", () => {
     expect(within(row).getByRole("button", { name: "Show config" })).toBeInTheDocument();
     expect(within(row).getByRole("button", { name: "Revoke config" })).toBeInTheDocument();
     expect(within(row).getByRole("button", { name: "Remove server" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "All users" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Back to list" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Access" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add servers" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("tab", { name: "Subscription" }));
     expect(screen.getByRole("button", { name: "Change term" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Revoke access" })).toBeInTheDocument();
 
+    await userEvent.click(screen.getByRole("tab", { name: "General" }));
     await userEvent.click(screen.getByRole("button", { name: "Delete user" }));
     const dialog = await screen.findByRole("alertdialog");
     expect(within(dialog).getByText("Delete user “alice”?")).toBeInTheDocument();

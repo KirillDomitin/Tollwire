@@ -78,16 +78,13 @@
     "submit": "Save",
     "busy": "Saving…",
     "errors": {
-      "conflict": "A server with this name already exists. Choose another name.",
       "invalid": "Check the name: 1 to 100 characters."
     }
   },
   "card": {
     "loading": "Loading the server…",
     "toList": "Back to the servers list",
-    "allServers": "All servers",
     "events": "Server events",
-    "checked": "checked",
     "neverChecked": "not checked yet",
     "notPrepared": "The server isn't set up yet. A superadmin can set it up.",
     "loadingCharts": "Loading charts…",
@@ -142,7 +139,6 @@
       "cpu": "CPU load",
       "memory": "Memory",
       "disk": "Disk",
-      "of": "{{used}} of {{total}}",
       "label": "Server metrics"
     }
   },
@@ -311,7 +307,6 @@
     },
     "empty": "No samples for this period. The panel takes them once a minute over SSH — the first ones appear soon after the worker starts; an unreachable server leaves gaps.",
     "summary": {
-      "cpu": "CPU",
       "memory": "Memory",
       "disk": "Disk",
       "network": "Network ↓ / ↑",
@@ -335,7 +330,6 @@
       "time": "Time"
     },
     "charts": {
-      "cpu": "CPU",
       "network": "Network",
       "memory": "Memory",
       "clients": "Clients online",

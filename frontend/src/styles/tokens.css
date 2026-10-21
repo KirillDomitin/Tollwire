@@ -45,7 +45,6 @@
   --chart-grid: rgb(120 150 220 / 12%);
 
   --focus: #6ea8ff;
-  --danger-bg: rgb(240 97 109 / 10%);
 
   --font-sans: "Twemoji Country Flags", "Golos Text Variable", "Golos Text", system-ui, sans-serif;
   /* Моноширинный — только для того, что копируют: отпечатки ключей, адреса. */
@@ -77,16 +76,4 @@
   --sidebar-width: 248px;
 
   color-scheme: dark;
-
-  /* Переходные имена прежней палитры «Журнал связи» — для страниц, которые ещё не переведены на новые токены
-     (пользователи, журнал, диалоги переноса и шлюза). Новый код их не использует; когда страниц не останется,
-     блок удаляется. */
-  --fog: var(--bg);
-  --paper: var(--surface);
-  --pine: var(--text);
-  --pine-soft: var(--text-soft);
-  --pine-faint: var(--text-muted);
-  --rule: var(--border);
-  --rule-strong: var(--border-strong);
-  --on-pine: var(--on-accent);
 }

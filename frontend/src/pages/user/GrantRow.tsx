@@ -7,6 +7,7 @@ import { useAuth } from "../../auth/AuthContext";
 import { Button } from "../../components/Button";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Notice } from "../../components/Notice";
+import { StatusPill } from "../../components/StatusPill";
 import i18n from "../../i18n";
 import { formatDay, isLive } from "../../lib/access";
 import { isUnfinished } from "../../lib/jobs";
@@ -19,6 +20,8 @@ import { liveCredential, userKeys } from "./useUser";
 const ConfigDialog = lazy(() =>
   import("./ConfigDialog").then((module) => ({ default: module.ConfigDialog })),
 );
+
+const TONES = { ok: "online", process: "process", down: "offline", idle: "neutral" } as const;
 
 type RowState = { tone: "ok" | "process" | "down" | "idle"; text: string };
 
@@ -127,8 +130,8 @@ export function GrantRow({
           {server && <span className={styles.address}>{server.host}</span>}
           {gateway && <span className={styles.kind}>{t("users.grant.gateway")}</span>}
         </span>
-        <span className={styles.grantState} role="status">
-          {state.text}
+        <span role="status">
+          <StatusPill tone={TONES[state.tone]}>{state.text}</StatusPill>
         </span>
       </div>
       {job?.status === "failed" && job.error && !credential && (
@@ -147,10 +150,13 @@ export function GrantRow({
       {live && !busy && (
         <div className={styles.row}>
           {credential && !imported && can("config:reveal") && (
-            <Button onClick={() => setConfigOpen(true)}>{t("users.grant.showConfig")}</Button>
+            <Button size="sm" onClick={() => setConfigOpen(true)}>
+              {t("users.grant.showConfig")}
+            </Button>
           )}
           {!credential && !fromApp && manage && (
             <Button
+              size="sm"
               busy={issue.isPending}
               busyLabel={t("users.grant.queueBusy")}
               onClick={() => issue.mutate()}
@@ -160,7 +166,11 @@ export function GrantRow({
           )}
           {credential && manage && (
             <ConfirmDialog
-              trigger={<Button variant="secondary">{t("users.grant.revokeConfig.trigger")}</Button>}
+              trigger={
+                <Button size="sm" variant="secondary">
+                  {t("users.grant.revokeConfig.trigger")}
+                </Button>
+              }
               title={t("users.grant.revokeConfig.title")}
               consequences={
                 imported
@@ -182,7 +192,11 @@ export function GrantRow({
           )}
           {manage && (
             <ConfirmDialog
-              trigger={<Button variant="secondary">{t("users.grant.removeServer.trigger")}</Button>}
+              trigger={
+                <Button size="sm" variant="secondary">
+                  {t("users.grant.removeServer.trigger")}
+                </Button>
+              }
               title={t("users.grant.removeServer.title", { server: serverName })}
               consequences={t("users.grant.removeServer.consequences")}
               actionLabel={t("users.grant.removeServer.action")}

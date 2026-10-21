@@ -11,6 +11,13 @@ import { router } from "./App";
 import { AuthProvider } from "./auth/AuthContext";
 import "./i18n";
 
+// Раньше у панели был выбор темы; теперь тема одна — ключ в браузере больше не нужен.
+try {
+  localStorage.removeItem("vpn-panel-theme");
+} catch {
+  /* приватный режим и т.п. — нечего чистить */
+}
+
 const queryClient = new QueryClient({
   defaultOptions: {
     // 401/403 не повторяем: повтор не поможет. Сетевые сбои — один повтор.

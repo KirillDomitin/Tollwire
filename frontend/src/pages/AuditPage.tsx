@@ -5,10 +5,14 @@ import { Link, useSearchParams } from "react-router";
 import { api, unwrap } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Button } from "../components/Button";
+import table from "../components/DataTable.module.css";
 import { Notice } from "../components/Notice";
+import { PageHeader } from "../components/PageHeader";
+import { StatusPill, type PillTone } from "../components/StatusPill";
 import {
   actionGroups,
   actionsOfGroup,
+  AUDIT_ACTIONS,
   auditActionText,
   auditActor,
   auditDetails,
@@ -21,7 +25,6 @@ import {
 } from "../lib/audit";
 import { exactTime, timeAgo } from "../lib/time";
 import styles from "./AuditPage.module.css";
-import ledger from "./Ledger.module.css";
 
 const LIMIT = 100;
 
@@ -144,11 +147,7 @@ export function AuditPage() {
 
   return (
     <section aria-labelledby="audit-title">
-      <header className={ledger.header}>
-        <h1 id="audit-title" className={ledger.title}>
-          {t("audit.title")}
-        </h1>
-      </header>
+      <PageHeader id="audit-title" title={t("audit.title")} subtitle={t("audit.subtitle")} />
 
       <form className={styles.filters} onSubmit={(event) => event.preventDefault()}>
         <label className={styles.field}>
@@ -208,7 +207,7 @@ export function AuditPage() {
         )}
       </form>
 
-      {log.isPending && <p className={ledger.quiet}>{t("audit.loading")}</p>}
+      {log.isPending && <p className={styles.quiet}>{t("audit.loading")}</p>}
 
       {log.isError && (
         <Notice
@@ -223,29 +222,32 @@ export function AuditPage() {
       )}
 
       {log.data && rows.length === 0 && (
-        <p className={ledger.quiet}>{filtered ? t("audit.emptyFiltered") : t("audit.empty")}</p>
+        <p className={styles.quiet}>{filtered ? t("audit.emptyFiltered") : t("audit.empty")}</p>
       )}
 
       {rows.length > 0 && (
         <>
-          <p className={styles.count} aria-live="polite">
+          <div className={table.wrap}>
+            <table className={`${table.table} ${table.stack}`} aria-busy={log.isFetchingNextPage}>
+              <thead>
+                <tr>
+                  <th scope="col">{t("audit.columns.when")}</th>
+                  <th scope="col">{t("audit.columns.group")}</th>
+                  <th scope="col">{t("audit.columns.event")}</th>
+                  <th scope="col">{t("audit.columns.who")}</th>
+                  <th scope="col">{t("audit.columns.object")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((entry) => (
+                  <Row key={entry.id} entry={entry} names={names} now={now} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className={`${table.foot} ${styles.count}`} aria-live="polite">
             {t("audit.shown", { count: rows.length })}
           </p>
-          <table className={ledger.table} aria-busy={log.isFetchingNextPage}>
-            <thead>
-              <tr>
-                <th scope="col">{t("audit.columns.event")}</th>
-                <th scope="col">{t("audit.columns.who")}</th>
-                <th scope="col">{t("audit.columns.object")}</th>
-                <th scope="col">{t("audit.columns.when")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((entry) => (
-                <Row key={entry.id} entry={entry} names={names} now={now} />
-              ))}
-            </tbody>
-          </table>
           {log.hasNextPage && (
             <div className={styles.pager}>
               <Button
@@ -264,6 +266,16 @@ export function AuditPage() {
   );
 }
 
+/** Цвет пилюли типа события: ошибки — красным, чувствительное — жёлтым, шлюз — фиолетовым, остальное — синим/нейтральным. */
+function groupTone(action: AuditLog["action"]): PillTone {
+  const info = AUDIT_ACTIONS[action];
+  if (info.tone === "down") return "offline";
+  if (info.tone === "warn") return "warning";
+  if (info.group === "gateway") return "violet";
+  if (info.group === "signIn") return "neutral";
+  return "process";
+}
+
 function Row({ entry, names, now }: { entry: AuditLog; names: Names; now: Date }) {
   const { t } = useTranslation();
   const tone = auditTone(entry.action);
@@ -272,28 +284,42 @@ function Row({ entry, names, now }: { entry: AuditLog; names: Names; now: Date }
   if (entry.ip_address) details.push({ label: t("audit.details.address"), value: entry.ip_address });
 
   return (
-    <tr className={ledger.row} data-signal={tone ?? "idle"}>
-      <th scope="row" className={styles.event} data-tone={tone ?? undefined}>
-        <span className={styles.text}>{auditActionText(entry.action)}</span>
-        {details.length > 0 && (
-          <details className={styles.details}>
-            <summary>{t("audit.details_summary")}</summary>
-            <dl className={styles.facts}>
-              {details.map((detail, index) => (
-                <div key={index} className={styles.fact}>
-                  <dt>{detail.label}</dt>
-                  <dd>{detail.value}</dd>
-                </div>
-              ))}
-            </dl>
-          </details>
-        )}
+    <tr data-signal={tone ?? "idle"}>
+      <td className={table.muted} data-label={t("audit.columns.when")}>
+        <time dateTime={entry.created_at} title={exactTime(entry.created_at)}>
+          {timeAgo(entry.created_at, now)}
+        </time>
+      </td>
+      <td data-label={t("audit.columns.group")}>
+        <StatusPill tone={groupTone(entry.action)} dot={false}>
+          {auditGroupLabel(AUDIT_ACTIONS[entry.action].group)}
+        </StatusPill>
+      </td>
+      <th scope="row" className={`${table.primary} ${styles.event}`} data-tone={tone ?? undefined}>
+        <div className={styles.body}>
+          <span className={styles.text}>{auditActionText(entry.action)}</span>
+          {details.length > 0 && (
+            <details className={styles.details}>
+              <summary>{t("audit.details_summary")}</summary>
+              <dl className={styles.facts}>
+                {details.map((detail, index) => (
+                  <div key={index} className={styles.fact}>
+                    <dt>{detail.label}</dt>
+                    <dd>{detail.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </details>
+          )}
+        </div>
       </th>
-      <td className={ledger.meta}>{auditActor(entry)}</td>
-      <td>
+      <td className={table.muted} data-label={t("audit.columns.who")}>
+        {auditActor(entry)}
+      </td>
+      <td data-label={t("audit.columns.object")}>
         {subject ? (
           subject.to ? (
-            <Link to={subject.to} className={ledger.link}>
+            <Link to={subject.to} className={table.title}>
               {subject.label}
             </Link>
           ) : (
@@ -302,11 +328,6 @@ function Row({ entry, names, now }: { entry: AuditLog; names: Names; now: Date }
         ) : (
           "—"
         )}
-      </td>
-      <td className={ledger.meta}>
-        <time dateTime={entry.created_at} title={exactTime(entry.created_at)}>
-          {timeAgo(entry.created_at, now)}
-        </time>
       </td>
     </tr>
   );

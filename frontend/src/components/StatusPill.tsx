@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import type { Signal } from "../lib/serverSignal";
 import styles from "./StatusPill.module.css";
 
-export type PillTone = "online" | "offline" | "warning" | "process" | "neutral";
+export type PillTone = "online" | "offline" | "warning" | "process" | "neutral" | "violet";
 
 /** Сигнал сервера (ok/warn/down/…) → тон пилюли. Одно правило на весь интерфейс. */
 export const SIGNAL_TONE: Record<Signal, PillTone> = {

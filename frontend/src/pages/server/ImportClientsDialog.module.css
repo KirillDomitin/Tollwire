@@ -14,15 +14,17 @@
   margin-bottom: var(--space-2);
   padding: 0;
   font-size: var(--text-meta);
-  color: var(--pine-soft);
+  color: var(--text-soft);
 }
 
 /* Постоянное пояснение (не ошибка): спокойная врезка с полосой слева. */
 .note {
   margin: 0;
   padding: var(--space-3) var(--space-4);
-  background: var(--fog);
+  background: var(--warn-soft);
+  border: 1px solid color-mix(in srgb, var(--signal-warn) 35%, transparent);
   border-left: var(--rule-width) solid var(--signal-warn);
+  border-radius: var(--radius-control);
 }
 
 .toolbar {
@@ -39,26 +41,28 @@
   padding: 0;
   max-height: 45vh;
   overflow-y: auto;
-  background: var(--fog);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
 }
 
 .client {
   display: grid;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid var(--border);
   border-left: var(--rule-width) solid var(--signal-idle);
 }
 .client:last-child {
   border-bottom: 0;
 }
 .client[data-selected="true"] {
-  border-left-color: var(--pine);
-  background: var(--paper);
+  border-left-color: var(--accent);
+  background: var(--surface-2);
 }
 .client[data-status="in_panel"],
 .client[data-status="unsupported"] {
-  color: var(--pine-soft);
+  color: var(--text-soft);
 }
 
 .clientHead {
@@ -81,21 +85,28 @@
   overflow-wrap: anywhere;
 }
 
+/* Состояние клиента — пилюлей, как StatusPill. */
 .badge {
+  display: inline-block;
+  padding: 1px 10px;
+  border-radius: var(--radius-pill);
   font-size: var(--text-meta);
-  color: var(--pine-soft);
+  background: var(--idle-soft);
+  color: var(--text-soft);
 }
 .badge[data-status="new"] {
+  background: var(--ok-soft);
   color: var(--signal-ok);
 }
 .badge[data-status="revoked_in_panel"] {
+  background: var(--warn-soft);
   color: var(--signal-warn-text);
 }
 
 .meta {
   margin: 0;
   font-size: var(--text-meta);
-  color: var(--pine-soft);
+  color: var(--text-soft);
   overflow-wrap: anywhere;
 }
 
@@ -107,7 +118,7 @@
 
 .progress {
   margin: 0;
-  color: var(--signal-process);
+  color: var(--accent-text);
 }
 
 .resultTitle {

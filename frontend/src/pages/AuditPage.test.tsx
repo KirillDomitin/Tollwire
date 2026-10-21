@@ -95,6 +95,27 @@ describe("AuditPage list", () => {
     expect(screen.getByText("Система")).toBeInTheDocument();
   });
 
+  it("labels each event with its group as a coloured pill and keeps the time in its own column", async () => {
+    mockApi({
+      pages: [
+        [
+          row(1),
+          row(2, { action: "login_failed", admin_id: null, admin_email: null, entity_type: null }),
+          row(3, { action: "server_install_failed" }),
+        ],
+      ],
+    });
+    renderAudit();
+
+    await screen.findByText("Добавлен сервер");
+    const rows = screen.getAllByRole("row").slice(1);
+    expect(within(rows[0]!).getByText("Серверы")).toBeInTheDocument();
+    expect(within(rows[1]!).getByText("Вход")).toBeInTheDocument();
+    expect(rows[1]).toHaveAttribute("data-signal", "warn");
+    expect(rows[2]).toHaveAttribute("data-signal", "down");
+    expect(screen.getByRole("columnheader", { name: "Тип" })).toBeInTheDocument();
+  });
+
   it("does not print secrets that happen to be in the metadata", async () => {
     mockApi({ pages: [[row(1, { metadata: { name: "lab-1", private_key: "TOPSECRETKEY" } })]] });
     renderAudit();

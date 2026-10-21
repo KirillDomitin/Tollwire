@@ -1,9 +1,18 @@
+.quiet {
+  color: var(--text-soft);
+}
+
+/* Строка фильтров — карточка: поля в один ряд, на узком экране — столбцом. */
 .filters {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
   gap: var(--space-3) var(--space-4);
   margin-bottom: var(--space-5);
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
 }
 
 .field {
@@ -14,29 +23,44 @@
 
 .label {
   font-size: var(--text-meta);
-  color: var(--pine-faint);
+  color: var(--text-soft);
 }
 
 .control {
-  min-height: 2.5rem;
+  min-height: 40px;
   padding: var(--space-1) var(--space-3);
   font: inherit;
-  color: inherit;
-  background: var(--paper);
-  border: 1px solid var(--rule-strong);
-  border-radius: 4px;
+  color: var(--text);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+}
+
+.control:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-strong));
+}
+
+.control:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .count {
-  margin-bottom: var(--space-3);
-  font-size: var(--text-meta);
-  color: var(--pine-soft);
+  margin-top: var(--space-3);
 }
 
 .event {
-  display: grid;
-  gap: var(--space-1);
   font-weight: 550;
+}
+
+.body {
+  min-width: 0;
+  text-align: left;
+}
+
+.text {
+  display: block;
 }
 
 .event[data-tone="down"] .text {
@@ -50,7 +74,7 @@
   cursor: pointer;
   font-size: var(--text-meta);
   font-weight: 400;
-  color: var(--pine-soft);
+  color: var(--text-soft);
 }
 
 .facts {
@@ -67,7 +91,7 @@
 }
 
 .facts dt {
-  color: var(--pine-faint);
+  color: var(--text-muted);
 }
 
 .facts dd {

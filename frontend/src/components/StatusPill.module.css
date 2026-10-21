@@ -40,3 +40,8 @@
   border-color: color-mix(in srgb, var(--signal-process) 35%, transparent);
   color: var(--accent-text);
 }
+.pill[data-tone="violet"] {
+  background: var(--violet-soft);
+  border-color: color-mix(in srgb, var(--violet) 35%, transparent);
+  color: var(--violet);
+}

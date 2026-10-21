@@ -3,8 +3,23 @@
 .page {
   composes: page from "../server/ServerPage.module.css";
 }
+.top {
+  composes: top from "../server/ServerPage.module.css";
+}
 .back {
   composes: back from "../server/ServerPage.module.css";
+}
+.titleRow {
+  composes: titleRow from "../server/ServerPage.module.css";
+}
+.titleGroup {
+  composes: titleGroup from "../server/ServerPage.module.css";
+}
+.title {
+  composes: title from "../server/ServerPage.module.css";
+}
+.actions {
+  composes: actions from "../server/ServerPage.module.css";
 }
 .hint {
   composes: hint from "../server/ServerPage.module.css";
@@ -12,14 +27,11 @@
 .row {
   composes: row from "../server/ServerPage.module.css";
 }
-.header {
-  composes: header from "../server/ServerPage.module.css";
-}
 .identity {
   composes: identity from "../server/ServerPage.module.css";
 }
-.title {
-  composes: title from "../server/ServerPage.module.css";
+.infoName {
+  composes: infoName from "../server/ServerPage.module.css";
 }
 .address {
   composes: address from "../server/ServerPage.module.css";
@@ -27,17 +39,20 @@
 .description {
   composes: description from "../server/ServerPage.module.css";
 }
-.state {
-  composes: state from "../server/ServerPage.module.css";
+.tiles {
+  composes: tiles from "../server/ServerPage.module.css";
 }
-.stateLabel {
-  composes: stateLabel from "../server/ServerPage.module.css";
+.tabs {
+  composes: tabs from "../server/ServerPage.module.css";
 }
 .section {
   composes: section from "../server/ServerPage.module.css";
 }
 .sectionTitle {
   composes: sectionTitle from "../server/ServerPage.module.css";
+}
+.facts {
+  composes: facts from "../server/ServerPage.module.css";
 }
 .danger {
   composes: danger from "../server/ServerPage.module.css";
@@ -49,23 +64,35 @@
   composes: choice from "../server/ServerPage.module.css";
 }
 
+/* Карточка сведений: аватар, имя, email. */
+.info {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
 .label {
   margin-bottom: var(--space-2);
   padding: 0;
   font-size: var(--text-meta);
-  color: var(--pine-soft);
+  color: var(--text-soft);
 }
 
 .date {
   padding: var(--space-1) var(--space-2);
   font: inherit;
-  color: var(--pine);
-  background: var(--paper);
-  border: 1px solid var(--rule-strong);
+  color: var(--text);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-control);
 }
 
-/* Выбор серверов — столбцом: имя и адрес читаются как строки журнала. */
+/* Выбор серверов — столбцом: имя и адрес читаются как строки таблицы. */
 .servers {
   display: grid;
   gap: var(--space-2);
@@ -84,9 +111,10 @@
   padding: 0 var(--space-2);
   font-size: var(--text-meta);
   font-weight: 550;
-  color: var(--pine);
-  border: 1px solid var(--rule-strong);
-  border-radius: var(--radius-control);
+  color: var(--violet);
+  background: var(--violet-soft);
+  border: 1px solid color-mix(in srgb, var(--violet) 35%, transparent);
+  border-radius: var(--radius-pill);
 }
 .servers .address {
   font-size: var(--text-meta);
@@ -97,26 +125,28 @@
   justify-items: start;
   gap: var(--space-3);
   padding: var(--space-4) var(--space-5);
-  background: var(--paper);
+  background: var(--surface-sunken);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-control);
 }
 
-/* Доступ к серверам: строки с полосой состояния конфига — тот же знак, что у статусов. */
+/* Доступ к серверам: карточки со статусом конфига. */
 .grants {
+  display: grid;
+  gap: var(--space-3);
   list-style: none;
   margin: 0;
   padding: 0;
-  background: var(--paper);
 }
 
 .grant {
   display: grid;
   gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--rule);
+  padding: var(--space-4);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
   border-left: var(--rule-width) solid var(--signal-idle);
-}
-.grant:last-child {
-  border-bottom: 0;
+  border-radius: var(--radius-control);
 }
 .grant[data-tone="ok"] {
   border-left-color: var(--signal-ok);
@@ -131,9 +161,9 @@
 .grantHead {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
-  gap: var(--space-1) var(--space-4);
+  gap: var(--space-2) var(--space-4);
 }
 
 .grantServer {
@@ -147,20 +177,9 @@
   font-weight: 400;
   font-size: var(--text-meta);
 }
-
-.grantState {
-  font-size: var(--text-meta);
-  color: var(--pine-soft);
-}
-.grant[data-tone="process"] .grantState {
-  color: var(--signal-process);
-}
-.grant[data-tone="down"] .grantState {
-  color: var(--signal-down);
-}
 .grant[data-tone="idle"] .grantServer {
   font-weight: 400;
-  color: var(--pine-soft);
+  color: var(--text-soft);
 }
 
 .grantError {
@@ -174,7 +193,9 @@
   list-style: none;
   margin: 0;
   padding: 0;
-  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  overflow: hidden;
 }
 .history li {
   display: flex;
@@ -182,7 +203,7 @@
   justify-content: space-between;
   gap: var(--space-1) var(--space-4);
   padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid var(--border);
   font-variant-numeric: tabular-nums;
 }
 .history li:last-child {
@@ -199,10 +220,17 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* QR всегда тёмный на белом, в любой теме: так его читают камеры телефонов. */
+/* QR всегда тёмный на белом: так его читают камеры телефонов. */
 .qr {
   justify-self: center;
   max-width: 100%;
   height: auto;
   background: #fff;
+  border-radius: var(--radius-control);
+}
+
+@media (max-width: 760px) {
+  .info {
+    padding: var(--space-4);
+  }
 }

@@ -153,7 +153,8 @@
     "event": "Event",
     "who": "Who",
     "object": "Object",
-    "when": "When"
+    "when": "When",
+    "group": "Type"
   },
   "loadingMore": "Loading…",
   "more": "Show more",
@@ -188,5 +189,6 @@
       "true": "yes",
       "false": "no"
     }
-  }
+  },
+  "subtitle": "Log of panel and server events"
 }
