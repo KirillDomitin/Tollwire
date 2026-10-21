@@ -6,6 +6,7 @@ import { api, unwrap, type Server } from "../../api/client";
 import { Button } from "../../components/Button";
 import { CountrySelect } from "../../components/CountrySelect";
 import { Dialog, DialogActions } from "../../components/Dialog";
+import { PencilIcon } from "../../components/icons";
 import { Notice } from "../../components/Notice";
 import { TextField } from "../../components/TextField";
 import { NAME_MAX_WITH_FLAG, splitFlag, withFlag } from "../../lib/flags";
@@ -49,7 +50,7 @@ export function EditServerDialog({ server }: { server: Server }) {
 
   return (
     <>
-      <Button variant="quiet" onClick={() => setOpen(true)}>
+      <Button icon={<PencilIcon size={16} />} onClick={() => setOpen(true)}>
         {t("servers.edit.trigger")}
       </Button>
       <Dialog
@@ -75,7 +76,7 @@ export function EditServerDialog({ server }: { server: Server }) {
           />
           {save.isError && <Notice>{save.error.message}</Notice>}
           <DialogActions>
-            <Button variant="quiet" onClick={() => close(false)}>
+            <Button variant="secondary" onClick={() => close(false)}>
               {t("common.cancel")}
             </Button>
             <Button type="submit" busy={save.isPending} busyLabel={t("servers.edit.busy")}>

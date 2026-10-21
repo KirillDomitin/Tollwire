@@ -5,17 +5,28 @@
     "retry": "Retry",
     "empty": "No servers yet. A server you add will show up here with its status, and you can set it up step by step on its page.",
     "columns": {
-      "server": "Server",
+      "server": "Name",
       "state": "Status",
       "clients": "Clients",
-      "cpu": "CPU",
+      "cpu": "Load",
       "check": "Last check",
-      "hostKey": "Host key"
+      "hostKey": "Host key",
+      "address": "Address"
     },
     "clientsTitle": "Online out of all clients on the server",
     "clientsOf": "{{online}} of {{total}}",
     "neverChecked": "not checked yet",
-    "hostKeyUnpinned": "not pinned"
+    "hostKeyUnpinned": "not pinned",
+    "subtitle": "All VPN servers and their current state",
+    "search": "Search by name or address",
+    "noMatches": "Nothing found. Change the search.",
+    "shown": "Showing {{shown}} of {{total}}",
+    "stats": {
+      "total": "Total servers",
+      "online": "Online",
+      "offline": "Offline",
+      "clients": "Total clients"
+    }
   },
   "signal": {
     "error": "Error",
@@ -106,7 +117,34 @@
       "hasClients": "The server has live clients. Revoke their access first.",
       "removeGateway": "Can't remove the gateway: it has live clients (revoke their access first) or SSH access isn't set."
     },
-    "queueBusy": "Queuing…"
+    "queueBusy": "Queuing…",
+    "backToList": "Back to list",
+    "title": "Server: {{name}}",
+    "tabs": {
+      "label": "Server sections",
+      "charts": "Charts",
+      "config": "Configuration",
+      "jobs": "Tasks",
+      "settings": "Settings"
+    },
+    "info": {
+      "country": "Country",
+      "protocol": "Protocol",
+      "protocolNone": "not installed",
+      "check": "Last check",
+      "hostKey": "Server key",
+      "hostKeyPinned": "pinned",
+      "hostKeyNone": "not pinned",
+      "protocolApp": "from the AmneziaVPN app"
+    },
+    "tiles": {
+      "clients": "Clients online",
+      "cpu": "CPU load",
+      "memory": "Memory",
+      "disk": "Disk",
+      "of": "{{used}} of {{total}}",
+      "label": "Server metrics"
+    }
   },
   "setup": {
     "title": "Server setup",

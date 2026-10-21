@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 
@@ -6,7 +6,8 @@ import i18n from "../i18n";
 import { currentLanguage, memoByLanguage } from "../i18n/format";
 import styles from "./TimeChart.module.css";
 
-export type SeriesTone = "primary" | "secondary" | "peak";
+/** Цвет линии: синий, зелёный, фиолетовый — как в макете; peak — пунктир янтарного цвета для пиковых значений. */
+export type SeriesTone = "blue" | "green" | "violet" | "peak";
 
 export interface ChartSeries {
   label: string;
@@ -31,8 +32,9 @@ interface TimeChartProps {
 }
 
 const TONE_TOKENS: Record<SeriesTone, string> = {
-  primary: "--pine",
-  secondary: "--signal-process",
+  blue: "--chart-blue",
+  green: "--chart-green",
+  violet: "--chart-violet",
   peak: "--signal-warn",
 };
 
@@ -40,23 +42,15 @@ function token(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#888";
 }
 
-/** Тема сменилась (системная или явная) — график перерисовывается, чтобы взять новые цвета. */
-function useThemeVersion(): number {
-  const [version, setVersion] = useState(0);
-  useEffect(() => {
-    const bump = () => setVersion((value) => value + 1);
-    const observer = new MutationObserver(bump);
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
-    const media =
-      typeof window.matchMedia === "function" ? window.matchMedia("(prefers-color-scheme: dark)") : null;
-    media?.addEventListener("change", bump);
-    return () => {
-      observer.disconnect();
-      media?.removeEventListener("change", bump);
-    };
-  }, []);
-  return version;
+/** Цвет #rrggbb с прозрачностью — для заливки под линией; не hex — null (заливки не будет). */
+function withAlpha(color: string, alpha: number): string | null {
+  const match = /^#([0-9a-f]{6})$/i.exec(color);
+  if (!match?.[1]) return null;
+  const value = parseInt(match[1], 16);
+  return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${alpha})`;
 }
+
+const FONT = '12px "Golos Text Variable", "Golos Text", system-ui, sans-serif';
 
 const hourFormat = memoByLanguage(
   (lng) => new Intl.DateTimeFormat(lng, { hour: "2-digit", minute: "2-digit" }),
@@ -76,13 +70,12 @@ export function TimeChart({
 }: TimeChartProps) {
   const holder = useRef<HTMLDivElement>(null);
   const chart = useRef<uPlot | null>(null);
-  const themeVersion = useThemeVersion();
 
   useEffect(() => {
     const target = holder.current;
     if (!target) return;
-    const axisColor = token("--pine-faint");
-    const gridColor = token("--rule");
+    const axisColor = token("--text-muted");
+    const gridColor = token("--chart-grid");
     const timeLabel = timeScale === "hours" ? hourFormat() : dayFormat();
     const options: uPlot.Options = {
       width: target.clientWidth || 600,
@@ -93,16 +86,18 @@ export function TimeChart({
       axes: [
         {
           stroke: axisColor,
+          font: FONT,
           grid: { stroke: gridColor, width: 1 },
-          ticks: { stroke: gridColor, width: 1 },
+          ticks: { show: false },
           values: (_, splits) => splits.map((seconds) => timeLabel.format(new Date(seconds * 1000))),
         },
         {
           stroke: axisColor,
+          font: FONT,
           size: 72,
           incrs: integer ? [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000] : undefined,
           grid: { stroke: gridColor, width: 1 },
-          ticks: { stroke: gridColor, width: 1 },
+          ticks: { show: false },
           values: (_, splits) => splits.map((value) => format(value)),
         },
       ],
@@ -111,15 +106,33 @@ export function TimeChart({
           label: i18n.t("servers.monitoring.series.time"),
           value: (_, seconds) => (seconds ? new Date(seconds * 1000).toLocaleString(currentLanguage()) : "—"),
         },
-        ...series.map((item) => ({
-          label: item.label,
-          stroke: token(TONE_TOKENS[item.tone]),
-          width: item.tone === "peak" ? 1 : 1.75,
-          dash: item.tone === "peak" ? [4, 4] : undefined,
-          spanGaps: false, // нет замера — разрыв линии, а не «ноль»
-          points: { show: false },
-          value: (_: uPlot, value: number | null) => (value === null ? "—" : format(value)),
-        })),
+        ...series.map((item) => {
+          const color = token(TONE_TOKENS[item.tone]);
+          const top = withAlpha(color, 0.26);
+          const bottom = withAlpha(color, 0);
+          return {
+            label: item.label,
+            stroke: color,
+            width: item.tone === "peak" ? 1 : 2,
+            dash: item.tone === "peak" ? [4, 4] : undefined,
+            // Мягкая заливка под линией, как в макете; у пикового пунктира заливки нет.
+            fill:
+              item.tone !== "peak" && top && bottom
+                ? (u: uPlot) => {
+                    // Легенда запрашивает заливку до первой отрисовки, когда области графика ещё нет, — тогда сплошной цвет.
+                    const { top: y, height } = u.bbox;
+                    if (!Number.isFinite(y) || !Number.isFinite(height) || height <= 0) return top;
+                    const gradient = u.ctx.createLinearGradient(0, y, 0, y + height);
+                    gradient.addColorStop(0, top);
+                    gradient.addColorStop(1, bottom);
+                    return gradient;
+                  }
+                : undefined,
+            spanGaps: false, // нет замера — разрыв линии, а не «ноль»
+            points: { show: false },
+            value: (_: uPlot, value: number | null) => (value === null ? "—" : format(value)),
+          };
+        }),
       ],
     };
     const data = [times, ...series.map((item) => item.values)] as uPlot.AlignedData;
@@ -136,7 +149,7 @@ export function TimeChart({
       chart.current = null;
     };
     // Данные и вид перестраиваем целиком: точек немного, а так проще не рассинхронизировать опции и данные.
-  }, [times, series, format, timeScale, range, integer, height, themeVersion]);
+  }, [times, series, format, timeScale, range, integer, height]);
 
   return (
     <figure className={styles.chart}>

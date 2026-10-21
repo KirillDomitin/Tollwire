@@ -413,10 +413,10 @@ function ImportForm({
       <p className={styles.note}>{t("servers.import.warning")}</p>
 
       <div className={styles.toolbar}>
-        <Button variant="quiet" onClick={selectNew}>
+        <Button variant="secondary" onClick={selectNew}>
           {t("servers.import.selectNew")}
         </Button>
-        <Button variant="quiet" onClick={clearSelection}>
+        <Button variant="secondary" onClick={clearSelection}>
           {t("servers.import.clearSelection")}
         </Button>
         <span className={styles.hint} role="status">
@@ -441,7 +441,7 @@ function ImportForm({
       {problems?.form && <Notice>{problems.form}</Notice>}
       {start.isError && <Notice>{start.error.message}</Notice>}
       <DialogActions>
-        <Button variant="quiet" onClick={onCancel}>
+        <Button variant="secondary" onClick={onCancel}>
           {t("common.cancel")}
         </Button>
         <Button type="submit" busy={start.isPending} busyLabel={t("servers.import.busy")}>

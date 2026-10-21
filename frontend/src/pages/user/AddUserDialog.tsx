@@ -72,7 +72,7 @@ export function AddUserDialog() {
           <TextField label={t("users.add.note")} name="description" maxLength={300} />
           {create.isError && <Notice>{create.error.message}</Notice>}
           <DialogActions>
-            <Button variant="quiet" onClick={() => setOpen(false)}>
+            <Button variant="secondary" onClick={() => setOpen(false)}>
               {t("common.cancel")}
             </Button>
             <Button type="submit" busy={create.isPending} busyLabel={t("users.add.busy")}>

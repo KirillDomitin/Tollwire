@@ -2,7 +2,7 @@
 
 English · [Русский](INSTALL.ru.md)
 
-Tollwire is a control panel for VPN servers. It has four parts:
+WirePilot is a control panel for VPN servers. It has four parts:
 
 | Part | What it does | How it runs |
 |---|---|---|

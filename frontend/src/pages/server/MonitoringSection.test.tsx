@@ -80,7 +80,7 @@ describe("MonitoringSection", () => {
       "1 Мбит/с / 100 Кбит/с",
     );
     expect(within(summary).getByText("1 из 2")).toBeInTheDocument();
-    expect(charts.map((chart) => chart.labels[0])).toEqual(["CPU", "Входящий", "Память", "Онлайн", "Чтение"]);
+    expect(charts.map((chart) => chart.labels[0])).toEqual(["Онлайн", "CPU", "Память", "Входящий", "Чтение"]);
   });
 
   it("switches to hourly data for a week and shows the peak next to the average", async () => {
@@ -99,7 +99,7 @@ describe("MonitoringSection", () => {
     expect(await screen.findByText(/Средние за час/)).toBeInTheDocument();
     expect(ranges).toContain("7d");
     expect(screen.getByRole("button", { name: "Неделя" })).toHaveAttribute("aria-pressed", "true");
-    expect(charts.at(-5)?.labels).toEqual(["CPU, среднее", "CPU, пик"]);
+    expect(charts.at(-4)?.labels).toEqual(["CPU, среднее", "CPU, пик"]); // порядок: клиенты, CPU, память, сеть, диск
   });
 
   it("explains an empty period instead of drawing empty charts", async () => {

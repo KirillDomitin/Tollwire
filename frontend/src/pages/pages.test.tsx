@@ -53,6 +53,70 @@ describe("ServersPage", () => {
     );
   });
 
+  it("summarises the fleet in tiles: total, online, offline and clients from fresh metrics", async () => {
+    const a = server({ name: "de-1" });
+    const b = server({ name: "us-1", status: "offline" });
+    const c = server({ name: "fi-1", health_status: "degraded" });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (request: Request) => {
+        if (new URL(request.url).pathname === "/api/v1/monitoring/latest") {
+          const now = new Date().toISOString();
+          return json([
+            { server_id: a.id, ts: now, cpu_percent: 10, clients_total: 5, clients_online: 2 },
+            { server_id: c.id, ts: now, cpu_percent: 20, clients_total: 7, clients_online: 1 },
+            // Устаревший замер в сумму не входит.
+            {
+              server_id: b.id,
+              ts: "2020-01-01T00:00:00Z",
+              cpu_percent: 1,
+              clients_total: 100,
+              clients_online: 0,
+            },
+          ]);
+        }
+        return json([a, b, c]);
+      }),
+    );
+    renderWithProviders(<ServersPage />);
+
+    const tile = async (name: string) => within(await screen.findByRole("group", { name }));
+    expect((await tile("Всего серверов")).getByText("3")).toBeInTheDocument();
+    expect((await tile("Онлайн")).getByText("2")).toBeInTheDocument(); // в работе и с проблемами
+    expect((await tile("Оффлайн")).getByText("1")).toBeInTheDocument();
+    await vi.waitFor(async () => expect((await tile("Всего клиентов")).getByText("12")).toBeInTheDocument());
+  });
+
+  it("filters the table by name or address and says when nothing matches", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        json([
+          server({ name: "🇩🇪 Germany-1", host: "185.199.12.10" }),
+          server({ name: "Finland-1", host: "93.184.216.33" }),
+        ]),
+      ),
+    );
+    renderWithProviders(<ServersPage />);
+
+    expect(await screen.findByText("Показано 2 из 2")).toBeInTheDocument();
+    const search = screen.getByRole("searchbox", { name: "Поиск по названию или адресу" });
+
+    await userEvent.type(search, "germ");
+    expect(screen.getByRole("link", { name: "Germany-1" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Finland-1" })).not.toBeInTheDocument();
+    expect(screen.getByText("Показано 1 из 2")).toBeInTheDocument();
+
+    await userEvent.clear(search);
+    await userEvent.type(search, "93.184");
+    expect(screen.getByRole("link", { name: "Finland-1" })).toBeInTheDocument();
+
+    await userEvent.clear(search);
+    await userEvent.type(search, "zzz");
+    expect(screen.getByText("Ничего не найдено. Измените запрос.")).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
   it("offers adding a server only to those who may manage servers", async () => {
     vi.stubGlobal(
       "fetch",
@@ -146,7 +210,7 @@ describe("LoginPage", () => {
       </AuthProvider>,
     );
 
-    await userEvent.type(await screen.findByLabelText("Email"), "admin@example.com");
+    await userEvent.type(await screen.findByLabelText("Логин"), "admin@example.com");
     await userEvent.type(screen.getByLabelText("Пароль"), "wrong-password");
     await userEvent.click(screen.getByRole("button", { name: "Войти" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Неверный email или пароль.");

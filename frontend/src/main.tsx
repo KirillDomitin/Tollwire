@@ -10,9 +10,6 @@ import { RouterProvider } from "react-router";
 import { router } from "./App";
 import { AuthProvider } from "./auth/AuthContext";
 import "./i18n";
-import { applyTheme, loadTheme } from "./lib/theme";
-
-applyTheme(loadTheme());
 
 const queryClient = new QueryClient({
   defaultOptions: {

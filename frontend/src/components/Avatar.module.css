@@ -1,0 +1,12 @@
+.avatar {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #2c4a8f, #1a3270);
+  border: 1px solid var(--border-strong);
+  color: #dfe8ff;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  user-select: none;
+}

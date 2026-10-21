@@ -202,7 +202,7 @@ export function AuditPage() {
           />
         </label>
         {filtered && (
-          <Button variant="quiet" onClick={() => setParams({}, { replace: true })}>
+          <Button variant="secondary" onClick={() => setParams({}, { replace: true })}>
             {t("audit.filters.reset")}
           </Button>
         )}
@@ -213,7 +213,7 @@ export function AuditPage() {
       {log.isError && (
         <Notice
           action={
-            <Button variant="quiet" onClick={() => void log.refetch()}>
+            <Button variant="secondary" onClick={() => void log.refetch()}>
               {t("audit.retry")}
             </Button>
           }
@@ -249,7 +249,7 @@ export function AuditPage() {
           {log.hasNextPage && (
             <div className={styles.pager}>
               <Button
-                variant="quiet"
+                variant="secondary"
                 busy={log.isFetchingNextPage}
                 busyLabel={t("audit.loadingMore")}
                 onClick={() => void log.fetchNextPage()}

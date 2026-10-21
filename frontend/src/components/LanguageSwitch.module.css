@@ -1,0 +1,56 @@
+.switch {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.legend {
+  margin-bottom: var(--space-1);
+  font-size: var(--text-meta);
+  color: var(--text-muted);
+}
+
+/* Сегментный переключатель: родные радиокнопки скрыты (вид у них разный в браузерах), но остаются в разметке —
+   клавиатура и экранный диктор работают как с радиогруппой. */
+.options {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+}
+
+.option {
+  position: relative;
+  padding: var(--space-1) var(--space-3);
+  text-align: center;
+  font-size: var(--text-meta);
+  color: var(--text-soft);
+  cursor: pointer;
+}
+
+.option + .option {
+  border-left: 1px solid var(--border-strong);
+}
+
+.option input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  min-height: 0;
+  margin: 0;
+  cursor: pointer;
+}
+
+.option:has(input:checked) {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 550;
+}
+
+.option:has(input:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}

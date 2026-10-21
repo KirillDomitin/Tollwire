@@ -31,7 +31,7 @@ export function ChangePasswordDialogContent({ onClose }: { onClose: () => void }
           currentLabel={t("auth.changePassword.currentPassword")}
           onDone={() => setDone(true)}
           secondary={
-            <Button variant="quiet" onClick={onClose}>
+            <Button variant="secondary" onClick={onClose}>
               {t("common.cancel")}
             </Button>
           }

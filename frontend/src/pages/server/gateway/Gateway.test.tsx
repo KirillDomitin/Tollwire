@@ -30,11 +30,12 @@ import { ServerPage } from "../ServerPage";
 
 const base = `/api/v1/servers/${GW}`;
 
-function setup(options: Backend = {}) {
+/** tab — вкладка карточки: шлюз лежит в «Конфигурации» (config); «Настройки» (settings) — снятие протоколов. */
+function setup(options: Backend = {}, tab = "config") {
   const api = mockGateway(options);
   vi.stubGlobal("fetch", vi.fn(api.handler));
   renderWithProviders(<ServerPage />, {
-    route: `/servers/${GW}`,
+    route: `/servers/${GW}?tab=${tab}`,
     path: "/servers/:serverId",
     permissions: options.permissions ?? "all",
   });
@@ -77,7 +78,7 @@ describe("gateway section", () => {
 
   it("is hidden on a server without the gateway protocol and asks nothing about it", async () => {
     const api = setup({ protocols: [{ id: "p1", server_id: GW, type: "amnezia_wg", port: 51820 }] });
-    expect(await screen.findByRole("heading", { name: "gw-1" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Сервер: gw-1" })).toBeInTheDocument();
     await screen.findByText("порт 51820, UDP");
 
     expect(screen.queryByRole("heading", { name: "Шлюз", level: 2 })).not.toBeInTheDocument();
@@ -270,7 +271,8 @@ describe("adding an exit", () => {
     await waitFor(() =>
       expect(screen.queryByRole("dialog", { name: "Добавить выход" })).not.toBeInTheDocument(),
     );
-    // Задача сразу в журнале сервера.
+    // Задача сразу в журнале сервера (вкладка «Задачи»).
+    await userEvent.click(screen.getByRole("tab", { name: "Задачи" }));
     expect(await screen.findByText("Добавление выхода шлюза")).toBeInTheDocument();
   });
 
@@ -356,6 +358,7 @@ describe("removing an exit", () => {
     expect(api.calls.filter((call) => call.startsWith("DELETE"))).toEqual([
       `DELETE ${base}/gateway/exits/${EXIT1}`,
     ]);
+    await userEvent.click(screen.getByRole("tab", { name: "Задачи" }));
     expect(await screen.findByText("Снятие выхода шлюза")).toBeInTheDocument();
   });
 
@@ -843,6 +846,7 @@ describe("installing and removing the gateway protocol", () => {
 
     await userEvent.click(await screen.findByRole("button", { name: "Установить шлюз" }));
     await waitFor(() => expect(api.bodies[`POST ${base}/protocol`]).toEqual([{ type: "amnezia_gateway" }]));
+    await userEvent.click(screen.getByRole("tab", { name: "Задачи" }));
     expect(await screen.findByText("Установка протокола")).toBeInTheDocument();
   });
 
@@ -853,6 +857,7 @@ describe("installing and removing the gateway protocol", () => {
     expect(screen.queryByRole("button", { name: "Установить шлюз" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Подготовка сервера" })).not.toBeInTheDocument();
 
+    await userEvent.click(screen.getByRole("tab", { name: "Настройки" }));
     await userEvent.click(screen.getByRole("button", { name: "Снять шлюз" }));
     await userEvent.click(
       within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Снять шлюз" }),
@@ -882,6 +887,7 @@ describe("installing and removing the gateway protocol", () => {
     expect(screen.getAllByText("порт 51821, UDP")).toHaveLength(2); // «Обслуживание» и сводка шлюза
     expect(screen.queryByText("порт 51820, UDP")).not.toBeInTheDocument();
     expect(screen.queryByText("AmneziaVPN (приложение)")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("tab", { name: "Настройки" }));
     expect(screen.queryByRole("button", { name: "Снять AmneziaWG" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Снять шлюз" })).toBeInTheDocument();
   });
@@ -906,10 +912,13 @@ describe("installing and removing the gateway protocol", () => {
   });
 
   it("explains a refused gateway removal", async () => {
-    setup({
-      protocols: [gateway],
-      fail: { [`DELETE ${base}/protocol?type=amnezia_gateway`]: { status: 409, detail: "live clients" } },
-    });
+    setup(
+      {
+        protocols: [gateway],
+        fail: { [`DELETE ${base}/protocol?type=amnezia_gateway`]: { status: 409, detail: "live clients" } },
+      },
+      "settings",
+    );
     await userEvent.click(await screen.findByRole("button", { name: "Снять шлюз" }));
     const dialog = await screen.findByRole("alertdialog");
     await userEvent.click(within(dialog).getByRole("button", { name: "Снять шлюз" }));

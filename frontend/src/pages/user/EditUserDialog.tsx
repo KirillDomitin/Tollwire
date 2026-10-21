@@ -52,7 +52,7 @@ export function EditUserDialog({ user }: { user: VPNUser }) {
 
   return (
     <>
-      <Button variant="quiet" onClick={() => setOpen(true)}>
+      <Button variant="secondary" onClick={() => setOpen(true)}>
         {t("users.edit.trigger")}
       </Button>
       <Dialog
@@ -87,7 +87,7 @@ export function EditUserDialog({ user }: { user: VPNUser }) {
           />
           {save.isError && <Notice>{save.error.message}</Notice>}
           <DialogActions>
-            <Button variant="quiet" onClick={() => close(false)}>
+            <Button variant="secondary" onClick={() => close(false)}>
               {t("common.cancel")}
             </Button>
             <Button type="submit" busy={save.isPending} busyLabel={t("users.edit.busy")}>

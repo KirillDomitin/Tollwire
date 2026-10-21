@@ -99,7 +99,7 @@ export function ChangePeriodDialog({
         </fieldset>
         {change.isError && <Notice>{change.error.message}</Notice>}
         <DialogActions>
-          <Button variant="quiet" onClick={() => close(false)}>
+          <Button variant="secondary" onClick={() => close(false)}>
             {t("common.cancel")}
           </Button>
           <Button

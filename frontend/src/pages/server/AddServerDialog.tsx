@@ -7,6 +7,7 @@ import { api, unwrap } from "../../api/client";
 import { Button } from "../../components/Button";
 import { CountrySelect } from "../../components/CountrySelect";
 import { Dialog, DialogActions } from "../../components/Dialog";
+import { PlusIcon } from "../../components/icons";
 import { Notice } from "../../components/Notice";
 import { TextField } from "../../components/TextField";
 import { NAME_MAX_WITH_FLAG, withFlag } from "../../lib/flags";
@@ -46,7 +47,9 @@ export function AddServerDialog() {
 
   return (
     <>
-      <Button onClick={() => setOpen(true)}>{t("servers.add.trigger")}</Button>
+      <Button icon={<PlusIcon size={18} />} onClick={() => setOpen(true)}>
+        {t("servers.add.trigger")}
+      </Button>
       <Dialog
         open={open}
         onOpenChange={(next) => {
@@ -87,7 +90,7 @@ export function AddServerDialog() {
           <TextField label={t("servers.add.note")} name="description" maxLength={300} />
           {create.isError && <Notice>{create.error.message}</Notice>}
           <DialogActions>
-            <Button variant="quiet" onClick={() => setOpen(false)}>
+            <Button variant="secondary" onClick={() => setOpen(false)}>
               {t("common.cancel")}
             </Button>
             <Button type="submit" busy={create.isPending} busyLabel={t("servers.add.busy")}>

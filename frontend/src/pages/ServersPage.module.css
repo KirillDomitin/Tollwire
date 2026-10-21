@@ -1,0 +1,82 @@
+.quiet {
+  color: var(--text-soft);
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+.toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--space-4);
+}
+
+.search {
+  width: min(100%, 360px);
+}
+
+.name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.flag {
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.load {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* Мини-полоска нагрузки: синяя до 60 %, жёлтая до 85 %, дальше красная. */
+.meter {
+  display: inline-block;
+  width: 56px;
+  height: 6px;
+  overflow: hidden;
+  background: var(--border);
+  border-radius: var(--radius-pill);
+}
+
+.meterFill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+.meterFill[data-level="mid"] {
+  background: var(--signal-warn);
+}
+.meterFill[data-level="high"] {
+  background: var(--signal-down);
+}
+
+.fingerprint {
+  font-family: var(--font-mono);
+}
+
+.unpinned {
+  color: var(--signal-warn-text);
+}
+
+.foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+
+@media (max-width: 560px) {
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
+  }
+}

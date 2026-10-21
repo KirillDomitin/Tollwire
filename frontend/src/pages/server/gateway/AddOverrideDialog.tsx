@@ -87,7 +87,7 @@ export function AddOverrideDialog({
         />
         {add.isError && <Notice>{add.error.message}</Notice>}
         <DialogActions>
-          <Button variant="quiet" onClick={() => close(false)}>
+          <Button variant="secondary" onClick={() => close(false)}>
             {t("common.cancel")}
           </Button>
           <Button type="submit" busy={add.isPending} busyLabel={t("gateway.ru.overrides.add.busy")}>

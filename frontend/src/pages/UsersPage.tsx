@@ -57,7 +57,7 @@ export function UsersPage() {
       {users.isError && (
         <Notice
           action={
-            <Button variant="quiet" onClick={() => void users.refetch()}>
+            <Button variant="secondary" onClick={() => void users.refetch()}>
               {t("users.list.retry")}
             </Button>
           }

@@ -1,91 +1,158 @@
 .shell {
   display: grid;
-  grid-template-columns: 232px minmax(0, 1fr);
-  min-height: 100%;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  min-height: 100vh;
 }
 
+/* Сайдбар закреплён: sticky на высоту окна — при прокрутке страницы он остаётся на месте. */
 .sidebar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
-  padding: var(--space-5) var(--space-4);
-  border-right: 1px solid var(--rule);
+  height: 100vh;
+  height: 100dvh;
+  padding: var(--space-5) var(--space-3) var(--space-3);
+  background: var(--bg-deep);
+  border-right: 1px solid var(--border);
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-3) var(--space-5);
+}
+
+.menuButton {
+  display: none;
+}
+
+.drawer {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .nav {
   display: grid;
-  gap: 2px;
+  gap: var(--space-1);
+  align-content: start;
 }
 
 .link {
-  display: block;
-  padding: var(--space-2) var(--space-3);
-  border-left: var(--rule-width) solid transparent;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-control);
   text-decoration: none;
-  color: var(--pine-soft);
+  color: var(--text-soft);
   font-weight: 500;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
 }
 
 .link:hover {
-  color: var(--pine);
+  background: var(--surface-2);
+  color: var(--text);
 }
 
-/* Текущий раздел помечен той же полосой, что и статусы: язык интерфейса один. */
-.active {
-  border-left-color: var(--pine);
-  color: var(--pine);
-  background: var(--paper);
+/* Текущий раздел — синяя плашка, как в макете. */
+.active,
+.active:hover {
+  background: linear-gradient(90deg, rgb(26 115 255 / 38%), rgb(26 115 255 / 22%));
+  box-shadow: inset 0 0 0 1px rgb(26 115 255 / 45%);
+  color: #fff;
 }
 
 .account {
-  display: grid;
-  gap: var(--space-3);
   margin-top: auto;
-}
-
-.email {
-  overflow-wrap: anywhere;
-  font-weight: 550;
-}
-
-.role {
-  margin-top: calc(-1 * var(--space-3));
-  font-size: var(--text-meta);
-  color: var(--pine-faint);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
 }
 
 .main {
-  padding: var(--space-6) var(--space-6) var(--space-7);
   min-width: 0;
-  /* На широком экране строку таблицы должно быть видно одним взглядом — без пустот между колонками. */
-  max-width: 1160px;
+  padding: var(--space-6) var(--space-6) var(--space-7);
 }
 
-@media (max-width: 760px) {
+/* Страницы занимают ширину, но на очень широком экране не растягиваются до пустоты между колонками. */
+.main > * {
+  max-width: 1280px;
+}
+
+@media (max-width: 767px) {
   .shell {
-    grid-template-columns: 1fr;
+    display: block;
   }
 
+  /* Верхняя панель: логотип и кнопка «Меню»; разделы выезжают под ней. */
   .sidebar {
+    height: auto;
+    padding: 0;
     border-right: 0;
-    border-bottom: 1px solid var(--rule);
-    gap: var(--space-3);
+    border-bottom: 1px solid var(--border);
   }
 
-  /* На телефоне аккаунт — одна строка «почта · Выйти», чтобы серверы были на первом экране.
-     Тема здесь берётся из системы, переключатель не показываем. */
+  .top {
+    min-height: 60px;
+    padding: 0 var(--space-4);
+  }
+
+  .menuButton {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    margin-right: calc(-1 * var(--space-2));
+    background: transparent;
+    border: 0;
+    border-radius: var(--radius-control);
+    color: var(--text);
+    cursor: pointer;
+  }
+
+  .menuButton:hover {
+    background: var(--surface-2);
+  }
+
+  .drawer {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    max-height: calc(100dvh - 61px);
+    overflow-y: auto;
+    padding: var(--space-3) var(--space-3) var(--space-4);
+    gap: var(--space-4);
+    background: var(--bg-deep);
+    border-bottom: 1px solid var(--border-strong);
+    box-shadow: var(--shadow-pop);
+    animation: slide 160ms ease-out;
+  }
+
+  .sidebar[data-open="true"] .drawer {
+    display: flex;
+  }
+
   .account {
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
     margin-top: 0;
   }
 
-  .role,
-  .account fieldset {
-    display: none;
-  }
-
   .main {
-    padding: var(--space-5) var(--space-4);
+    padding: var(--space-5) var(--space-4) var(--space-6);
+  }
+}
+
+@keyframes slide {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
   }
 }

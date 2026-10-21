@@ -81,7 +81,7 @@ export function ConfigDialog({
         <>
           {reveal.isError && <Notice>{reveal.error.message}</Notice>}
           <DialogActions>
-            <Button variant="quiet" onClick={() => close(false)}>
+            <Button variant="secondary" onClick={() => close(false)}>
               {t("common.cancel")}
             </Button>
             <Button
@@ -105,14 +105,14 @@ export function ConfigDialog({
             {shareLink ? t("users.config.hintLink") : t("users.config.hintPlain")}
           </p>
           <DialogActions>
-            <Button variant="quiet" onClick={() => void copy()}>
+            <Button variant="secondary" onClick={() => void copy()}>
               {copied
                 ? t("users.config.copied")
                 : shareLink
                   ? t("users.config.copyLink")
                   : t("users.config.copy")}
             </Button>
-            <Button variant="quiet" onClick={download}>
+            <Button variant="secondary" onClick={download}>
               {t("users.config.download")}
             </Button>
             <Button onClick={() => close(false)}>{t("users.config.done")}</Button>
@@ -150,7 +150,7 @@ function QrSeries({ codes }: { codes: string[] }) {
           <span className={styles.hint}>
             {t("users.config.codeOf", { current: current + 1, total: codes.length })}
           </span>
-          <Button variant="quiet" onClick={() => setIndex((value) => value + 1)}>
+          <Button variant="secondary" onClick={() => setIndex((value) => value + 1)}>
             {t("users.config.nextCode")}
           </Button>
         </div>

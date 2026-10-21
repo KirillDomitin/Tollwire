@@ -1,17 +1,24 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 
 import { api, unwrap, type Credential, type Job, type Protocol, type Server } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import { Button } from "../../components/Button";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { ArrowLeftIcon, CpuIcon, DiskIcon, MemoryIcon, ServerIcon, UsersIcon } from "../../components/icons";
 import { Notice } from "../../components/Notice";
+import { StatCard } from "../../components/StatCard";
+import { SIGNAL_TONE, StatusPill } from "../../components/StatusPill";
+import { TabPanel, Tabs } from "../../components/Tabs";
 import i18n from "../../i18n";
 import { isUnfinished } from "../../lib/jobs";
+import { flagCountryName, splitFlag } from "../../lib/flags";
 import { serverSignal } from "../../lib/serverSignal";
 import { exactTime, timeAgo } from "../../lib/time";
+import { formatPercent, share } from "../../lib/units";
+import { useLatestMetrics } from "../latestMetrics";
 import { AmneziaAppSection } from "./AmneziaAppSection";
 import { CredentialsDialog } from "./CredentialsDialog";
 import { isAppProtocol, type AppProtocol } from "./discovery";
@@ -47,9 +54,11 @@ interface Setup {
 
 export function ServerPage() {
   const { serverId = "" } = useParams();
-  const { t } = useTranslation();
+  const { t, i18n: i18nInstance } = useTranslation();
   const { can } = useAuth();
   const { server, credential, protocols, discovery, jobs } = useServerData(serverId);
+  const latestMetrics = useLatestMetrics();
+  const [params, setParams] = useSearchParams();
 
   if (server.isPending) return <p className={styles.hint}>{t("servers.card.loading")}</p>;
   if (server.isError) {
@@ -95,95 +104,201 @@ export function ServerPage() {
     setup.key && setup.credential && setup.installed && (setup.protocol || setup.gateway || found.length > 0);
   const manage = can("servers:manage");
 
+  // Вкладки: показываются только те, что есть у этого сервера. Активная — в адресе (?tab=…): обновление страницы и
+  // ссылка не теряют её. Без явного выбора: рабочий сервер открывается на графиках, неподготовленный — на подготовке.
+  const tabs: { id: ServerTab; label: string }[] = [
+    ...(setup.credential ? [{ id: "charts" as const, label: t("servers.card.tabs.charts") }] : []),
+    { id: "config", label: t("servers.card.tabs.config") },
+    { id: "jobs", label: t("servers.card.tabs.jobs") },
+    ...(manage ? [{ id: "settings" as const, label: t("servers.card.tabs.settings") }] : []),
+  ];
+  const requested = params.get("tab");
+  const defaultTab: ServerTab = setup.credential && (ready || maintainable) ? "charts" : "config";
+  const tab = tabs.find((item) => item.id === requested)?.id ?? defaultTab;
+  const selectTab = (id: string) =>
+    setParams(
+      (previous) => {
+        const next = new URLSearchParams(previous);
+        next.set("tab", id);
+        return next;
+      },
+      { replace: true },
+    );
+
+  const { flag, rest } = splitFlag(data.name);
+  const country = flag ? flagCountryName(flag, i18nInstance.resolvedLanguage ?? "en") : null;
+  const protocolNames = [
+    ownProtocol ? t("servers.maintenance.amnezia") : null,
+    !ownProtocol && (protocol || found.length > 0) ? t("servers.card.info.protocolApp") : null,
+    gatewayProtocol ? t("servers.maintenance.gateway") : null,
+  ].filter(Boolean);
+  const metric = latestMetrics.get(data.id);
+  const memoryShare = share(metric?.mem_used_bytes, metric?.mem_total_bytes);
+  const diskShare = share(metric?.disk_used_bytes, metric?.disk_total_bytes);
+
   return (
     <article className={styles.page} aria-labelledby="server-title">
-      <Link to="/servers" className={styles.back}>
-        {t("servers.card.allServers")}
-      </Link>
-
-      <header className={styles.header} data-signal={signal}>
-        <div className={styles.identity}>
-          <h1 id="server-title" className={styles.title}>
-            {data.name}
-          </h1>
-          <p className={styles.address}>
-            {data.host}:{data.ssh_port}
-          </p>
-          {data.description && <p className={styles.description}>{data.description}</p>}
-          <div className={styles.row}>
+      <div className={styles.top}>
+        <Link to="/servers" className={styles.back}>
+          <ArrowLeftIcon size={16} />
+          {t("servers.card.backToList")}
+        </Link>
+        <div className={styles.titleRow}>
+          <div className={styles.titleGroup}>
+            <h1 id="server-title" className={styles.title}>
+              {t("servers.card.title", { name: data.name })}
+            </h1>
+            <StatusPill tone={SIGNAL_TONE[signal]}>{label}</StatusPill>
+          </div>
+          <div className={styles.actions}>
             {manage && <EditServerDialog server={data} />}
             {can("audit:read") && (
-              <Link to={`/audit?entity_type=server&entity_id=${data.id}`} className={styles.back}>
+              <Link to={`/audit?entity_type=server&entity_id=${data.id}`} className={styles.linkButton}>
                 {t("servers.card.events")}
               </Link>
             )}
           </div>
         </div>
-        <div className={styles.state}>
-          <span className={styles.stateLabel} data-signal={signal}>
-            {label}
+      </div>
+
+      <section className={styles.info} aria-label={data.name}>
+        <div className={styles.infoMain}>
+          <span className={styles.flagBox} aria-hidden="true">
+            {flag ? <span className={styles.flag}>{flag}</span> : <ServerIcon size={30} />}
           </span>
-          <span className={styles.hint}>
-            {data.last_health_at ? (
-              <>
-                {t("servers.card.checked")}{" "}
+          <div className={styles.identity}>
+            <p className={styles.infoName}>{rest || data.name}</p>
+            <p className={styles.address}>
+              {data.host}:{data.ssh_port}
+            </p>
+            {data.description && <p className={styles.description}>{data.description}</p>}
+          </div>
+        </div>
+        <dl className={styles.infoFacts}>
+          {country && (
+            <div>
+              <dt>{t("servers.card.info.country")}</dt>
+              <dd>{country}</dd>
+            </div>
+          )}
+          <div>
+            <dt>{t("servers.card.info.protocol")}</dt>
+            <dd>
+              {protocolNames.length > 0 ? protocolNames.join(", ") : t("servers.card.info.protocolNone")}
+            </dd>
+          </div>
+          <div>
+            <dt>{t("servers.card.info.check")}</dt>
+            <dd>
+              {data.last_health_at ? (
                 <time dateTime={data.last_health_at} title={exactTime(data.last_health_at)}>
                   {timeAgo(data.last_health_at)}
                 </time>
-              </>
-            ) : (
-              t("servers.card.neverChecked")
-            )}
-          </span>
-        </div>
-      </header>
-
-      {!ready && manage && <SetupChecklist server={data} setup={setup} jobs={jobList} found={found} />}
-      {!ready && !manage && !maintainable && <p className={styles.hint}>{t("servers.card.notPrepared")}</p>}
-      {maintainable && (
-        <Maintenance
-          server={data}
-          credential={credential.data ?? null}
-          port={protocol?.port ?? found[0]?.port ?? null}
-          hasProtocol={setup.protocol || found.length > 0}
-          appOnly={!setup.ownProtocol}
-          gateway={gatewayProtocol}
-          jobs={jobList}
-          searched={discovery.data?.checked_at ?? null}
-          found={found.length > 0}
-        />
-      )}
-
-      {setup.credential && found.length > 0 && (
-        <AmneziaAppSection
-          serverId={data.id}
-          protocols={found}
-          checkedAt={discovery.data?.checked_at ?? null}
-          manage={manage}
-          importing={hasRunning(jobList, "import_clients")}
-        />
-      )}
-
-      {gatewayProtocol && <GatewaySection server={data} protocol={gatewayProtocol} jobs={jobList} />}
-
-      {/* Замеры снимаются только с серверов, куда панель может зайти по SSH. */}
-      {setup.credential && (
-        <Suspense fallback={<p className={styles.hint}>{t("servers.card.loadingCharts")}</p>}>
-          <MonitoringSection serverId={data.id} />
-        </Suspense>
-      )}
-
-      <section className={styles.section} aria-labelledby="jobs-title">
-        <h2 id="jobs-title" className={styles.sectionTitle}>
-          {t("servers.card.jobs")}
-        </h2>
-        {jobs.isError ? <Notice>{jobs.error.message}</Notice> : jobs.data && <JobsLog jobs={jobList} />}
+              ) : (
+                t("servers.card.neverChecked")
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt>{t("servers.card.info.hostKey")}</dt>
+            <dd>{setup.key ? t("servers.card.info.hostKeyPinned") : t("servers.card.info.hostKeyNone")}</dd>
+          </div>
+        </dl>
       </section>
 
-      {manage && <DangerZone server={data} setup={setup} />}
+      {metric && (
+        <div className={styles.tiles} role="group" aria-label={t("servers.card.tiles.label")}>
+          <StatCard
+            icon={<UsersIcon size={22} />}
+            tone="violet"
+            label={t("servers.card.tiles.clients")}
+            value={metric.clients_online ?? "—"}
+            unit={metric.clients_total === null ? undefined : `/ ${metric.clients_total}`}
+          />
+          <StatCard
+            icon={<CpuIcon size={22} />}
+            tone="green"
+            label={t("servers.card.tiles.cpu")}
+            value={formatPercent(metric.cpu_percent)}
+          />
+          <StatCard
+            icon={<MemoryIcon size={22} />}
+            label={t("servers.card.tiles.memory")}
+            value={formatPercent(memoryShare)}
+          />
+          <StatCard
+            icon={<DiskIcon size={22} />}
+            tone="violet"
+            label={t("servers.card.tiles.disk")}
+            value={formatPercent(diskShare)}
+          />
+        </div>
+      )}
+
+      <div className={styles.tabs}>
+        <Tabs
+          idPrefix="server"
+          label={t("servers.card.tabs.label")}
+          tabs={tabs}
+          value={tab}
+          onChange={selectTab}
+        />
+
+        <TabPanel idPrefix="server" id="charts" value={tab}>
+          {/* Замеры снимаются только с серверов, куда панель может зайти по SSH. */}
+          <Suspense fallback={<p className={styles.hint}>{t("servers.card.loadingCharts")}</p>}>
+            <MonitoringSection serverId={data.id} />
+          </Suspense>
+        </TabPanel>
+
+        <TabPanel idPrefix="server" id="config" value={tab}>
+          {!ready && manage && <SetupChecklist server={data} setup={setup} jobs={jobList} found={found} />}
+          {!ready && !manage && !maintainable && (
+            <p className={styles.hint}>{t("servers.card.notPrepared")}</p>
+          )}
+          {maintainable && (
+            <Maintenance
+              server={data}
+              credential={credential.data ?? null}
+              port={protocol?.port ?? found[0]?.port ?? null}
+              hasProtocol={setup.protocol || found.length > 0}
+              appOnly={!setup.ownProtocol}
+              gateway={gatewayProtocol}
+              jobs={jobList}
+              searched={discovery.data?.checked_at ?? null}
+              found={found.length > 0}
+            />
+          )}
+          {setup.credential && found.length > 0 && (
+            <AmneziaAppSection
+              serverId={data.id}
+              protocols={found}
+              checkedAt={discovery.data?.checked_at ?? null}
+              manage={manage}
+              importing={hasRunning(jobList, "import_clients")}
+            />
+          )}
+          {gatewayProtocol && <GatewaySection server={data} protocol={gatewayProtocol} jobs={jobList} />}
+        </TabPanel>
+
+        <TabPanel idPrefix="server" id="jobs" value={tab}>
+          <section className={styles.section} aria-labelledby="jobs-title">
+            <h2 id="jobs-title" className={styles.sectionTitle}>
+              {t("servers.card.jobs")}
+            </h2>
+            {jobs.isError ? <Notice>{jobs.error.message}</Notice> : jobs.data && <JobsLog jobs={jobList} />}
+          </section>
+        </TabPanel>
+
+        <TabPanel idPrefix="server" id="settings" value={tab}>
+          {manage && <DangerZone server={data} setup={setup} />}
+        </TabPanel>
+      </div>
     </article>
   );
 }
+
+type ServerTab = "charts" | "config" | "jobs" | "settings";
 
 function hasRunning(jobs: Job[], type: Job["type"]): boolean {
   return jobs.some((job) => job.type === type && isUnfinished(job));
@@ -224,7 +339,7 @@ function ConnectionTest({ serverId }: { serverId: string }) {
   return (
     <>
       <Button
-        variant="quiet"
+        variant="secondary"
         busy={test.isPending}
         busyLabel={t("servers.card.connection.busy")}
         onClick={() => test.mutate()}
@@ -350,7 +465,7 @@ function SetupChecklist({
                 <>
                   <p className={styles.hint}>{t("servers.setup.protocol.gatewayHint")}</p>
                   <Button
-                    variant="quiet"
+                    variant="secondary"
                     busy={start.isPending && start.variables === "gateway-install"}
                     busyLabel={t("servers.card.queueBusy")}
                     onClick={() => start.mutate("gateway-install")}
@@ -362,7 +477,7 @@ function SetupChecklist({
               {/* Когда приложение уже найдено, поиск повторяется кнопкой в «Обслуживании». */}
               {found.length === 0 && (
                 <Button
-                  variant="quiet"
+                  variant="secondary"
                   busy={searching || (start.isPending && start.variables === "discover")}
                   busyLabel={t("servers.maintenance.discovering")}
                   onClick={() => start.mutate("discover")}
@@ -441,7 +556,7 @@ function Maintenance({
             {t("servers.maintenance.checkHealth")}
           </Button>
           <Button
-            variant="quiet"
+            variant="secondary"
             busy={syncing || (start.isPending && start.variables === "sync")}
             busyLabel={t("servers.maintenance.syncing")}
             onClick={() => start.mutate("sync")}
@@ -449,7 +564,7 @@ function Maintenance({
             {t("servers.maintenance.sync")}
           </Button>
           <Button
-            variant="quiet"
+            variant="secondary"
             busy={searching || (start.isPending && start.variables === "discover")}
             busyLabel={t("servers.maintenance.discovering")}
             onClick={() => start.mutate("discover")}
@@ -486,7 +601,7 @@ function Maintenance({
                 <>
                   <span className={styles.hint}>{t("servers.maintenance.gatewayNone")}</span>
                   <Button
-                    variant="quiet"
+                    variant="secondary"
                     busy={installingProtocol || (start.isPending && start.variables === "gateway-install")}
                     busyLabel={t("servers.card.queueBusy")}
                     onClick={() => start.mutate("gateway-install")}
@@ -503,7 +618,7 @@ function Maintenance({
         <dd>
           <code className={styles.keyValue}>{server.ssh_host_key_fingerprint}</code>
           {manage && (
-            <Button variant="quiet" onClick={() => setKeyOpen(true)}>
+            <Button variant="secondary" onClick={() => setKeyOpen(true)}>
               {t("servers.maintenance.recheck")}
             </Button>
           )}
@@ -518,7 +633,7 @@ function Maintenance({
             <code className={styles.keyValue}>{credential.key_fingerprint}</code>
           )}
           {manage && (
-            <Button variant="quiet" onClick={() => setCredOpen(true)}>
+            <Button variant="secondary" onClick={() => setCredOpen(true)}>
               {t("servers.maintenance.replace")}
             </Button>
           )}
@@ -526,7 +641,7 @@ function Maintenance({
             <ConfirmDialog
               trigger={
                 <Button
-                  variant="quiet"
+                  variant="secondary"
                   busy={installingKey}
                   busyLabel={t("servers.maintenance.panelKey.busy")}
                 >
@@ -583,7 +698,7 @@ function DangerZone({ server, setup }: { server: Server; setup: Setup }) {
         {setup.ownProtocol && (
           <li>
             <ConfirmDialog
-              trigger={<Button variant="quiet">{t("servers.danger.removeProtocol.trigger")}</Button>}
+              trigger={<Button variant="secondary">{t("servers.danger.removeProtocol.trigger")}</Button>}
               title={t("servers.danger.removeProtocol.title")}
               consequences={t("servers.danger.removeProtocol.consequences")}
               actionLabel={t("servers.danger.removeProtocol.action")}
@@ -595,7 +710,7 @@ function DangerZone({ server, setup }: { server: Server; setup: Setup }) {
         {setup.gateway && (
           <li>
             <ConfirmDialog
-              trigger={<Button variant="quiet">{t("servers.danger.removeGateway.trigger")}</Button>}
+              trigger={<Button variant="secondary">{t("servers.danger.removeGateway.trigger")}</Button>}
               title={t("servers.danger.removeGateway.title")}
               consequences={t("servers.danger.removeGateway.consequences")}
               actionLabel={t("servers.danger.removeGateway.action")}
@@ -607,7 +722,7 @@ function DangerZone({ server, setup }: { server: Server; setup: Setup }) {
         {setup.credential && (
           <li>
             <ConfirmDialog
-              trigger={<Button variant="quiet">{t("servers.danger.deleteAccess.trigger")}</Button>}
+              trigger={<Button variant="secondary">{t("servers.danger.deleteAccess.trigger")}</Button>}
               title={t("servers.danger.deleteAccess.title")}
               consequences={t("servers.danger.deleteAccess.consequences")}
               actionLabel={t("servers.danger.deleteAccess.action")}
@@ -622,7 +737,7 @@ function DangerZone({ server, setup }: { server: Server; setup: Setup }) {
         {setup.key && (
           <li>
             <ConfirmDialog
-              trigger={<Button variant="quiet">{t("servers.danger.resetKey.trigger")}</Button>}
+              trigger={<Button variant="secondary">{t("servers.danger.resetKey.trigger")}</Button>}
               title={t("servers.danger.resetKey.title")}
               consequences={t("servers.danger.resetKey.consequences")}
               actionLabel={t("servers.danger.resetKey.action")}
@@ -637,7 +752,7 @@ function DangerZone({ server, setup }: { server: Server; setup: Setup }) {
         )}
         <li>
           <ConfirmDialog
-            trigger={<Button variant="quiet">{t("servers.danger.deleteServer.trigger")}</Button>}
+            trigger={<Button variant="secondary">{t("servers.danger.deleteServer.trigger")}</Button>}
             title={t("servers.danger.deleteServer.title", { name: server.name })}
             consequences={t("servers.danger.deleteServer.consequences")}
             actionLabel={t("servers.danger.deleteServer.action")}

@@ -21,7 +21,7 @@ export function ChangePasswordPage() {
         <ChangePasswordForm
           currentLabel={t("auth.changePassword.currentTemporary")}
           secondary={
-            <Button variant="quiet" onClick={() => void logout()}>
+            <Button variant="secondary" onClick={() => void logout()}>
               {t("shell.nav.signOut")}
             </Button>
           }

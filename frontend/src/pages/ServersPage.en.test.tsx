@@ -54,7 +54,7 @@ describe("ServersPage in English", () => {
 
     expect(await screen.findByRole("heading", { name: "Servers" })).toBeInTheDocument();
     expect(await screen.findByText("2 servers — 1 unreachable, 1 running")).toBeInTheDocument();
-    for (const name of ["Server", "Status", "Clients", "CPU", "Last check", "Host key"]) {
+    for (const name of ["Status", "Name", "Address", "Clients", "Load", "Last check", "Host key"]) {
       expect(screen.getByRole("columnheader", { name })).toBeInTheDocument();
     }
     const row = screen.getByRole("link", { name: "de-1" }).closest("tr")!;

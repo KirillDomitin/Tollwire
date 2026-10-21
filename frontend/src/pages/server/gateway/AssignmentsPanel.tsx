@@ -67,7 +67,7 @@ export function AssignmentsPanel({
         <h3 className={styles.blockTitle}>{t("gateway.assignments.title")}</h3>
         {canCheck && (
           <Button
-            variant="quiet"
+            variant="secondary"
             busy={checking || check.isPending}
             busyLabel={t("gateway.assignments.checking")}
             onClick={() => check.mutate()}
@@ -122,7 +122,7 @@ export function AssignmentsPanel({
           </div>
           {rows.length > shown && (
             <div className={styles.row}>
-              <Button variant="quiet" onClick={() => setShown(shown + PAGE_SIZE)}>
+              <Button variant="secondary" onClick={() => setShown(shown + PAGE_SIZE)}>
                 {t("gateway.assignments.more", { shown: Math.min(shown, rows.length), total: rows.length })}
               </Button>
             </div>
@@ -215,7 +215,7 @@ function ClientRow({
             />
             {assignment && (
               <Button
-                variant="quiet"
+                variant="secondary"
                 busy={pinning.isPending}
                 busyLabel={t("gateway.assignments.move.busy")}
                 aria-label={t(

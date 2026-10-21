@@ -160,9 +160,10 @@ function mockApi({
   return { calls, bodies };
 }
 
-function renderCard(permissions: string[] | "all" = "all") {
+function renderCard(permissions: string[] | "all" = "all", tab = "config") {
+  // Блок приложения AmneziaVPN — во вкладке «Конфигурация», журнал задач — в «Задачах».
   return renderWithProviders(<ServerPage />, {
-    route: `/servers/${ID}`,
+    route: `/servers/${ID}?tab=${tab}`,
     path: "/servers/:serverId",
     permissions,
   });
@@ -791,6 +792,7 @@ describe("ImportClientsDialog: errors, limits and edge cases", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     // Задача видна в журнале карточки, кнопка блока занята, отдельного опроса задачи по id нет.
     expect(await screen.findByRole("button", { name: "Идёт перенос клиентов…" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("tab", { name: "Задачи" }));
     expect(screen.getByText("Перенос клиентов AmneziaVPN")).toBeInTheDocument();
     expect(calls.some((call) => call.startsWith("GET /api/v1/jobs/"))).toBe(false);
   });
@@ -811,7 +813,7 @@ describe("ImportClientsDialog: errors, limits and edge cases", () => {
         }),
       ],
     });
-    renderCard();
+    renderCard("all", "jobs");
 
     expect(await screen.findByText("Подхвачено: 2 · Уже были в панели: 1")).toBeInTheDocument();
   });

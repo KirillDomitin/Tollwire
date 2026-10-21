@@ -1,7 +1,8 @@
 .overlay {
   position: fixed;
   inset: 0;
-  background: color-mix(in srgb, var(--pine) 40%, transparent);
+  background: rgb(3 7 18 / 72%);
+  backdrop-filter: blur(3px);
 }
 
 .content {
@@ -15,16 +16,19 @@
   max-height: calc(100vh - 2 * var(--space-5));
   overflow-y: auto;
   padding: var(--space-5) var(--space-6) var(--space-6);
-  background: var(--paper);
-  border-top: var(--rule-width) solid var(--pine);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-pop);
 }
 
 .content[data-wide="true"] {
   width: min(calc(100vw - 2 * var(--space-4)), 860px);
 }
 
+/* Разрушающее действие: красная верхняя кромка — то же «сюда внимательно», что и у статуса. */
 .content[data-danger="true"] {
-  border-top-color: var(--signal-down);
+  border-top: 3px solid var(--signal-down);
 }
 
 .title {
@@ -35,7 +39,7 @@
 
 .description {
   margin: 0;
-  color: var(--pine-soft);
+  color: var(--text-soft);
 }
 
 .actions {
@@ -44,4 +48,10 @@
   justify-content: flex-end;
   gap: var(--space-3);
   margin-top: var(--space-2);
+}
+
+@media (max-width: 760px) {
+  .content {
+    padding: var(--space-4) var(--space-4) var(--space-5);
+  }
 }

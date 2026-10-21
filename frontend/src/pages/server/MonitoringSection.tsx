@@ -73,7 +73,7 @@ export function MonitoringSection({ serverId }: { serverId: string }) {
       {
         label: hourly ? t("servers.monitoring.series.cpuAverage") : t("servers.monitoring.series.cpu"),
         values: pick("cpu_percent"),
-        tone: "primary",
+        tone: "green",
       },
     ];
     if (hourly) {
@@ -87,7 +87,7 @@ export function MonitoringSection({ serverId }: { serverId: string }) {
       {
         label: hourly ? t("servers.monitoring.series.onlineAverage") : t("servers.monitoring.series.online"),
         values: pick("clients_online"),
-        tone: "primary",
+        tone: "blue",
       },
     ];
     if (hourly) {
@@ -105,31 +105,31 @@ export function MonitoringSection({ serverId }: { serverId: string }) {
         {
           label: t("servers.monitoring.series.incoming"),
           values: pick("net_rx_bytes_per_s"),
-          tone: "secondary",
+          tone: "blue",
         },
         {
           label: t("servers.monitoring.series.outgoing"),
           values: pick("net_tx_bytes_per_s"),
-          tone: "primary",
+          tone: "violet",
         },
       ] satisfies ChartSeries[],
       memory: [
         {
           label: t("servers.monitoring.series.memory"),
           values: points.map((point) => share(point.mem_used_bytes, point.mem_total_bytes)),
-          tone: "primary",
+          tone: "violet",
         },
       ] satisfies ChartSeries[],
       disk: [
         {
           label: t("servers.monitoring.series.read"),
           values: pick("disk_read_bytes_per_s"),
-          tone: "secondary",
+          tone: "blue",
         },
         {
           label: t("servers.monitoring.series.write"),
           values: pick("disk_write_bytes_per_s"),
-          tone: "primary",
+          tone: "violet",
         },
       ] satisfies ChartSeries[],
       latest: latestPoint(points),
@@ -140,7 +140,7 @@ export function MonitoringSection({ serverId }: { serverId: string }) {
   const latest = charts.latest;
 
   return (
-    <section className={styles.section} aria-labelledby="monitoring-title">
+    <section className={styles.bareSection} aria-labelledby="monitoring-title">
       <div className={styles.sectionHead}>
         <h2 id="monitoring-title" className={styles.sectionTitle}>
           {t("servers.monitoring.title")}
@@ -219,19 +219,20 @@ export function MonitoringSection({ serverId }: { serverId: string }) {
           </p>
           <div className={styles.charts}>
             <TimeChart
+              title={t("servers.monitoring.charts.clients")}
+              times={charts.times}
+              series={charts.online}
+              format={count}
+              timeScale={charts.timeScale}
+              integer
+            />
+            <TimeChart
               title="CPU"
               times={charts.times}
               series={charts.cpu}
               format={percent}
               timeScale={charts.timeScale}
               range={PERCENT_RANGE}
-            />
-            <TimeChart
-              title={t("servers.monitoring.charts.network")}
-              times={charts.times}
-              series={charts.network}
-              format={formatBitRate}
-              timeScale={charts.timeScale}
             />
             <TimeChart
               title={t("servers.monitoring.charts.memory")}
@@ -242,12 +243,11 @@ export function MonitoringSection({ serverId }: { serverId: string }) {
               range={PERCENT_RANGE}
             />
             <TimeChart
-              title={t("servers.monitoring.charts.clients")}
+              title={t("servers.monitoring.charts.network")}
               times={charts.times}
-              series={charts.online}
-              format={count}
+              series={charts.network}
+              format={formatBitRate}
               timeScale={charts.timeScale}
-              integer
             />
             <TimeChart
               title={t("servers.monitoring.charts.disk")}

@@ -38,12 +38,41 @@ describe("AppShell navigation", () => {
     expect(screen.getByRole("link", { name: "Серверы" })).toBeInTheDocument();
   });
 
-  it("offers to change the password from the account block", async () => {
+  it("offers to change the password from the user menu", async () => {
     renderShell(["servers:read"]);
 
-    await userEvent.click(screen.getByRole("button", { name: "Сменить пароль" }));
+    expect(screen.queryByRole("menuitem", { name: "Сменить пароль" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /viewer@example.com/ }));
+    await userEvent.click(screen.getByRole("menuitem", { name: "Сменить пароль" }));
 
     expect(await screen.findByRole("dialog", { name: "Смена пароля" })).toBeInTheDocument();
     expect(screen.getByLabelText("Текущий пароль")).toBeInTheDocument();
+  });
+
+  it("opens the user menu with the language choice and sign-out, and closes it on Escape", async () => {
+    renderShell(["servers:read"]);
+
+    const trigger = screen.getByRole("button", { name: /viewer@example.com/ });
+    expect(trigger).toHaveAttribute("aria-haspopup", "menu");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByText("Наблюдатель")).toBeInTheDocument();
+
+    await userEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("menuitemradio", { name: /Русский/ })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("menuitemradio", { name: /English/ })).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByRole("menuitem", { name: "Выйти" })).toBeInTheDocument();
+
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(trigger).toHaveFocus();
+  });
+
+  it("has no theme switch: the interface is dark only", () => {
+    renderShell(["servers:read"]);
+
+    expect(screen.queryByRole("radio", { name: /тема|светл/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Открыть меню" })).toBeInTheDocument();
   });
 });

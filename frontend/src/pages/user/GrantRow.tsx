@@ -160,7 +160,7 @@ export function GrantRow({
           )}
           {credential && manage && (
             <ConfirmDialog
-              trigger={<Button variant="quiet">{t("users.grant.revokeConfig.trigger")}</Button>}
+              trigger={<Button variant="secondary">{t("users.grant.revokeConfig.trigger")}</Button>}
               title={t("users.grant.revokeConfig.title")}
               consequences={
                 imported
@@ -182,7 +182,7 @@ export function GrantRow({
           )}
           {manage && (
             <ConfirmDialog
-              trigger={<Button variant="quiet">{t("users.grant.removeServer.trigger")}</Button>}
+              trigger={<Button variant="secondary">{t("users.grant.removeServer.trigger")}</Button>}
               title={t("users.grant.removeServer.title", { server: serverName })}
               consequences={t("users.grant.removeServer.consequences")}
               actionLabel={t("users.grant.removeServer.action")}

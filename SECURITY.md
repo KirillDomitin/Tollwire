@@ -1,6 +1,6 @@
 # Security policy
 
-Tollwire holds SSH credentials and VPN client keys, so security reports are taken seriously.
+WirePilot holds SSH credentials and VPN client keys, so security reports are taken seriously.
 
 ## Reporting a vulnerability
 

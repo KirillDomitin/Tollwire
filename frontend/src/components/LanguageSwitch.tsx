@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 
 import { LANGUAGES } from "../i18n";
-import styles from "./ThemeSwitch.module.css"; // тот же сегментный переключатель, что и у темы
+import styles from "./LanguageSwitch.module.css";
 
 export function LanguageSwitch() {
   const { t, i18n } = useTranslation();

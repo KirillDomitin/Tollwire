@@ -113,7 +113,7 @@ export function UserPage() {
             {manage && (
               <div className={styles.row}>
                 <Button onClick={() => setGrantOpen(true)}>{t("users.card.addServers")}</Button>
-                <Button variant="quiet" onClick={() => setPeriodOpen(true)}>
+                <Button variant="secondary" onClick={() => setPeriodOpen(true)}>
                   {t("users.card.changePeriod")}
                 </Button>
                 <RevokeAccess subscription={current} userId={userId} />
@@ -187,7 +187,7 @@ function RevokeAccess({ subscription, userId }: { subscription: Subscription; us
   const queryClient = useQueryClient();
   return (
     <ConfirmDialog
-      trigger={<Button variant="quiet">{t("users.card.revoke.trigger")}</Button>}
+      trigger={<Button variant="secondary">{t("users.card.revoke.trigger")}</Button>}
       title={t("users.card.revoke.title")}
       consequences={t("users.card.revoke.consequences")}
       actionLabel={t("users.card.revoke.action")}
@@ -216,7 +216,7 @@ function DeleteUser({ userId, username }: { userId: string; username: string }) 
       </h2>
       <div>
         <ConfirmDialog
-          trigger={<Button variant="quiet">{t("users.card.delete.trigger")}</Button>}
+          trigger={<Button variant="secondary">{t("users.card.delete.trigger")}</Button>}
           title={t("users.card.delete.confirmTitle", { name: username })}
           consequences={t("users.card.delete.consequences")}
           actionLabel={t("users.card.delete.action")}

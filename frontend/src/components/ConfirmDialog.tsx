@@ -97,7 +97,7 @@ export function ConfirmDialog({
           {error && <Notice>{error}</Notice>}
           <div className={styles.actions}>
             <AlertDialog.Cancel asChild>
-              <Button variant="quiet">{t("common.cancel")}</Button>
+              <Button variant="secondary">{t("common.cancel")}</Button>
             </AlertDialog.Cancel>
             <Button
               variant="danger"

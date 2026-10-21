@@ -1,19 +1,79 @@
-/* Карточка сервера — тот же язык, что у списка: цвет несёт только статус, данные — строками журнала. */
+/* Карточка сервера (WirePilot): шапка с действиями, карточка сведений, плитки метрик и вкладки. Секции внутри —
+   карточки на поверхности; цвет несёт только статус и акцент. Классы здесь же берут карточки шлюза и пользователя. */
 
 .page {
   display: grid;
-  gap: var(--space-6);
+  gap: var(--space-5);
+}
+
+.top {
+  display: grid;
+  gap: var(--space-3);
 }
 
 .back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
   justify-self: start;
   font-size: var(--text-meta);
-  color: var(--pine-soft);
+  color: var(--text-soft);
+  text-decoration: none;
+}
+.back:hover {
+  color: var(--accent-text);
+}
+
+.titleRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-5);
+}
+
+.titleGroup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.title {
+  font-size: var(--text-display);
+  letter-spacing: -0.02em;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* Ссылка, оформленная как вторичная кнопка (рядом с настоящими кнопками действий). */
+.linkButton {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 var(--space-4);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  color: var(--text);
+  font-weight: 550;
+  text-decoration: none;
+}
+.linkButton:hover {
+  border-color: var(--accent);
 }
 
 .hint {
   margin: 0;
-  color: var(--pine-soft);
+  color: var(--text-soft);
 }
 
 .row {
@@ -23,51 +83,93 @@
   gap: var(--space-3);
 }
 
-/* Шапка — «строка» сервера крупным планом: та же полоса статуса слева. */
+/* Карточка сведений о сервере: флаг, имя, адрес и четыре факта. */
+.info,
 .header {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+.infoMain {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-4) var(--space-6);
-  padding: var(--space-4) var(--space-5);
-  background: var(--paper);
-  border-left: var(--rule-width) solid var(--signal-idle);
+  align-items: center;
+  gap: var(--space-4);
 }
-.header[data-signal="ok"] {
-  border-left-color: var(--signal-ok);
+
+.flagBox {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  color: var(--accent-text);
 }
-.header[data-signal="warn"] {
-  border-left-color: var(--signal-warn);
-}
-.header[data-signal="down"] {
-  border-left-color: var(--signal-down);
-}
-.header[data-signal="process"] {
-  border-left-color: var(--signal-process);
+
+.flag {
+  font-size: 2rem;
+  line-height: 1;
 }
 
 .identity {
   display: grid;
-  gap: var(--space-1);
+  gap: 2px;
+  min-width: 0;
 }
 
-.title {
-  font-size: var(--text-display);
-  margin: 0;
+.infoName {
+  font-size: var(--text-lead);
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .address {
   margin: 0;
   font-family: var(--font-mono);
-  color: var(--pine-soft);
+  font-size: var(--text-meta);
+  color: var(--text-soft);
 }
 
 .description {
   margin: var(--space-2) 0 0;
   max-width: 60ch;
+  color: var(--text-soft);
 }
 
+.infoFacts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0;
+  margin: 0;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+.infoFacts > div {
+  padding: 0 var(--space-4);
+  border-left: 1px solid var(--border);
+}
+.infoFacts > div:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+.infoFacts dt {
+  font-size: var(--text-meta);
+  color: var(--text-muted);
+}
+.infoFacts dd {
+  margin: 2px 0 0;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+
+/* Состояние в карточке пользователя (она берёт эти классы отсюда). */
 .state {
   display: grid;
   justify-items: end;
@@ -86,20 +188,66 @@
   color: var(--signal-warn-text);
 }
 .stateLabel[data-signal="process"] {
-  color: var(--signal-process);
+  color: var(--accent-text);
 }
 .stateLabel[data-signal="idle"] {
   font-weight: 400;
-  color: var(--pine-soft);
+  color: var(--text-soft);
 }
 
+/* Шапка карточки пользователя (composes) — карточка с цветной полосой статуса слева. */
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4) var(--space-6);
+  border-left: var(--rule-width) solid var(--signal-idle);
+}
+.header[data-signal="ok"] {
+  border-left-color: var(--signal-ok);
+}
+.header[data-signal="warn"] {
+  border-left-color: var(--signal-warn);
+}
+.header[data-signal="down"] {
+  border-left-color: var(--signal-down);
+}
+.header[data-signal="process"] {
+  border-left-color: var(--signal-process);
+}
+
+/* Плитки метрик сервера. */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-4);
+}
+
+.tabs {
+  display: grid;
+  gap: 0;
+}
+
+/* Секция вкладки — карточка. */
 .section {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+/* Секция без собственной карточки: внутри неё свои карточки (графики). */
+.bareSection {
   display: grid;
   gap: var(--space-4);
 }
 
 .sectionTitle {
-  font-size: var(--text-title);
+  font-size: var(--text-lead);
   margin: 0;
 }
 
@@ -109,7 +257,9 @@
   margin: 0;
   padding: 0;
   counter-reset: step;
-  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  overflow: hidden;
 }
 
 .step {
@@ -118,7 +268,7 @@
   display: grid;
   gap: var(--space-3);
   padding: var(--space-4) var(--space-5) var(--space-4) calc(var(--space-5) + 2.25rem);
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid var(--border);
 }
 .step:last-child {
   border-bottom: 0;
@@ -133,31 +283,32 @@
   height: 1.5rem;
   display: grid;
   place-items: center;
-  border: 1px solid var(--rule-strong);
+  border: 1px solid var(--border-strong);
   border-radius: 50%;
   font-size: var(--text-meta);
   font-variant-numeric: tabular-nums;
-  color: var(--pine-soft);
+  color: var(--text-soft);
 }
 .step[data-state="done"]::before {
   content: "✓";
   border-color: var(--signal-ok);
   background: var(--signal-ok);
-  color: var(--paper);
+  color: #06210f;
 }
 .step[data-state="next"]::before {
-  border-color: var(--pine);
-  background: var(--pine);
-  color: var(--on-pine);
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
 }
 .step[data-state="running"]::before {
   border-color: var(--signal-process);
-  color: var(--signal-process);
+  color: var(--accent-text);
 }
 
 /* Текущий шаг отмечен полосой — тем же знаком «сюда смотреть», что и у статуса. */
 .step[data-state="next"] {
-  box-shadow: inset var(--rule-width) 0 0 var(--pine);
+  background: rgb(26 115 255 / 6%);
+  box-shadow: inset var(--rule-width) 0 0 var(--accent);
 }
 .step[data-state="running"] {
   box-shadow: inset var(--rule-width) 0 0 var(--signal-process);
@@ -178,15 +329,15 @@
 .step[data-state="done"] .stepTitle,
 .step[data-state="locked"] .stepTitle {
   font-weight: 400;
-  color: var(--pine-soft);
+  color: var(--text-soft);
 }
 
 .stepMark {
   font-size: var(--text-meta);
-  color: var(--pine-faint);
+  color: var(--text-muted);
 }
 .step[data-state="running"] .stepMark {
-  color: var(--signal-process);
+  color: var(--accent-text);
 }
 
 .stepBody {
@@ -206,21 +357,24 @@
   border-left-color: var(--signal-down);
 }
 
-/* Обслуживание: сведения — парами «что / значение», как в журнале. */
+/* Обслуживание: сведения — парами «что / значение», строками с разделителями. */
 .facts {
   display: grid;
   grid-template-columns: max-content 1fr;
   margin: 0;
-  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  overflow: hidden;
 }
 .facts dt,
 .facts dd {
   margin: 0;
   padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid var(--border);
 }
 .facts dt {
-  color: var(--pine-soft);
+  color: var(--text-soft);
+  background: rgb(255 255 255 / 2%);
 }
 .facts dd {
   display: flex;
@@ -237,13 +391,14 @@
   display: grid;
   gap: var(--space-1);
   padding: var(--space-3) var(--space-4);
-  background: var(--fog);
+  background: var(--surface-sunken);
+  border-radius: var(--radius-control);
 }
 
 .keyLabel {
   margin: 0;
   font-size: var(--text-meta);
-  color: var(--pine-soft);
+  color: var(--text-soft);
 }
 
 /* Отпечаток сверяют глазами посимвольно — моноширинный и переносится, а не обрезается. */
@@ -299,9 +454,9 @@
   padding: var(--space-2) var(--space-3);
   font-family: var(--font-mono);
   font-size: var(--text-meta);
-  color: var(--pine);
-  background: var(--paper);
-  border: 1px solid var(--rule-strong);
+  color: var(--text);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-control);
   resize: vertical;
 }
@@ -311,15 +466,17 @@
   list-style: none;
   margin: 0;
   padding: 0;
-  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  overflow: hidden;
 }
 
 .job {
   display: grid;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--rule);
-  border-left: 2px solid transparent;
+  border-bottom: 1px solid var(--border);
+  border-left: 3px solid transparent;
 }
 .job:last-child {
   border-bottom: 0;
@@ -346,21 +503,24 @@
 .jobStatus {
   font-size: var(--text-meta);
   font-variant-numeric: tabular-nums;
-  color: var(--pine-soft);
+  color: var(--text-soft);
 }
 .jobStatus[data-status="failed"] {
   color: var(--signal-down);
 }
+.jobStatus[data-status="success"] {
+  color: var(--signal-ok);
+}
 .jobStatus[data-status="running"],
 .jobStatus[data-status="pending"] {
-  color: var(--signal-process);
+  color: var(--accent-text);
 }
 
 .jobTime {
   min-width: 9ch;
   text-align: right;
   font-size: var(--text-meta);
-  color: var(--pine-faint);
+  color: var(--text-muted);
 }
 
 .jobError {
@@ -373,7 +533,7 @@
 .jobSummary {
   margin: 0;
   font-size: var(--text-meta);
-  color: var(--pine-soft);
+  color: var(--text-soft);
 }
 
 .report {
@@ -381,7 +541,7 @@
 }
 .report summary {
   cursor: pointer;
-  color: var(--pine-soft);
+  color: var(--text-soft);
 }
 .report ul {
   margin: var(--space-2) 0 0;
@@ -391,13 +551,11 @@
   color: var(--signal-down);
 }
 
-/* Опасная зона: отделена линией и цветом заголовка; кнопки тихие — красной становится только кнопка в диалоге. */
+/* Опасная зона: красная кромка карточки и заголовок; кнопки тихие — красной становится только кнопка в диалоге. */
 .danger {
-  padding-top: var(--space-5);
-  border-top: 1px solid var(--rule);
+  border-color: color-mix(in srgb, var(--signal-down) 35%, var(--border));
 }
 .danger .sectionTitle {
-  font-size: var(--text-lead);
   color: var(--signal-down);
 }
 
@@ -414,33 +572,39 @@
 .sectionHead {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: var(--space-2) var(--space-4);
 }
 
+/* Селектор периода — сегментный, как поле выбора в макете: активный период подсвечен синим. */
 .ranges {
   display: inline-flex;
-  border: 1px solid var(--rule-strong);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-control);
   overflow: hidden;
 }
 
 .rangeButton {
-  padding: var(--space-1) var(--space-3);
+  padding: 6px var(--space-4);
   font: inherit;
   font-size: var(--text-meta);
-  color: var(--pine-soft);
+  color: var(--text-soft);
   background: transparent;
   border: 0;
   cursor: pointer;
 }
+.rangeButton:hover {
+  color: var(--text);
+}
 .rangeButton + .rangeButton {
-  border-left: 1px solid var(--rule-strong);
+  border-left: 1px solid var(--border);
 }
 .rangeButton[aria-pressed="true"] {
-  color: var(--on-pine);
-  background: var(--pine);
+  color: var(--on-accent);
+  font-weight: 600;
+  background: var(--accent);
 }
 .rangeButton:focus-visible {
   outline: 2px solid var(--focus);
@@ -451,18 +615,20 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   margin: 0;
-  background: var(--paper);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
 }
 .metricsSummary > div {
   padding: var(--space-3) var(--space-4);
-  border-right: 1px solid var(--rule);
+  border-right: 1px solid var(--border);
 }
 .metricsSummary > div:last-child {
   border-right: 0;
 }
 .metricsSummary dt {
   font-size: var(--text-meta);
-  color: var(--pine-soft);
+  color: var(--text-muted);
 }
 .metricsSummary dd {
   margin: var(--space-1) 0 0;
@@ -473,25 +639,42 @@
 .charts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-3);
+  gap: var(--space-4);
 }
 
-@media (max-width: 760px) {
+@media (max-width: 1100px) {
   .charts {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+@media (max-width: 560px) {
+  .tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
+  }
+}
+
+@media (max-width: 760px) {
   .metricsSummary > div {
     border-right: 0;
-    border-bottom: 1px solid var(--rule);
+    border-bottom: 1px solid var(--border);
   }
   .metricsSummary > div:last-child {
     border-bottom: 0;
   }
-}
-
-@media (max-width: 760px) {
-  .header {
-    padding: var(--space-3) var(--space-4);
+  .info,
+  .header,
+  .section {
+    padding: var(--space-4);
+  }
+  .infoFacts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3) 0;
+  }
+  .infoFacts > div:nth-child(odd) {
+    padding-left: 0;
+    border-left: 0;
   }
   .state {
     justify-items: start;
