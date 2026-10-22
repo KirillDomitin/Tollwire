@@ -1,1 +1,3 @@
 *.sh text eol=lf
+# ./panel — bash-скрипт без расширения: без этой строки на Windows он выписывается с CRLF и ломается на сервере
+panel text eol=lf
