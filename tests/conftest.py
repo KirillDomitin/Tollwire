@@ -25,6 +25,18 @@ TEST_DATABASE_URL = os.environ.get(
 )
 TEST_REDIS_URL = os.environ.get("TEST_REDIS_URL", "redis://localhost:6379/15")
 
+# pytest-xdist (`-n 4`): у каждого процесса своя БД и свой номер Redis — иначе DROP DATABASE и FLUSHDB одного
+# процесса ломают тесты соседа. gw0 → vpn_panel_gw0_test + Redis db 14, gw1 → db 13 и т.д. (db 0 никогда).
+_XDIST_WORKER = os.environ.get("PYTEST_XDIST_WORKER")
+if _XDIST_WORKER:
+    _n = int(_XDIST_WORKER.removeprefix("gw"))
+    assert _n < 14, "не больше 14 процессов xdist: у Redis 16 баз, 0 и 15 заняты"
+    _db_url = make_url(TEST_DATABASE_URL)
+    TEST_DATABASE_URL = _db_url.set(
+        database=_db_url.database.removesuffix("_test") + f"_{_XDIST_WORKER}_test"  # type: ignore[union-attr]
+    ).render_as_string(hide_password=False)
+    TEST_REDIS_URL = TEST_REDIS_URL.rsplit("/", 1)[0] + f"/{14 - _n}"
+
 os.environ.update(
     {
         "DATABASE_URL": TEST_DATABASE_URL,
@@ -40,7 +52,15 @@ os.environ.update(
     }
 )
 
+from argon2 import PasswordHasher  # noqa: E402
+
+from core import security  # noqa: E402 — только после настройки окружения
 from infrastructure.vpn import amnezia  # noqa: E402 — только после настройки окружения
+
+# Argon2 с параметрами по умолчанию — ~0.25 с на hash+verify, а он есть почти в каждом интеграционном тесте
+# (создание админа + вход). Параметры записаны в самом хеше, так что проверка работает и для дешёвых хешей.
+security.ph = PasswordHasher(time_cost=1, memory_cost=1024, parallelism=1)
+security.DUMMY_PASSWORD_HASH = security.ph.hash("dummy-password-for-timing")
 
 # Общие фикстуры с БД (session, fakes, world) — для tests/services и tests/integration.
 pytest_plugins = ["tests.fixtures"]

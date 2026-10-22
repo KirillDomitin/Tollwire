@@ -12,3 +12,6 @@ htmlcov/
 certs/
 *.stackdump
 backups/
+
+# pytest-testmon: карта «код → тесты», локальная у каждого
+.testmondata*

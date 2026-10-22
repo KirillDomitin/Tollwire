@@ -1,6 +1,7 @@
 # tests — бэкенд-тесты
 
-`uv run pytest` (нужен `docker compose up`: Postgres + Redis). ~223 теста.
+`uv run pytest` (нужен `docker compose up`: Postgres + Redis). ~2100 тестов: полный прогон `-n 4` (xdist),
+обычный — `--testmon` (только затронутые изменениями).
 
 ## Окружение (`conftest.py`)
 
@@ -10,6 +11,10 @@
 - После каждого теста — TRUNCATE таблиц + FLUSHDB.
 - pytest-asyncio: `loop_scope="session"` и для тестов, и для фикстур (иначе ломается пул asyncpg).
 - Общие фикстуры — `tests/fixtures.py` (подключены через `pytest_plugins`).
+- xdist: у процесса `gwN` своя БД `vpn_panel_gwN_test` и Redis db `14-N` (`conftest.py`).
+- Argon2 в тестах с дешёвыми параметрами (`security.ph` подменён в `conftest.py`): иначе ~0.25 с на каждый вход админа.
+- `drain()` выходит сразу при пустой очереди (LLEN), без ожидания BRPOP; ждать «пустую очередь» в тесте —
+  только явно через `process_next(timeout=...)`.
 
 ## Слои
 

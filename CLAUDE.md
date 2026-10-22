@@ -13,7 +13,8 @@ REST API + веб-интерфейс для управления VPN-серве�
 - Фича: `architect` → решение пользователя → `tester` (красные тесты) → реализация → `reviewer` → исправления →
   `doc-writer` → коммит. Агенты — `.claude/agents/`.
 - Архитектурную развилку — на решение пользователя до кода, с рекомендацией.
-- После изменений: ruff, mypy, тесты, миграции (upgrade/downgrade) и живой прогон.
+- После изменений: ruff, mypy, тесты, миграции (upgrade/downgrade) и живой прогон. Тесты гонять через агента
+  `test-runner` (он вернёт только упавшие), а не pytest в основной сессии.
 - Изменения на реальных серверах — только с явного согласия пользователя.
 - Поменялось устройство модуля — обновить его `CLAUDE.md`.
 - Коммиты без Co-Authored-By. Документация библиотек — через Context7.
@@ -43,7 +44,9 @@ REST API + веб-интерфейс для управления VPN-серве�
 docker compose up -d                             # Postgres + Redis (нужны API, воркеру и тестам)
 uv run uvicorn main:app --app-dir src --reload   # API
 uv run python src/worker.py                      # воркер + планировщик
-uv run ruff check . && uv run mypy src && uv run pytest
+uv run ruff check . && uv run mypy src
+uv run pytest --testmon -q -x                     # только тесты, затронутые изменениями (обычный режим)
+uv run pytest -n 4 -q                             # полный прогон (~2000 тестов) — в фоне или через агента test-runner
 uv run pytest tests/unit/test_x.py::test_y       # один тест
 uv run alembic upgrade head / downgrade -1       # миграции
 ```

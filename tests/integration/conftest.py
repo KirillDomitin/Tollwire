@@ -87,7 +87,8 @@ def worker() -> JobWorker:
 async def drain(worker: JobWorker, limit: int = 50) -> int:
     """Выполняет все задачи из очереди (как работающий воркер) и возвращает, сколько их было."""
     done = 0
-    while await worker.process_next(timeout=1):
+    # Пустую очередь видно сразу (LLEN), без BRPOP с ожиданием в секунду на каждый вызов drain.
+    while await worker.job_queue.size() and await worker.process_next(timeout=1):
         done += 1
         assert done < limit, "queue does not drain — a job keeps re-queueing itself"
     return done
