@@ -66,83 +66,21 @@ CRUD; `PUT/GET/DELETE /{id}/credentials`; `POST /{id}/test-connection`; `POST /{
 - Health: SSH, Docker, контейнер, протокол, NAT, задержка до интернета. SSH недоступен → задача SUCCESS со
   статусом down.
 
-## Шлюз (`amnezia_gateway`, этап 24.1)
+## Шлюз (`amnezia_gateway`) — инварианты (подробно — `docs/servers/gateway.md`)
 
-- Установка и снятие - те же `POST/DELETE /{id}/protocol` с телом `{"type": "amnezia_gateway"}` или `?type=amnezia_gateway`
-  (`requested_protocol` в роутере: пустое тело `{}` тип не задаёт). Тип не обычный
-  кладётся в `Job.params` (`{"protocol_type": "amnezia_gateway"}`); у обычного протокола `params` нет, задачи без
-  `params` воркер читает как `amnezia_wg`. `ServerService.schedule(server_id, job_type, protocol_type)`.
-- Обычный протокол и шлюз живут на одном сервере независимо: разные контейнеры, порты и подсети; `protocols` уникальна
-  по `(server_id, type)`. Живые клиенты блокируют снятие (409) так: шлюз - только клиенты шлюза; обычный протокол -
-  клиенты всех остальных типов, кроме шлюза (прежнее поведение, в том числе для импортированных); удаление сервера -
-  любые.
-- Sync и health перебирают все `ProtocolType`: у сервера без шлюза запись для него не создаётся (нет контейнера и
-  записи в БД - в отчёт не попадает). Шлюз без выходов даёт проверку `exits` = false и сервер DEGRADED. Поиск Amnezia
-  (`discover`) шлюз игнорирует. Мониторинг суммирует клиентов всех протоколов сервера.
+- Ставится и снимается теми же `POST/DELETE /{id}/protocol` с `{"type": "amnezia_gateway"}` / `?type=`; тип — в
+  `Job.params`, задача без `params` = `amnezia_wg`. Обычный протокол и шлюз на одном сервере независимы.
+- Живые клиенты блокируют снятие (409): шлюз — только клиенты шлюза, обычный протокол — все, кроме шлюза.
+- Сервер — выход какого-либо шлюза → удаление и снятие `AMNEZIA_WG` отказывают (409), воркер проверяет повторно.
+- Sync: внутренние клиенты `gw-` + 12 hex с живой строкой `gateway_exits` восстанавливаются, без неё — снимаются;
+  sync шлюза сначала `install()`, потом сверка назначений и «России напрямую». Сбои сверок — issue, sync не падает.
 
-### Выходы шлюза (этап 24.2)
+## AmneziaVPN на сервере — инварианты (подробно — `docs/servers/amnezia-app.md`)
 
-Подробно - `modules/gateway/CLAUDE.md`. Здесь изменилось поведение сервера:
-
-- `ServerService.delete` и `schedule(REMOVE_PROTOCOL, AMNEZIA_WG)` отказывают (409, `LiveCredentialExistsError`), пока
-  сервер - выход какого-либо шлюза (`GatewayExitRepository.exists_for_exit_server`); воркер проверяет то же перед
-  снятием контейнера (`protocol_uninstall`). Удаление сервера-шлюза и снятие протокола шлюза удаляют его выходы каскадом.
-- Sync (`sync.py`): на `AMNEZIA_WG` внутренние клиенты шлюза (имя строго `gw-` + 12 hex, иные `gw-*` - чужие, в `foreign`) с записью в `gateway_exits` (peer_created / active /
-  draining) живые - при потере возвращаются по сохранённому конфигу; без такой записи - сироты и снимаются. У шлюза
-  в отчёт протокола добавляется `exits` (по слоту: `exit_id, slot, state, interface_up, health`), а в `issues` -
-  "Exit gwxN is down/missing on the gateway" для `active` без интерфейса и "Unknown exit tunnel" для чужого туннеля; сбой чтения туннелей - issue "Failed to list exit tunnels", отчёт по клиентам сохраняется;
-  обновляются `health` / `last_handshake_at` / `checked_at` строк. Действий нет (failover ведёт правило `gateway_watch`, см. `modules/gateway/CLAUDE.md`).
-- Sync шлюза сначала вызывает `install()` шлюза (дочинивает `start.sh`, правила и sysctl; пересоздание контейнера - в аудит и
-  отчёт), потом сверяет назначения выходов клиентам (`GatewayAssignmentService.reconcile`, отчёт `assignments`:
-  `assigned`, `newly_assigned`, `reapplied`): карта в цепочке `GW_ASSIGN` и файл `assign.rules` приводятся к БД, клиенты без
-  выхода получают его (`sync`), туннели выходов с конфигом прежней версии пересоздаются. Сбой сверки - issue, sync не падает.
-- Health (`health.py`): проверка `exits` шлюза - хотя бы один туннель с интерфейсом и рукопожатием не старше 180 с; те же
-  поля строк выходов обновляются и здесь (если контейнер шлюза не отвечает - остаются прежними).
-
-### Россия напрямую (этап 24.4)
-
-Подробно - `modules/gateway/CLAUDE.md` и `modules/geoip/CLAUDE.md`. Sync шлюза добавляет в отчёт протокола `ru`
-(`GatewayRuService.ensure`: есть активный список, а маршрутов на шлюзе не столько, сколько в эффективном списке, - применить;
-нет списка - `{active_list: false}`), health - проверку `ru` (только когда есть активный список), установка шлюза в воркере -
-`ensure_server`. Сбой применения - issue, sync не падает.
-
-## Поиск установки AmneziaVPN (`discovery.py`)
-
-Поиск только читает сервер. Найденное приложение панель не ставит, не удаляет и не меняет его клиентов. Перенос
-клиентов в БД панели — отдельная задача импорта (раздел «Импорт клиентов» ниже); сервер при нём не меняется.
-
-- `POST /{id}/discover` → задача `DISCOVER_VPN` (без ServerLock). `discover()` спрашивает провайдер каждого
-  `ProtocolType`; отвечают только классы приложения (`AmneziaWGProvider.discover()` — None, в отчёт не входит).
-  Результат: `{"protocols": [{type, container, state, image, port, clients: [{public_key, address, name,
-  latest_handshake, supported}]}]}`. В БД ничего не пишется.
-- `GET /{id}/discovery` — отчёт последней успешной задачи `DISCOVER_VPN` или `INSTALL_SERVER` с непустым result;
-  `checked_at` — время её окончания. Отчёта нет → `checked_at: null`, `protocols: []`.
-- Статус клиента в `GET /discovery`: `unsupported` (`supported=false`) → `in_panel` (ключ — живой `VPNCredential`
-  этого сервера) → `revoked_in_panel` (ключ — отозванный) → `new`.
-- Автопоиск после `INSTALL_SERVER`: тот же поиск внутри задачи установки, его отчёт становится её `result`. Сбой
-  поиска откатывает сессию, пишет warning в лог; установка остаётся успешной (отчёта в ней нет).
-- Sync (`_sync_protocol`): для `APP_PROTOCOLS` без записи в БД и без контейнера в отчёт ничего не попадает.
-  Найденный контейнер (в том числе остановленный) — запись с `in_db: false` и issue «Installed on server but not
-  tracked in DB». Клиенты не трогаются.
-- Health (`_check_protocol`): у app-типа без записи в БД проверка `tracked_in_db` = ok, текст «installed by the
-  AmneziaVPN app, not managed». Сама установка приложения сервер в DEGRADED не переводит; остановленный контейнер
-  или нечитаемый конфиг приложения переводят (их проверки ok=false). Контейнера нет — в отчёт не попадает.
-
-## Импорт клиентов AmneziaVPN (`POST /{id}/import`)
-
-Перенос клиентов установленной AmneziaVPN в БД панели делает `ClientImportService` (`modules/access/import_service.py`,
-логика — в `modules/access/CLAUDE.md`). Сервер не меняется.
-
-- Тело: `protocol_type` (только протокол приложения), `valid_until` (с часовым поясом, в будущем), `clients`
-  (1–250, ключи не повторяются). У клиента: `public_key`, `username` и либо `user_id` существующего пользователя,
-  либо необязательный `email` для нового. Лишние поля (в том числе PSK) игнорируются: PSK берётся с сервера.
-- Ответ — 202 с `JobRead`; итог — в `result` задачи `IMPORT_CLIENTS` (формат — `modules/jobs/CLAUDE.md`).
-- 422 — пустой или повторяющийся список, больше 250 клиентов, не протокол приложения, `valid_until` не в будущем,
-  `user_id` и `email` вместе, неверный ключ или имя.
-- 404 — сервера нет, `user_id` не найден. 409 — нет SSH-учётки; ключа нет в последнем отчёте поиска этого
-  протокола (`GET /{id}/discovery`) или клиент не поддерживается; на сервере уже идёт импорт.
-- `DELETE /{id}/protocol` при живых импортированных клиентах → 409 (`LiveCredentialExistsError`), как и для
-  обычных.
+- Поиск (`POST /{id}/discover`, `discovery.py`) только читает сервер; в БД ничего не пишется, отчёт — в `result` задачи.
+- Импорт (`POST /{id}/import`, логика — `modules/access/CLAUDE.md`) переносит клиентов в БД панели, сервер не меняется;
+  PSK берётся с сервера, не из тела.
+- Найденная, но не импортированная установка — в sync issue «not tracked in DB», в health сервер не DEGRADED.
 
 ## Известные проблемы
 
