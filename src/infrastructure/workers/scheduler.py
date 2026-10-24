@@ -191,7 +191,8 @@ async def fail_stale_jobs(max_age_seconds: int) -> str:
     # Регистрации бота, чью выдачу закрыл не хук воркера (воркер убит, задача отклонена, грант удалён).
     async with session_factory() as session:
         reconciled = await BotRegistrationService(session, SYSTEM_ACTOR).reconcile()
-    return f"marked {failed} stale running jobs as failed, closed {reconciled} bot registrations"
+    summary = f"marked {failed} stale running jobs as failed"
+    return f"{summary}, closed {reconciled} bot registrations" if reconciled else summary
 
 
 async def requeue_lost_jobs(max_age_seconds: int) -> str:
