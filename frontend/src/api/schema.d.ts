@@ -973,6 +973,237 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/bot/heartbeat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Heartbeat
+         * @description Бот сообщает, что жив: имя и версия. Ответ пока пустой, поля появятся вместе с настройками бота.
+         */
+        post: operations["heartbeat_api_v1_bot_heartbeat_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot/invites/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check Invite
+         * @description valid / used / expired / revoked / unknown, без подробностей приглашения (протокол, срок, кому).
+         */
+        post: operations["check_invite_api_v1_bot_invites_check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot/registrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Register
+         * @description Занять приглашение и начать выдачу доступа. Повтор тем же человеком возвращает ту же регистрацию;
+         *     409 с `reason`: приглашение занято / истекло / недействительно, почта или Telegram заняты.
+         */
+        post: operations["register_api_v1_bot_registrations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot/registrations/{registration_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Registration Status */
+        get: operations["registration_status_api_v1_bot_registrations__registration_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot/users/by-telegram/{telegram_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * User Status
+         * @description /status в боте: имя, до какого числа доступ, протокол.
+         */
+        get: operations["user_status_api_v1_bot_users_by_telegram__telegram_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot-admin/keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Keys */
+        get: operations["list_keys_api_v1_bot_admin_keys_get"];
+        put?: never;
+        /**
+         * Create Key
+         * @description Выпустить ключ бота. Открытое значение (`key`) показывается только в этом ответе.
+         */
+        post: operations["create_key_api_v1_bot_admin_keys_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot-admin/keys/{key_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revoke Key
+         * @description Отозвать ключ: бот с ним перестаёт работать немедленно.
+         */
+        post: operations["revoke_key_api_v1_bot_admin_keys__key_id__revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot-admin/invites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Invites */
+        get: operations["list_invites_api_v1_bot_admin_invites_get"];
+        put?: never;
+        /**
+         * Create Invite
+         * @description Создать одноразовое приглашение. Код и ссылка показываются только в этом ответе.
+         */
+        post: operations["create_invite_api_v1_bot_admin_invites_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot-admin/invites/{invite_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke Invite */
+        post: operations["revoke_invite_api_v1_bot_admin_invites__invite_id__revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot-admin/registrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Registrations */
+        get: operations["list_registrations_api_v1_bot_admin_registrations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot-admin/registrations/{registration_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Registration */
+        get: operations["get_registration_api_v1_bot_admin_registrations__registration_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot-admin/registrations/{registration_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Registration
+         * @description Повторить выдачу упавшей регистрации (только из `failed`): тот же пользователь и доступ, новая задача.
+         */
+        post: operations["retry_registration_api_v1_bot_admin_registrations__registration_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -1130,7 +1361,7 @@ export interface components {
          * AuditAction
          * @enum {string}
          */
-        AuditAction: "login" | "login_failed" | "login_locked" | "logout" | "password_changed" | "password_change_failed" | "admin_created" | "admin_updated" | "server_created" | "server_updated" | "server_deleted" | "server_credentials_set" | "server_credentials_deleted" | "server_host_key_pinned" | "server_host_key_reset" | "server_host_key_mismatch" | "server_install_started" | "server_install_completed" | "server_install_failed" | "server_sync_started" | "server_sync_completed" | "server_sync_failed" | "server_discover_started" | "server_discover_completed" | "server_discover_failed" | "server_ssh_key_install_started" | "server_ssh_key_install_completed" | "server_ssh_key_install_failed" | "protocol_install_started" | "protocol_install_completed" | "protocol_install_failed" | "protocol_remove_started" | "protocol_remove_completed" | "protocol_remove_failed" | "vpn_user_created" | "vpn_user_updated" | "vpn_user_deleted" | "subscription_created" | "subscription_updated" | "subscription_activated" | "subscription_revoked" | "subscription_expired" | "subscription_deleted" | "access_granted" | "access_updated" | "access_revoked" | "access_expired" | "access_deleted" | "credential_issued" | "credential_imported" | "credential_issue_failed" | "credential_revoked" | "credential_revoke_failed" | "config_viewed" | "clients_import_started" | "clients_import_completed" | "clients_import_failed" | "gateway_exit_add_started" | "gateway_exit_add_completed" | "gateway_exit_add_failed" | "gateway_exit_remove_started" | "gateway_exit_remove_completed" | "gateway_exit_remove_failed" | "gateway_exit_updated" | "gateway_client_assigned" | "gateway_client_unassigned" | "geoip_list_updated" | "geoip_list_activated" | "geoip_override_added" | "geoip_override_removed" | "gateway_ru_applied" | "gateway_ru_apply_failed" | "gateway_client_moved" | "gateway_failover" | "gateway_all_exits_down" | "gateway_exit_recovered" | "gateway_container_recreated";
+        AuditAction: "login" | "login_failed" | "login_locked" | "logout" | "password_changed" | "password_change_failed" | "admin_created" | "admin_updated" | "server_created" | "server_updated" | "server_deleted" | "server_credentials_set" | "server_credentials_deleted" | "server_host_key_pinned" | "server_host_key_reset" | "server_host_key_mismatch" | "server_install_started" | "server_install_completed" | "server_install_failed" | "server_sync_started" | "server_sync_completed" | "server_sync_failed" | "server_discover_started" | "server_discover_completed" | "server_discover_failed" | "server_ssh_key_install_started" | "server_ssh_key_install_completed" | "server_ssh_key_install_failed" | "protocol_install_started" | "protocol_install_completed" | "protocol_install_failed" | "protocol_remove_started" | "protocol_remove_completed" | "protocol_remove_failed" | "vpn_user_created" | "vpn_user_updated" | "vpn_user_deleted" | "subscription_created" | "subscription_updated" | "subscription_activated" | "subscription_revoked" | "subscription_expired" | "subscription_deleted" | "access_granted" | "access_updated" | "access_revoked" | "access_expired" | "access_deleted" | "credential_issued" | "credential_imported" | "credential_issue_failed" | "credential_revoked" | "credential_revoke_failed" | "config_viewed" | "clients_import_started" | "clients_import_completed" | "clients_import_failed" | "gateway_exit_add_started" | "gateway_exit_add_completed" | "gateway_exit_add_failed" | "gateway_exit_remove_started" | "gateway_exit_remove_completed" | "gateway_exit_remove_failed" | "gateway_exit_updated" | "gateway_client_assigned" | "gateway_client_unassigned" | "geoip_list_updated" | "geoip_list_activated" | "geoip_override_added" | "geoip_override_removed" | "gateway_ru_applied" | "gateway_ru_apply_failed" | "gateway_client_moved" | "gateway_failover" | "gateway_all_exits_down" | "gateway_exit_recovered" | "gateway_container_recreated" | "bot_key_created" | "bot_key_revoked" | "bot_invite_created" | "bot_invite_revoked" | "bot_registration_created" | "bot_registration_activated" | "bot_registration_failed" | "bot_registration_retried";
         /** AuditActorRead */
         AuditActorRead: {
             /**
@@ -1174,6 +1405,80 @@ export interface components {
          * @enum {string}
          */
         AuthType: "password" | "ssh_key";
+        /** BotKeyCreate */
+        BotKeyCreate: {
+            /** Name */
+            name: string;
+        };
+        /** BotKeyCreated */
+        BotKeyCreated: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Key Prefix */
+            key_prefix: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Last Seen At */
+            last_seen_at: string | null;
+            /** Last Seen Version */
+            last_seen_version: string | null;
+            /** Bot Username */
+            bot_username: string | null;
+            /** Revoked At */
+            revoked_at: string | null;
+            /** Key */
+            key: string;
+        };
+        /**
+         * BotKeyRead
+         * @description Ключ без секрета: открытое значение показывается один раз, при создании.
+         */
+        BotKeyRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Key Prefix */
+            key_prefix: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Last Seen At */
+            last_seen_at: string | null;
+            /** Last Seen Version */
+            last_seen_version: string | null;
+            /** Bot Username */
+            bot_username: string | null;
+            /** Revoked At */
+            revoked_at: string | null;
+        };
+        /**
+         * BotRegistrationRead
+         * @description Ответ боту: статус регистрации и, когда будет страница конфига (25.3), ссылка на неё.
+         */
+        BotRegistrationRead: {
+            /**
+             * Registration Id
+             * Format: uuid
+             */
+            registration_id: string;
+            status: components["schemas"]["RegistrationStatus"];
+            /** Config Url */
+            config_url?: string | null;
+        };
         /** ChangePasswordRequest */
         ChangePasswordRequest: {
             /** Current Password */
@@ -1460,6 +1765,13 @@ export interface components {
          * @enum {string}
          */
         HealthStatus: "ok" | "degraded" | "down";
+        /** HeartbeatRequest */
+        HeartbeatRequest: {
+            /** Bot Username */
+            bot_username: string;
+            /** Version */
+            version: string;
+        };
         /** HostKeyPin */
         HostKeyPin: {
             /** Public Key */
@@ -1493,6 +1805,97 @@ export interface components {
             email?: string | null;
             /** User Id */
             user_id?: string | null;
+        };
+        /** InviteCheckRequest */
+        InviteCheckRequest: {
+            /** Code */
+            code: string;
+        };
+        /** InviteCheckResponse */
+        InviteCheckResponse: {
+            /** Status */
+            status: string;
+        };
+        /** InviteCreate */
+        InviteCreate: {
+            /**
+             * Protocol Id
+             * Format: uuid
+             */
+            protocol_id: string;
+            /** Days */
+            days: number;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Note */
+            note?: string | null;
+        };
+        /** InviteCreated */
+        InviteCreated: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Protocol Id */
+            protocol_id: string | null;
+            /** Days */
+            days: number;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Note */
+            note: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Used At */
+            used_at: string | null;
+            /** Revoked At */
+            revoked_at: string | null;
+            /** Status */
+            status: string;
+            /** Code */
+            code: string;
+            /** Link */
+            link: string | null;
+        };
+        /** InviteRead */
+        InviteRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Protocol Id */
+            protocol_id: string | null;
+            /** Days */
+            days: number;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Note */
+            note: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Used At */
+            used_at: string | null;
+            /** Revoked At */
+            revoked_at: string | null;
+            /** Status */
+            status: string;
         };
         /** JobRead */
         JobRead: {
@@ -1705,6 +2108,65 @@ export interface components {
          * @enum {string}
          */
         ProtocolType: "amnezia_wg" | "amnezia_app_awg" | "amnezia_app_awg2" | "amnezia_gateway";
+        /** RegistrationCreate */
+        RegistrationCreate: {
+            /** Code */
+            code: string;
+            /** Telegram Id */
+            telegram_id: number;
+            /** Telegram Username */
+            telegram_username?: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+        };
+        /**
+         * RegistrationRead
+         * @description Регистрация для админа.
+         */
+        RegistrationRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Invite Id
+             * Format: uuid
+             */
+            invite_id: string;
+            status: components["schemas"]["RegistrationStatus"];
+            /** Name */
+            name: string;
+            /** Email */
+            email: string;
+            /** Telegram Id */
+            telegram_id: number;
+            /** Telegram Username */
+            telegram_username: string | null;
+            /** User Id */
+            user_id: string | null;
+            /** Access Grant Id */
+            access_grant_id: string | null;
+            /** Error */
+            error: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Finished At */
+            finished_at: string | null;
+        };
+        /**
+         * RegistrationStatus
+         * @enum {string}
+         */
+        RegistrationStatus: "payment_pending" | "provisioning" | "active" | "failed";
         /** ServerCreate */
         ServerCreate: {
             /** Name */
@@ -1840,6 +2302,20 @@ export interface components {
              * @default bearer
              */
             token_type: string;
+        };
+        /**
+         * UserStatusRead
+         * @description /status в боте: имя, до какого числа доступ, протокол.
+         */
+        UserStatusRead: {
+            /** Name */
+            name: string;
+            /** Valid Until */
+            valid_until: string | null;
+            /** Protocol */
+            protocol: string | null;
+            /** Config Url */
+            config_url?: string | null;
         };
         /** VPNCredentialConfigRead */
         VPNCredentialConfigRead: {
@@ -4187,6 +4663,430 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LatestMetrics"][];
+                };
+            };
+        };
+    };
+    heartbeat_api_v1_bot_heartbeat_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HeartbeatRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_invite_api_v1_bot_invites_check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteCheckResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    register_api_v1_bot_registrations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegistrationCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotRegistrationRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    registration_status_api_v1_bot_registrations__registration_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                registration_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotRegistrationRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    user_status_api_v1_bot_users_by_telegram__telegram_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                telegram_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserStatusRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_keys_api_v1_bot_admin_keys_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotKeyRead"][];
+                };
+            };
+        };
+    };
+    create_key_api_v1_bot_admin_keys_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BotKeyCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotKeyCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_key_api_v1_bot_admin_keys__key_id__revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotKeyRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_invites_api_v1_bot_admin_invites_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteRead"][];
+                };
+            };
+        };
+    };
+    create_invite_api_v1_bot_admin_invites_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_invite_api_v1_bot_admin_invites__invite_id__revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invite_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_registrations_api_v1_bot_admin_registrations_get: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["RegistrationStatus"] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegistrationRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_registration_api_v1_bot_admin_registrations__registration_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                registration_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegistrationRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_registration_api_v1_bot_admin_registrations__registration_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                registration_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegistrationRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -56,7 +56,7 @@
 - [x] 8. Аудит: сущности `bot_key`, `bot_invite`, `bot_registration`; события `bot_key_created/revoked`,
   `bot_invite_created/revoked`, `bot_registration_created/activated/failed/retried`; без кодов, ключей, почты,
   `telegram_id`.
-- [ ] 9. Фронтенд: только `npm run gen:api`.
+- [x] 9. Фронтенд: только `npm run gen:api`.
 - [ ] 10. Документация: `modules/bot/CLAUDE.md` (новый), `vpn_users`, `access`, `auth`, `audit`,
   `infrastructure/workers`, `alembic`, `core`, `tests`, корневой «Где что».
 

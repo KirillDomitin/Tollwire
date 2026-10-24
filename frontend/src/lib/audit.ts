@@ -7,7 +7,7 @@ export type AuditLog = Schemas["AuditLogRead"];
 type Tone = "down" | "warn" | null;
 
 /** Группы событий — стабильные идентификаторы (они в адресе страницы: ?group=servers), подписи — в словаре. */
-export const AUDIT_GROUPS = ["signIn", "admins", "servers", "access", "configs", "gateway"] as const;
+export const AUDIT_GROUPS = ["signIn", "admins", "servers", "access", "configs", "gateway", "bot"] as const;
 export type AuditGroup = (typeof AUDIT_GROUPS)[number];
 
 interface ActionInfo {
@@ -97,6 +97,15 @@ export const AUDIT_ACTIONS: Record<AuditAction, ActionInfo> = {
   geoip_list_activated: { group: "gateway" },
   geoip_override_added: { group: "gateway" },
   geoip_override_removed: { group: "gateway" },
+  // Telegram-бот: ключи, приглашения, регистрации. Красным — выдача не удалась (человек остался без доступа).
+  bot_key_created: { group: "bot" },
+  bot_key_revoked: { group: "bot", tone: "warn" },
+  bot_invite_created: { group: "bot" },
+  bot_invite_revoked: { group: "bot" },
+  bot_registration_created: { group: "bot" },
+  bot_registration_activated: { group: "bot" },
+  bot_registration_failed: { group: "bot", tone: "down" },
+  bot_registration_retried: { group: "bot" },
 };
 
 /** Безличная фраза о событии на языке интерфейса: кто действовал, показывается отдельно. */

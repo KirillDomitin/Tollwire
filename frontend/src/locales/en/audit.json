@@ -7,7 +7,8 @@
     "servers": "Servers",
     "access": "Users and access",
     "configs": "Configs",
-    "gateway": "Gateway"
+    "gateway": "Gateway",
+    "bot": "Bot"
   },
   "actions": {
     "login": "Signed in to the panel",
@@ -86,7 +87,15 @@
     "geoip_list_updated": "Russia direct list received",
     "geoip_list_activated": "Russia direct list activated",
     "geoip_override_added": "Russia direct exception added",
-    "geoip_override_removed": "Russia direct exception removed"
+    "geoip_override_removed": "Russia direct exception removed",
+    "bot_key_created": "Telegram bot key issued",
+    "bot_key_revoked": "Telegram bot key revoked",
+    "bot_invite_created": "Bot invite created",
+    "bot_invite_revoked": "Bot invite revoked",
+    "bot_registration_created": "Bot registration: invite used, access is being issued",
+    "bot_registration_activated": "Bot registration finished: access issued",
+    "bot_registration_failed": "Bot registration: access could not be issued",
+    "bot_registration_retried": "Access issuing retried for a bot registration"
   },
   "details": {
     "reason": "Reason",

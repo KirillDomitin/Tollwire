@@ -7,7 +7,8 @@
     "servers": "Серверы",
     "access": "Пользователи и доступ",
     "configs": "Конфиги",
-    "gateway": "Шлюз"
+    "gateway": "Шлюз",
+    "bot": "Бот"
   },
   "actions": {
     "login": "Вход в панель",
@@ -86,7 +87,15 @@
     "geoip_list_updated": "Получен список «России напрямую»",
     "geoip_list_activated": "Список «России напрямую» активирован",
     "geoip_override_added": "Добавлено исключение «России напрямую»",
-    "geoip_override_removed": "Удалено исключение «России напрямую»"
+    "geoip_override_removed": "Удалено исключение «России напрямую»",
+    "bot_key_created": "Выпущен ключ Telegram-бота",
+    "bot_key_revoked": "Отозван ключ Telegram-бота",
+    "bot_invite_created": "Создано приглашение в бота",
+    "bot_invite_revoked": "Отозвано приглашение в бота",
+    "bot_registration_created": "Регистрация через бота: приглашение использовано, доступ выдаётся",
+    "bot_registration_activated": "Регистрация через бота завершена: доступ выдан",
+    "bot_registration_failed": "Регистрация через бота: доступ выдать не удалось",
+    "bot_registration_retried": "Выдача доступа по регистрации через бота повторена"
   },
   "details": {
     "reason": "Причина",
