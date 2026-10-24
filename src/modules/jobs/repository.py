@@ -53,6 +53,15 @@ class JobRepository:
         result = cast(CursorResult[Any], await self.session.execute(query))
         return int(result.rowcount)
 
+    async def get_last_for_grant(self, job_type: JobType, access_grant_id: UUID) -> Job | None:
+        query = (
+            select(Job)
+            .where(Job.type == job_type, Job.access_grant_id == access_grant_id)
+            .order_by(Job.created_at.desc())
+            .limit(1)
+        )
+        return (await self.session.execute(query)).scalar_one_or_none()
+
     async def has_unfinished_of_type(self, job_type: JobType) -> bool:
         """Незавершённая задача этого типа есть (для глобальных задач без сервера)."""
         query = (

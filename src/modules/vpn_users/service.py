@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-from typing import Sequence
+from typing import Any, Sequence
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,17 +21,23 @@ class VPNUserService:
         self.users = VPNUserRepository(session)
         self.audit = AuditService(session, actor)
 
-    async def create(self, data: VPNUserCreate) -> VPNUser:
+    async def stage_create(
+        self, data: VPNUserCreate, *, fields: dict[str, Any] | None = None, audit_meta: dict[str, Any] | None = None
+    ) -> VPNUser:
+        """Проверки, вставка (flush) и аудит без commit: вызывающий коммитит сам, вместе со своими шагами.
+
+        fields - дополнительные колонки пользователя (telegram_id, status), audit_meta - вместо обычного meta события.
+        """
         if await self.users.get_by_email(data.email):
             raise AlreadyExistsError
-        new_user = VPNUser(username=data.username, email=data.email, description=data.description)
+        new_user = VPNUser(username=data.username, email=data.email, description=data.description, **(fields or {}))
         user = await self.users.create(new_user)
-        self.audit.record(
-            AuditAction.VPN_USER_CREATED,
-            AuditEntity.VPN_USER,
-            user.id,
-            {"username": user.username, "email": user.email},
-        )
+        meta = audit_meta if audit_meta is not None else {"username": user.username, "email": user.email}
+        self.audit.record(AuditAction.VPN_USER_CREATED, AuditEntity.VPN_USER, user.id, meta)
+        return user
+
+    async def create(self, data: VPNUserCreate) -> VPNUser:
+        user = await self.stage_create(data)
         await self.session.commit()
         return user
 

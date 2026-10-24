@@ -81,7 +81,8 @@ class SubscriptionService:
         self.users = VPNUserRepository(session)
         self.audit = AuditService(session, actor)
 
-    async def create(self, user_id: UUID, data: SubscriptionCreate) -> Subscription:
+    async def stage_create(self, user_id: UUID, data: SubscriptionCreate) -> Subscription:
+        """Проверки, вставка (flush) и аудит без commit: вызывающий коммитит сам."""
         if not await self.users.get_by_id(user_id):
             raise NotFoundError(f"VPN user '{user_id}' not found")
         if await self.subscriptions.get_active_by_user_id(user_id):
@@ -95,6 +96,10 @@ class SubscriptionService:
             subscription.id,
             {"user_id": user_id, "valid_from": data.valid_from, "valid_until": data.valid_until},
         )
+        return subscription
+
+    async def create(self, user_id: UUID, data: SubscriptionCreate) -> Subscription:
+        subscription = await self.stage_create(user_id, data)
         await self.session.commit()
         return subscription
 
@@ -255,7 +260,8 @@ class AccessGrantService:
         self.protocols = ProtocolRepository(session)
         self.audit = AuditService(session, actor)
 
-    async def create(self, subscription_id: UUID, data: AccessGrantCreate) -> AccessGrant:
+    async def stage_create(self, subscription_id: UUID, data: AccessGrantCreate) -> AccessGrant:
+        """Проверки, вставка (flush) и аудит без commit: вызывающий коммитит сам."""
         subscription = await self.subscriptions.get_by_id(subscription_id)
         if not subscription:
             raise NotFoundError(f"Subscription '{subscription_id}' not found")
@@ -285,6 +291,10 @@ class AccessGrantService:
                 "protocol_id": protocol.id,
             },
         )
+        return grant
+
+    async def create(self, subscription_id: UUID, data: AccessGrantCreate) -> AccessGrant:
+        grant = await self.stage_create(subscription_id, data)
         await self.session.commit()
         return grant
 

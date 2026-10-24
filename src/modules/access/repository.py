@@ -59,6 +59,15 @@ class SubscriptionRepository:
         result = await self.session.execute(sql_request)
         return {subscription.user_id: subscription for subscription in result.scalars()}
 
+    async def get_latest_by_user_id(self, user_id: UUID) -> Subscription | None:
+        sql_request = (
+            select(Subscription)
+            .where(Subscription.user_id == user_id)
+            .order_by(Subscription.created_at.desc())
+            .limit(1)
+        )
+        return (await self.session.execute(sql_request)).scalar_one_or_none()
+
     async def list_due_for_expiry(self, now: datetime) -> Sequence[UUID]:
         """Ещё не завершённые подписки, у которых valid_until уже наступил."""
         sql_request = select(Subscription.id).where(
