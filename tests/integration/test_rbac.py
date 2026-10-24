@@ -58,12 +58,41 @@ def api_routes(routes: list[Any]) -> list[APIRoute]:
     return found
 
 
+# Bot API (`/api/v1/bot/`) открывается ключом бота, а не правом админа: его маршруты проверяются отдельно ниже
+# (метка bot_key_required). Админский API бота (`/api/v1/bot-admin/`) остаётся в общей матрице.
+BOT_API_PREFIX = "/api/v1/bot/"
+
 API_ROUTES = [
     (method, route.path, route)
     for route in api_routes(app.routes)
-    if route.path not in PUBLIC
+    if route.path not in PUBLIC and not route.path.startswith(BOT_API_PREFIX)
     for method in sorted(route.methods)
 ]
+
+BOT_API_ROUTES = [
+    (method, route.path, route)
+    for route in api_routes(app.routes)
+    if route.path.startswith(BOT_API_PREFIX)
+    for method in sorted(route.methods)
+]
+BOT_ADMIN_ROUTES = [
+    (method, path, route) for method, path, route in API_ROUTES if path.startswith("/api/v1/bot-admin/")
+]
+
+
+def marks(route: APIRoute, attribute: str) -> int:
+    """Сколько зависимостей маршрута несут метку attribute (как required_permissions, но для любой метки)."""
+    found = 0
+
+    def walk(dependant: Any) -> None:
+        nonlocal found
+        if getattr(dependant.call, attribute, None):
+            found += 1
+        for sub in dependant.dependencies:
+            walk(sub)
+
+    walk(route.dependant)
+    return found
 
 
 def test_every_endpoint_requires_exactly_one_permission() -> None:
@@ -71,6 +100,66 @@ def test_every_endpoint_requires_exactly_one_permission() -> None:
     assert len(API_ROUTES) >= 40
     missing = [f"{m} {p}" for m, p, route in API_ROUTES if len(required_permissions(route)) != 1]
     assert missing == []
+
+
+def test_bot_api_routes_are_kept_out_of_the_permission_matrix() -> None:
+    assert BOT_API_ROUTES and not [path for _, path, _ in API_ROUTES if path.startswith(BOT_API_PREFIX)]
+
+
+def test_every_bot_api_route_requires_the_bot_key_and_no_admin_permission() -> None:
+    """Новый маршрут Bot API без require_bot_key открыл бы его всему миру; с правом админа его не открыл бы бот."""
+    shapes = {
+        (method, re.sub(r"\{[^}]+\}", "{}", path.removeprefix(BOT_API_PREFIX))) for method, path, _ in BOT_API_ROUTES
+    }
+    assert shapes >= {
+        ("POST", "heartbeat"),
+        ("POST", "invites/check"),
+        ("POST", "registrations"),
+        ("GET", "registrations/{}"),
+        ("GET", "users/by-telegram/{}"),
+    }
+    unmarked = [f"{m} {p}" for m, p, route in BOT_API_ROUTES if marks(route, "bot_key_required") != 1]
+    assert unmarked == []
+    with_permission = [f"{m} {p}" for m, p, route in BOT_API_ROUTES if required_permissions(route)]
+    assert with_permission == []
+
+
+def test_no_admin_route_accepts_a_bot_key() -> None:
+    """Метка bot_key_required есть только у Bot API: ключ бота не должен открывать ничего из админского API."""
+    leaking = [f"{m} {p}" for m, p, route in API_ROUTES if marks(route, "bot_key_required")]
+    assert leaking == []
+
+
+def test_bot_admin_routes_exist_and_cover_keys_invites_and_registrations() -> None:
+    segments = {path.removeprefix("/api/v1/bot-admin/").split("/")[0] for _, path, _ in BOT_ADMIN_ROUTES}
+    assert {"keys", "invites", "registrations"} <= segments
+
+
+def test_bot_admin_writes_need_manage_and_key_changes_need_the_keys_permission() -> None:
+    """Права по ТЗ: чтение - bot:read, приглашения и повтор регистрации - bot:manage, ключи - только superadmin."""
+    assert BOT_ADMIN_ROUTES
+    for method, path, route in BOT_ADMIN_ROUTES:
+        (permission,) = required_permissions(route)
+        segment = path.removeprefix("/api/v1/bot-admin/").split("/")[0]
+        if segment == "keys" and method != "GET":
+            assert permission == Permission.BOT_KEYS, f"{method} {path}"
+        elif method == "GET":
+            assert permission in (Permission.BOT_READ, Permission.BOT_KEYS), f"{method} {path}"
+        else:
+            assert permission == Permission.BOT_MANAGE, f"{method} {path}"
+        if method != "GET":
+            assert not has_permission(AdminRole.VIEWER, permission), f"viewer must not write: {method} {path}"
+
+
+def test_bot_permissions_are_what_was_agreed() -> None:
+    viewer, operator, superadmin = AdminRole.VIEWER, AdminRole.OPERATOR, AdminRole.SUPERADMIN
+    assert has_permission(viewer, Permission.BOT_READ) and not has_permission(viewer, Permission.BOT_MANAGE)
+    assert not has_permission(viewer, Permission.BOT_KEYS)
+    assert has_permission(operator, Permission.BOT_READ) and has_permission(operator, Permission.BOT_MANAGE)
+    assert not has_permission(operator, Permission.BOT_KEYS)  # ключи бота - только superadmin
+    assert all(has_permission(superadmin, p) for p in (Permission.BOT_READ, Permission.BOT_MANAGE, Permission.BOT_KEYS))
+    assert Permission.BOT_READ.value == "bot:read"
+    assert Permission.BOT_MANAGE.value == "bot:manage" and Permission.BOT_KEYS.value == "bot:keys"
 
 
 @pytest.mark.parametrize("role", list(AdminRole))
@@ -225,8 +314,16 @@ CRITICAL = {
 }
 
 
+def bot_critical() -> dict[str, Permission]:
+    """Опасные действия бота. Функция, а не словарь рядом с CRITICAL: Permission.BOT_KEYS читается при вызове."""
+    return {
+        "POST /api/v1/bot-admin/keys": Permission.BOT_KEYS,  # выпуск ключа: им бот входит в панель
+    }
+
+
 def test_critical_endpoints_keep_their_permission() -> None:
     """Матрица выше проверяет, что право соблюдается; здесь — что у опасных действий ПРАВИЛЬНОЕ право.
     Поменять — осознанно, вместе с этим списком."""
+    expected = {**CRITICAL, **bot_critical()}
     declared = {f"{m} {p}": required_permissions(route)[0] for m, p, route in API_ROUTES}
-    assert {key: declared.get(key) for key in CRITICAL} == CRITICAL
+    assert {key: declared.get(key) for key in expected} == expected

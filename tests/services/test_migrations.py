@@ -4,9 +4,13 @@
 безымянный внешний ключ, который downgrade не может удалить (12.3, 14.1).
 """
 
+from datetime import datetime, timedelta, timezone
+from typing import Any
 from uuid import UUID, uuid4
 
+import pytest
 from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from core.database.postgres import engine, session_factory
@@ -1080,3 +1084,263 @@ async def test_the_failover_reason_fits_the_assignment_column() -> None:
     from modules.gateway.models.gateway_assignment import AssignReason
 
     assert max(len(reason.name) for reason in AssignReason) <= 16
+
+
+# --- бот (25.1): vpn_users.{telegram_id, telegram_username}, bot_keys, bot_invites, bot_registrations ---
+
+BEFORE_BOT = "f3b8d2a6c914"  # голова перед миграцией бота
+BOT_TABLES = ("bot_invites", "bot_keys", "bot_registrations")
+BOT_TABLES_SQL = text(
+    "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'bot\\_%' ORDER BY tablename"
+)
+TELEGRAM_COLUMNS_SQL = text(
+    "SELECT column_name, data_type, is_nullable, character_maximum_length FROM information_schema.columns "
+    "WHERE table_name = 'vpn_users' AND column_name IN ('telegram_id', 'telegram_username') ORDER BY column_name"
+)
+REGISTRATION_STATUS_SQL = text(
+    "SELECT data_type, character_maximum_length FROM information_schema.columns "
+    "WHERE table_name = 'bot_registrations' AND column_name = 'status'"
+)
+
+
+def _later(**delta: int) -> datetime:
+    return datetime.now(timezone.utc) + timedelta(**delta)
+
+
+async def _refused_rows(*rows: Any) -> str:
+    """Текст отказа БД на вставку строк ORM (одним commit); если БД приняла - тест падает."""
+    async with session_factory() as session:
+        session.add_all(rows)
+        try:
+            await session.commit()
+        except IntegrityError as exc:
+            return str(exc.orig).lower()
+    raise AssertionError("the database accepted rows it must refuse")
+
+
+async def _save(*rows: Any) -> None:
+    async with session_factory() as session:
+        session.add_all(rows)
+        await session.commit()
+
+
+def _invite(**override: Any) -> Any:
+    from modules.bot.models.invite import BotInvite
+
+    fields: dict[str, Any] = {
+        "code_hash": uuid4().hex + uuid4().hex,
+        "protocol_id": None,
+        "days": 30,
+        "expires_at": _later(days=1),
+    }
+    return BotInvite(**{**fields, **override})
+
+
+def _registration(invite_id: UUID, status: str = "provisioning", **override: Any) -> Any:
+    from modules.bot.models.registration import BotRegistration
+
+    from tests.bot_support import reg_status
+
+    fields: dict[str, Any] = {
+        "invite_id": invite_id,
+        "telegram_id": 5550001234,
+        "name": "Иван",
+        "email": f"{uuid4().hex[:8]}@example.org",
+        "status": reg_status(status),
+    }
+    return BotRegistration(**{**fields, **override})
+
+
+async def test_bot_migration_creates_the_tables_and_telegram_columns() -> None:
+    assert tuple(row[0] for row in await _query(BOT_TABLES_SQL)) == BOT_TABLES
+    columns = {row[0]: row for row in await _query(TELEGRAM_COLUMNS_SQL)}
+    assert columns["telegram_id"][1:3] == ("bigint", "YES")
+    assert columns["telegram_username"][1:4] == ("character varying", "YES", 64)
+
+
+async def test_bot_registration_status_is_a_short_string_not_a_database_enum() -> None:
+    """VARCHAR(16): новый статус добавляется без ALTER TYPE, а downgrade не оставляет типов-сирот."""
+    assert await _query(REGISTRATION_STATUS_SQL) == [("character varying", 16)]
+
+
+async def test_vpn_user_telegram_id_is_unique_but_many_users_may_have_none() -> None:
+    from modules.vpn_users.models.user import VPNUser
+
+    await _save(VPNUser(username="a", email="a@example.org"), VPNUser(username="b", email="b@example.org"))
+    await _save(VPNUser(username="c", email="c@example.org", telegram_id=5550001234))
+    refusal = await _refused_rows(VPNUser(username="d", email="d@example.org", telegram_id=5550001234))
+    assert "uq_vpn_users_telegram_id" in refusal
+
+
+async def test_vpn_user_telegram_id_holds_real_telegram_ids() -> None:
+    from modules.vpn_users.models.user import VPNUser
+
+    await _save(VPNUser(username="big", email="big@example.org", telegram_id=2**52 + 7))
+    assert await _query(text("SELECT telegram_id FROM vpn_users")) == [(2**52 + 7,)]
+
+
+async def test_bot_key_hash_is_unique() -> None:
+    from modules.bot.models.key import BotKey
+
+    await _save(BotKey(name="one", key_hash="h" * 64, key_prefix="abcdefgh"))
+    assert "key_hash" in await _refused_rows(BotKey(name="two", key_hash="h" * 64, key_prefix="abcdefgh"))
+
+
+async def test_bot_key_defaults_agree_with_the_orm() -> None:
+    from modules.bot.models.key import BotKey
+
+    await _save(BotKey(name="one", key_hash="h" * 64, key_prefix="abcdefgh"))
+    async with session_factory() as session:
+        (row,) = (await session.execute(select(BotKey))).scalars().all()
+        assert row.created_at is not None
+        assert (row.created_by, row.last_seen_at, row.last_seen_version, row.bot_username, row.revoked_at) == (
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+
+
+async def test_bot_invite_code_hash_is_unique() -> None:
+    await _save(_invite(code_hash="c" * 64))
+    assert "code_hash" in await _refused_rows(_invite(code_hash="c" * 64))
+
+
+@pytest.mark.parametrize("days", [0, -1, 3651])
+async def test_bot_invite_days_outside_the_range_are_refused_by_the_database(days: int) -> None:
+    assert "check" in await _refused_rows(_invite(days=days))
+
+
+@pytest.mark.parametrize("days", [1, 3650])
+async def test_bot_invite_days_at_the_range_edges_are_accepted(days: int) -> None:
+    await _save(_invite(days=days))
+    assert await _query(text("SELECT days FROM bot_invites")) == [(days,)]
+
+
+async def test_bot_invite_needs_a_deadline() -> None:
+    assert "expires_at" in await _refused_rows(_invite(expires_at=None))
+
+
+async def test_bot_registration_takes_an_invite_only_once() -> None:
+    invite = _invite()
+    await _save(invite)
+    await _save(_registration(invite.id, status="failed", telegram_id=1))
+    refusal = await _refused_rows(_registration(invite.id, status="failed", telegram_id=2))
+    assert "invite_id" in refusal
+
+
+async def test_one_unfinished_registration_per_telegram() -> None:
+    first, second = _invite(), _invite()
+    await _save(first, second)
+    await _save(_registration(first.id, status="provisioning"))
+    assert "telegram_id" in await _refused_rows(_registration(second.id, status="provisioning"))
+    assert "telegram_id" in await _refused_rows(_registration(second.id, status="payment_pending"))
+
+
+async def test_payment_pending_also_counts_as_unfinished() -> None:
+    first, second = _invite(), _invite()
+    await _save(first, second)
+    await _save(_registration(first.id, status="payment_pending"))
+    assert "telegram_id" in await _refused_rows(_registration(second.id, status="provisioning"))
+
+
+@pytest.mark.parametrize("finished", ["active", "failed"])
+async def test_a_finished_registration_does_not_block_a_new_one_of_the_same_telegram(finished: str) -> None:
+    first, second = _invite(), _invite()
+    await _save(first, second)
+    await _save(_registration(first.id, status=finished))
+    await _save(_registration(second.id, status="provisioning"))
+    assert len(await _query(text("SELECT id FROM bot_registrations"))) == 2
+
+
+async def test_the_registrations_of_one_telegram_may_pile_up_when_all_are_finished() -> None:
+    invites = [_invite() for _ in range(3)]
+    await _save(*invites)
+    await _save(*[_registration(invite.id, status="failed") for invite in invites])
+    assert await _query(text("SELECT count(*) FROM bot_registrations")) == [(3,)]
+
+
+async def test_a_grant_belongs_to_at_most_one_registration() -> None:
+    async with engine.begin() as conn:
+        user_id = await _insert_user(conn, "grant-owner@example.org")
+        grant_id = await _insert_grant(conn, await _add_server(), user_id, "AMNEZIA_WG")
+    first, second = _invite(), _invite()
+    await _save(first, second)
+    await _save(_registration(first.id, status="failed", telegram_id=1, access_grant_id=grant_id))
+    refusal = await _refused_rows(_registration(second.id, status="failed", telegram_id=2, access_grant_id=grant_id))
+    assert "access_grant_id" in refusal
+
+
+async def test_deleting_the_protocol_the_admin_the_user_or_the_key_keeps_the_rows() -> None:
+    """Все ссылки бота - SET NULL: история приглашений и регистраций переживает удаление того, на что она указывала."""
+    from modules.bot.models.key import BotKey
+
+    server_id = await _add_server()
+    async with engine.begin() as conn:
+        user_id = await _insert_user(conn, "owner@example.org")
+        grant_id = await _insert_grant(conn, server_id, user_id, "AMNEZIA_WG")
+        protocol_id = (await conn.execute(text("SELECT id FROM protocols"))).scalar_one()
+        admin_id = uuid4()
+        await conn.execute(
+            text(
+                "INSERT INTO admins (id, email, password_hash, is_active, role, created_at, updated_at) "
+                "VALUES (:id, 'creator@example.org', 'x', true, 'SUPERADMIN', now(), now())"
+            ),
+            {"id": admin_id},
+        )
+    key = BotKey(name="k", key_hash="k" * 64, key_prefix="abcdefgh", created_by=admin_id)
+    invite = _invite(protocol_id=protocol_id, created_by=admin_id)
+    await _save(key, invite)
+    await _save(_registration(invite.id, bot_key_id=key.id, user_id=user_id, access_grant_id=grant_id))
+
+    async with engine.begin() as conn:
+        await conn.execute(text("DELETE FROM admins WHERE id = :id"), {"id": admin_id})
+        await conn.execute(text("DELETE FROM access_grants WHERE id = :id"), {"id": grant_id})
+        await conn.execute(text("DELETE FROM vpn_users WHERE id = :id"), {"id": user_id})
+        await conn.execute(text("DELETE FROM protocols WHERE id = :id"), {"id": protocol_id})
+        await conn.execute(text("DELETE FROM bot_keys WHERE id = :id"), {"id": key.id})
+
+    assert await _query(text("SELECT created_by, protocol_id FROM bot_invites")) == [(None, None)]
+    assert await _query(text("SELECT user_id, access_grant_id, bot_key_id FROM bot_registrations")) == [
+        (None, None, None)
+    ]
+
+
+async def test_bot_migration_downgrade_drops_the_tables_and_columns_keeps_users_then_upgrade_restores() -> None:
+    from modules.vpn_users.models.user import VPNUser
+
+    await _save(VPNUser(username="keeper", email="keeper@example.org", telegram_id=5550001234))
+    invite = _invite()
+    await _save(invite, _registration(invite.id, telegram_id=7))
+    await _alembic("downgrade", BEFORE_BOT)
+    try:
+        assert await _query(BOT_TABLES_SQL) == []
+        assert await _query(TELEGRAM_COLUMNS_SQL) == []
+        assert await _query(text("SELECT username, email FROM vpn_users")) == [("keeper", "keeper@example.org")]
+    finally:
+        await _alembic("upgrade", "head")
+    assert tuple(row[0] for row in await _query(BOT_TABLES_SQL)) == BOT_TABLES
+    assert len(await _query(TELEGRAM_COLUMNS_SQL)) == 2
+    assert await _query(text("SELECT telegram_id, telegram_username FROM vpn_users")) == [(None, None)]
+    assert await _query(text("SELECT count(*) FROM bot_registrations")) == [(0,)]  # связка с Telegram потеряна
+
+
+async def test_bot_migration_cycle_is_idempotent_and_leaves_no_orphans() -> None:
+    await _alembic("downgrade", BEFORE_BOT)
+    await _alembic("upgrade", "head")
+    await _alembic("downgrade", BEFORE_BOT)
+    try:
+        assert await _query(BOT_TABLES_SQL) == []
+        enums = await _query(
+            text(
+                "SELECT typname FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace "
+                "WHERE n.nspname = 'public' AND t.typtype = 'e' AND t.typname LIKE '%bot%'"
+            )
+        )
+        assert enums == []
+        indexes = await _query(text("SELECT indexname FROM pg_indexes WHERE indexname LIKE '%bot%'"))
+        assert indexes == []  # индексы ушли вместе с таблицами, в том числе частичный по telegram_id
+    finally:
+        await _alembic("upgrade", "head")
+    assert tuple(row[0] for row in await _query(BOT_TABLES_SQL)) == BOT_TABLES
