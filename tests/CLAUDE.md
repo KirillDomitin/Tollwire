@@ -29,7 +29,7 @@
 | `integration/` | Через HTTP (`httpx.ASGITransport`, `base_url=http://testserver`), настоящий вход, RBAC-матрица (`test_rbac.py`), сквозной сценарий `test_mvp_flow.py`, воркер через `process_next()` / `drain(worker)`. | `admin`, `api`, `make_admin`/`login_client`, `worker` (`integration/conftest.py`) |
 
 Общие сцены: `tests/import_support.py` (сервер с приложением AmneziaVPN), `integration/discovery_support.py`,
-`tests/gateway_support.py` (шлюз и выходы), `tests/geoip_support.py` (синтетические списки RIPE).
+`tests/gateway_support.py` (шлюз и выходы), `tests/geoip_support.py` (синтетические списки RIPE), `tests/bot_support.py` (бот: сцены и обёртки; перечень тестов — `docs/bot/tests.md`).
 
 ## Установщик и `./panel`
 
@@ -62,4 +62,6 @@ git (локальный «сервер» + второй клон, из кото�
 
 - Гонки проверять детерминированно (окно через monkeypatch), а не через `asyncio.gather` по ASGI.
 - Админ для интеграции — фикстура `admin` (superadmin), `make_admin`/`login_client` для других ролей.
+- `test_rbac.py`: `/api/v1/bot/*` вне общей матрицы — проверяется метка `bot_key_required` на каждом маршруте и
+  отсутствие прав админа; `/api/v1/bot-admin/*` — в матрице.
 - Известный плавающий тест: `test_login_limited_by_ip` (окно лимита 60 с, Argon2 под нагрузкой).

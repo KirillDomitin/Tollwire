@@ -15,3 +15,5 @@
 already/conflict, savepoint на клиента, аудит, секреты), `test_import_lifecycle.py` (отзыв и истечение импортированного
 клиента, 409 на конфиг, `source`/`external_name` в API, пользователи без email, `DELETE /protocol` не трогает приложение);
 общее — `tests/import_support.py` (сцена «сервер с приложением», импортированный credential в БД). |
+
+Бот (перечень — `docs/bot/tests.md`): `unit/test_bot*.py`, `services/test_bot_*.py`, `integration/test_bot_*.py`; миграция бота — `services/test_migrations.py`; права бота — `integration/test_rbac.py`.

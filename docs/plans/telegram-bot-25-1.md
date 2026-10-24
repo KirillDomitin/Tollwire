@@ -57,7 +57,7 @@
   `bot_invite_created/revoked`, `bot_registration_created/activated/failed/retried`; без кодов, ключей, почты,
   `telegram_id`.
 - [x] 9. Фронтенд: только `npm run gen:api`.
-- [ ] 10. Документация: `modules/bot/CLAUDE.md` (новый), `vpn_users`, `access`, `auth`, `audit`,
+- [x] 10. Документация: `modules/bot/CLAUDE.md` (новый), `vpn_users`, `access`, `auth`, `audit`,
   `infrastructure/workers`, `alembic`, `core`, `tests`, корневой «Где что».
 
 ## Тесты
@@ -84,3 +84,5 @@
 - Секреты: ключ и код не в логах, аудите и `Job.params`; текст `IntegrityError` наружу не отдаётся.
 - Downgrade миграции теряет связку с Telegram и данные бота — записать в `alembic/CLAUDE.md`.
 - Хук воркера упал в ветке сбоя → задача станет stale, `reconcile` переведёт регистрацию в `failed`.
+
+Статус: готово (этап 25.1), живой прогон на реальном сервере не выполнялся.

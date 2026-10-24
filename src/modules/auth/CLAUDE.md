@@ -40,12 +40,13 @@
 
 | Право | viewer | operator | superadmin |
 |---|---|---|---|
-| servers:read, vpn_users:read, access:read, jobs:read, audit:read | ✓ | ✓ | ✓ |
-| servers:check (sync/health/discover), vpn_users:manage, access:manage, config:reveal | | ✓ | ✓ |
-| servers:manage (сервер, SSH, ключ хоста, установка, протокол), admins:manage | | | ✓ |
+| servers:read, vpn_users:read, access:read, jobs:read, audit:read, bot:read | ✓ | ✓ | ✓ |
+| servers:check (sync/health/discover), vpn_users:manage, access:manage, config:reveal, bot:manage | | ✓ | ✓ |
+| servers:manage (сервер, SSH, ключ хоста, установка, протокол), admins:manage, bot:keys | | | ✓ |
 
 Новый эндпоинт — обязательно с `require(...)`; `tests/integration/test_rbac.py` обходит все маршруты и проверяет
-матрицу (новый маршрут без права уронит тест).
+матрицу (новый маршрут без права уронит тест). Маршруты `/api/v1/bot/*` открываются ключом бота и в матрицу
+не входят (`modules/bot/CLAUDE.md`).
 
 ## /api/v1/admins (`admin_service.py`, только superadmin)
 

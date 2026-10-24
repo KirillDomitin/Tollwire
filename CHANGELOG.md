@@ -15,6 +15,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- Telegram bot, panel side (API only; there is no screen yet). Superadmins issue and revoke keys for the bot
+  (`POST /api/v1/bot-admin/keys`). Operators and superadmins create one-time invites
+  (`POST /api/v1/bot-admin/invites`: a protocol, days from 1 to 3650, a deadline; the code and the `t.me` link
+  are shown once). The bot checks an invite and registers a person with it: a user, a subscription and access to
+  the invite's protocol are created, and the client is issued like any other. A failed issue is listed in
+  `GET /api/v1/bot-admin/registrations` and can be retried (`POST .../retry`). The audit log has a new "Bot"
+  group; its entries contain no codes, keys, emails or Telegram ids.
 - Gateway in the web UI. A server with the gateway protocol gets a "Gateway" section on its card: a summary (client
   subnet, port, container check, healthy exits, clients with and without an exit), the exits table (slot, state, health and handshake
   age, weight, client limit, assigned clients) with add / change / remove (removal that would leave clients without an

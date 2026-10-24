@@ -36,7 +36,7 @@ REST API + веб-интерфейс для управления VPN-серве�
 ## Где что
 
 `src/core` общее · `src/infrastructure/{ssh,vpn,workers,monitoring}` внешний мир · `src/modules/*` домен
-(auth, servers, protocols, vpn_users, access, jobs, audit, monitoring) · `src/scripts` утилиты · `alembic` миграции
+(auth, servers, protocols, vpn_users, access, jobs, audit, monitoring, bot) · `src/scripts` утилиты · `alembic` миграции
 · `tests` · `frontend` интерфейс.
 
 ## Команды

@@ -71,6 +71,17 @@
   дальше возвращает NOT NULL и пересоздаёт `jobtype` без нового значения. Гранты с обычным credential'ом,
   пользователи, подписки и peer'ы на сервере не трогаются.
 
+## Telegram-бот (`a7d3e9b15c28`)
+
+- `vpn_users` += `telegram_id` (BIGINT NULL, UNIQUE `uq_vpn_users_telegram_id`) и `telegram_username`
+  (VARCHAR(64) NULL).
+- Таблицы `bot_keys`, `bot_invites` (CHECK `ck_bot_invites_days`: 1..3650), `bot_registrations` (UNIQUE
+  `invite_id` и `access_grant_id`, FK именованные). `status` — VARCHAR(16), не Postgres-enum.
+- Частичный уникальный индекс `uq_bot_registrations_open_telegram_id` по `telegram_id` при `status IN
+  ('PAYMENT_PENDING', 'PROVISIONING')` — имена членов enum, не значения.
+- Downgrade удаляет индекс, три таблицы и две колонки с UNIQUE. **Связка пользователей с Telegram и все данные
+  бота (ключи, приглашения, регистрации) теряются**; пользователи, подписки и гранты остаются.
+
 ## Частичные уникальные индексы
 
 Бизнес-правила «одна живая запись» держит БД (`postgresql_where=...`): одна незавершённая подписка на

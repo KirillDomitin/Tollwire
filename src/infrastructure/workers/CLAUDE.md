@@ -20,6 +20,10 @@
   пока задача не завершена (`has_unfinished_for_server`).
 - Серверные операции — под `ServerLock`; сервер занят → задача обратно в PENDING и в очередь с паузой.
 - Перед записью FAILED — `rollback` и перечитать Job (сессия могла сломаться).
+- Итог `CREATE_USER` (SUCCESS и FAILED) передаётся хуку `BotRegistrationService.on_issue_finished(job)` до
+  commit, в той же транзакции: регистрация бота по этому гранту становится `active` или `failed`. Упавший хук
+  не даёт зафиксировать итог задачи: она остаётся RUNNING (её закроет `stale_jobs`), регистрацию закроет
+  `reconcile`.
 - Сбой Redis → backoff, не падение процесса. Логи с `bind(job_id, job_type, server_id)`.
 - Тесты: `JobWorker.process_next()` обрабатывает одну задачу — удобно в интеграционных тестах (`drain(worker)`).
 
@@ -38,7 +42,7 @@ interval) — несколько воркеров не дублируют раб
 |---|---|
 | `access` | активация и истечение подписок (своя сессия на подписку), при истечении — задачи отзыва клиентов |
 | `admin_sessions` | чистка истёкших refresh-сессий |
-| `stale_jobs` | RUNNING дольше 30 мин → FAILED (иначе блокировали бы плановые проверки навсегда) |
+| `stale_jobs` | RUNNING дольше 30 мин → FAILED (иначе блокировали бы плановые проверки навсегда); затем `BotRegistrationService.reconcile()`: регистрации бота в `provisioning` без незавершённой задачи → `active` (клиент есть) или `failed` |
 | `requeue_jobs` | PENDING, потерянные очередью → снова в очередь |
 | `health` | задачи HEALTH_CHECK всем серверам с учёткой (кроме INSTALLING) |
 | `sync` | задачи SYNC_SERVER серверам с протоколом — **меняет** серверы (удаляет «сирот») |

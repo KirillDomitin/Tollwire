@@ -25,7 +25,7 @@ npm run typecheck && npm run lint && npm test && npm run build
 | `src/pages/user/` | Карточка пользователя: подписка, доступы (`GrantRow`, `GrantAccessDialog`), конфиг. `email` может быть `null`; у `source: "imported"` конфига нет. |
 | `src/pages/AuditPage.tsx` | Журнал `/audit`: фильтры в URL, `useInfiniteQuery` по 100, курсор `before_created_at`/`before_id`. |
 | `src/components/` | Button, Dialog, ConfirmDialog (`NeedsConfirmation` → повтор с `again = true`), TextField, Notice, AppShell, TimeChart (uPlot) и др. |
-| `src/lib/` | `audit.ts` (`AUDIT_ACTIONS`, группы, белый список подробностей), `access.ts`, `jobs.ts`, `time.ts`, `units.ts`, `theme.ts`. |
+| `src/lib/` | `audit.ts` (`AUDIT_ACTIONS`, группы — в т.ч. `bot` (Telegram-бот), белый список подробностей), `access.ts`, `jobs.ts`, `time.ts`, `units.ts`, `theme.ts`. |
 | `src/styles/tokens.css` | Дизайн-токены (светлая и тёмная тема). |
 
 ## Дизайн «Журнал связи»
