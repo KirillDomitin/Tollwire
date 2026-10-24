@@ -19,6 +19,9 @@ class Permission(enum.Enum):
     JOBS_READ = "jobs:read"
     AUDIT_READ = "audit:read"
     ADMINS_MANAGE = "admins:manage"
+    BOT_READ = "bot:read"  # ключи (без секретов), приглашения (без кодов), регистрации Telegram-бота
+    BOT_MANAGE = "bot:manage"  # создать и отозвать приглашение, повторить регистрацию
+    BOT_KEYS = "bot:keys"  # выпустить и отозвать ключ бота: им бот входит в панель (только superadmin)
 
 
 _VIEWER = frozenset(
@@ -28,6 +31,7 @@ _VIEWER = frozenset(
         Permission.ACCESS_READ,
         Permission.JOBS_READ,
         Permission.AUDIT_READ,
+        Permission.BOT_READ,
     }
 )
 _OPERATOR = _VIEWER | {
@@ -35,6 +39,7 @@ _OPERATOR = _VIEWER | {
     Permission.VPN_USERS_MANAGE,
     Permission.ACCESS_MANAGE,
     Permission.CONFIG_REVEAL,
+    Permission.BOT_MANAGE,
 }
 
 ROLE_PERMISSIONS: dict[AdminRole, frozenset[Permission]] = {

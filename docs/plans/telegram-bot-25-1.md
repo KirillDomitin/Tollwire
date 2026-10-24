@@ -40,20 +40,20 @@
 
 ## Шаги
 
-- [ ] 1. `core`: `security.py` — общие `generate_token` / `hash_token`; `config.py` — лимиты `BOT_*` (+ `.env.example`,
+- [x] 1. `core`: `security.py` — общие `generate_token` / `hash_token`; `config.py` — лимиты `BOT_*` (+ `.env.example`,
   `.env.prod.example`); `log.py` — префикс ключа и поля `x-bot-key`, `code` в `_SECRET_PATTERNS`; `exceptions.py` —
   `BotAuthError` (401), `RegistrationConflictError(reason)` (409) + коды в `main.py`.
-- [ ] 2. Модели и миграция: telegram-поля `vpn_users`; `modules/bot/models/{key,invite,registration}.py`; импорты в
+- [x] 2. Модели и миграция: telegram-поля `vpn_users`; `modules/bot/models/{key,invite,registration}.py`; импорты в
   `alembic/env.py`; одна ревизия (именованные ограничения, CHECK), downgrade удаляет три таблицы и две колонки.
-- [ ] 3. `vpn_users` / `access`: `stage_*` (Р2-A); `VPNUserRepository.get_by_telegram_id`; последняя подписка
+- [x] 3. `vpn_users` / `access`: `stage_*` (Р2-A); `VPNUserRepository.get_by_telegram_id`; последняя подписка
   пользователя в `SubscriptionRepository`.
-- [ ] 4. `modules/bot`: репозитории, `payment.py` (`PaymentPolicy`, `InviteFree`), сервисы ключей, приглашений,
+- [x] 4. `modules/bot`: репозитории, `payment.py` (`PaymentPolicy`, `InviteFree`), сервисы ключей, приглашений,
   регистраций (`register`, `get`, `by_telegram`, `retry`, `on_issue_finished`, `reconcile`); `dependencies.py`
   (`require_bot_key`, метка `bot_key_required`), `rate_limits.py`.
-- [ ] 5. Роутеры `api/v1/bot.py`, `api/v1/admin.py`; `include_router` в `main.py`.
-- [ ] 6. Воркер и планировщик: хук `on_issue_finished` в обеих ветках `worker.py`; `reconcile` в `stale_jobs`.
-- [ ] 7. Права: три `Permission` в `permissions.py` (`BOT_KEYS` — только superadmin).
-- [ ] 8. Аудит: сущности `bot_key`, `bot_invite`, `bot_registration`; события `bot_key_created/revoked`,
+- [x] 5. Роутеры `api/v1/bot.py`, `api/v1/admin.py`; `include_router` в `main.py`.
+- [x] 6. Воркер и планировщик: хук `on_issue_finished` в обеих ветках `worker.py`; `reconcile` в `stale_jobs`.
+- [x] 7. Права: три `Permission` в `permissions.py` (`BOT_KEYS` — только superadmin).
+- [x] 8. Аудит: сущности `bot_key`, `bot_invite`, `bot_registration`; события `bot_key_created/revoked`,
   `bot_invite_created/revoked`, `bot_registration_created/activated/failed/retried`; без кодов, ключей, почты,
   `telegram_id`.
 - [ ] 9. Фронтенд: только `npm run gen:api`.

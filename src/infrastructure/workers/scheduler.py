@@ -15,6 +15,7 @@ from modules.access.service import SubscriptionService
 from modules.audit.actor import SYSTEM_ACTOR
 from modules.audit.service import AuditService
 from modules.auth.service import AuthService
+from modules.bot.registrations import BotRegistrationService
 from modules.gateway.failover import GatewayFailoverService
 from modules.geoip.service import GeoipService
 from modules.jobs.service import JobService
@@ -187,7 +188,10 @@ async def watch_gateways() -> str:
 async def fail_stale_jobs(max_age_seconds: int) -> str:
     async with session_factory() as session:
         failed = await JobService(session, SYSTEM_ACTOR).fail_stale_running(max_age_seconds)
-    return f"marked {failed} stale running jobs as failed"
+    # Регистрации бота, чью выдачу закрыл не хук воркера (воркер убит, задача отклонена, грант удалён).
+    async with session_factory() as session:
+        reconciled = await BotRegistrationService(session, SYSTEM_ACTOR).reconcile()
+    return f"marked {failed} stale running jobs as failed, closed {reconciled} bot registrations"
 
 
 async def requeue_lost_jobs(max_age_seconds: int) -> str:

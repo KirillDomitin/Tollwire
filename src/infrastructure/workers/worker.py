@@ -20,6 +20,7 @@ from modules.access.import_service import ClientImportService
 from modules.access.models.vpn_credential import VPNCredential
 from modules.access.service import VPNCredentialService
 from modules.audit.actor import AuditActor
+from modules.bot.registrations import BotRegistrationService
 from modules.gateway.failover import GatewayFailoverService
 from modules.gateway.ru import GatewayRuService
 from modules.gateway.service import GatewayExitService
@@ -235,12 +236,14 @@ class JobWorker:
                     job.status = JobStatus.FAILED
                     job.finished_at = datetime.now(timezone.utc)
                     JobService(session, actor).record_finished(job)
+                    await BotRegistrationService(session, actor).on_issue_finished(job)
                     await session.commit()
                 else:
                     job.status = JobStatus.SUCCESS
                     job.finished_at = datetime.now(timezone.utc)
                     job.progress = 100
                     JobService(session, actor).record_finished(job)
+                    await BotRegistrationService(session, actor).on_issue_finished(job)
                     await session.commit()
                     logger.info("job succeeded", extra={"duration_ms": _elapsed_ms(started)})
 

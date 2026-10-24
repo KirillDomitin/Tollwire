@@ -1138,7 +1138,6 @@ def _invite(**override: Any) -> Any:
 
 def _registration(invite_id: UUID, status: str = "provisioning", **override: Any) -> Any:
     from modules.bot.models.registration import BotRegistration
-
     from tests.bot_support import reg_status
 
     fields: dict[str, Any] = {
@@ -1312,7 +1311,8 @@ async def test_bot_migration_downgrade_drops_the_tables_and_columns_keeps_users_
 
     await _save(VPNUser(username="keeper", email="keeper@example.org", telegram_id=5550001234))
     invite = _invite()
-    await _save(invite, _registration(invite.id, telegram_id=7))
+    await _save(invite)
+    await _save(_registration(invite.id, telegram_id=7))
     await _alembic("downgrade", BEFORE_BOT)
     try:
         assert await _query(BOT_TABLES_SQL) == []

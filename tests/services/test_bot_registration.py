@@ -10,9 +10,6 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-from modules.bot.models.invite import BotInvite
-from modules.bot.models.registration import BotRegistration
-from modules.bot.registrations import BotRegistrationService
 from sqlalchemy import select, text
 
 from core.database.postgres import session_factory
@@ -25,6 +22,9 @@ from modules.access.models.subscription import Subscription
 from modules.access.service import AccessGrantService
 from modules.audit.actor import SYSTEM_ACTOR
 from modules.audit.models.audit_log import AuditAction
+from modules.bot.models.invite import BotInvite
+from modules.bot.models.registration import BotRegistration
+from modules.bot.registrations import BotRegistrationService
 from modules.jobs.models.job import Job, JobStatus, JobType
 from modules.jobs.queue import JobQueue
 from modules.vpn_users.models.user import VPNUser
@@ -184,6 +184,8 @@ async def test_register_audit_has_no_code_email_or_telegram_id(world: World) -> 
     for secret in (code, EMAIL, EMAIL.split("@")[0], str(TELEGRAM_ID)):
         assert secret not in dump
     assert code not in await audit_dump()
+    # Весь журнал, не только события бота: вместе с регистрацией пишется vpn_user_created, и в нём почты тоже нет.
+    assert EMAIL not in await audit_dump() and str(TELEGRAM_ID) not in await audit_dump()
 
 
 async def test_register_with_a_short_lived_but_unexpired_invite_works(world: World) -> None:
