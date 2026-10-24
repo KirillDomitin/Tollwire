@@ -39,6 +39,14 @@ class Settings(BaseSettings):
     refresh_ip_max_attempts: int = 30
     refresh_ip_window_seconds: int = 60
 
+    # Bot API (/api/v1/bot/*): неудачи авторизации по IP (до поиска ключа в БД), запросы и регистрации по ключу.
+    bot_auth_ip_max_failures: int = 30
+    bot_auth_ip_window_seconds: int = 60
+    bot_key_max_requests: int = 300  # бот опрашивает статус регистрации раз в 2-3 с, очередь - раз в 5 с
+    bot_key_window_seconds: int = 60
+    bot_registrations_max: int = 10
+    bot_registrations_window_seconds: int = 60
+
     # Периодический планировщик внутри воркера. Интервалы в секундах; 0 — правило выключено.
     scheduler_enabled: bool = True
     scheduler_tick_seconds: int = 15

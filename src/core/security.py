@@ -54,12 +54,17 @@ def decode_access_token(token: str) -> dict[str, int | str] | None:
     return payload
 
 
-def generate_refresh_token() -> str:
-    return secrets.token_urlsafe(32)
+def generate_token(nbytes: int = 32) -> str:
+    """Случайный секрет (refresh-токен, ключ бота, код приглашения): URL-безопасный, в БД хранится только hash_token."""
+    return secrets.token_urlsafe(nbytes)
 
 
-def hash_refresh_token(token: str) -> str:
+def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+generate_refresh_token = generate_token
+hash_refresh_token = hash_token
 
 
 def encrypt_secret(value: str) -> str:

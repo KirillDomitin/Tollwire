@@ -20,6 +20,7 @@ from core.exceptions import (
     AdminRuleError,
     AlreadyExistsError,
     AppError,
+    BotAuthError,
     ConfigUnavailableError,
     CredentialChangedError,
     CredentialNotFound,
@@ -30,6 +31,7 @@ from core.exceptions import (
     JobAlreadyRunningError,
     LiveCredentialExistsError,
     NotFoundError,
+    RegistrationConflictError,
     SSHHostKeyNotPinnedError,
     StateConflictError,
 )
@@ -76,6 +78,8 @@ app.add_middleware(RequestContextMiddleware)
 # Порядок важен: Starlette ищет обработчик по MRO исключения, поэтому подклассы AppError — отдельными записями.
 _STATUS_BY_ERROR: dict[type[AppError], int] = {
     NotFoundError: 404,
+    BotAuthError: 401,  # ключ бота не передан / неверный / отозван
+    RegistrationConflictError: 409,  # приглашение занято, почта или Telegram заняты (reason в теле)
     InvalidDataError: 422,
     AlreadyExistsError: 409,
     CredentialNotFound: 409,  # действие невозможно, пока не задана SSH-учётка
@@ -94,7 +98,10 @@ _STATUS_BY_ERROR: dict[type[AppError], int] = {
 
 async def domain_error(request: Request, exc: Exception) -> JSONResponse:
     status = next((code for cls, code in _STATUS_BY_ERROR.items() if isinstance(exc, cls)), 409)
-    return JSONResponse(status_code=status, content={"detail": str(exc) or type(exc).__name__})
+    content = {"detail": str(exc) or type(exc).__name__}
+    if isinstance(exc, RegistrationConflictError):
+        content["reason"] = exc.reason
+    return JSONResponse(status_code=status, content=content)
 
 
 async def integrity_error(request: Request, exc: Exception) -> JSONResponse:

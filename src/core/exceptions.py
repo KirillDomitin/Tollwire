@@ -114,6 +114,18 @@ class StateConflictError(AppError):
     """Действие невозможно в текущем состоянии объекта (например, активировать можно только кандидата) - 409."""
 
 
+class BotAuthError(AppError):
+    """Нет ключа бота, он неверный или отозван - 401; по ответу не видно, что именно из этого."""
+
+
+class RegistrationConflictError(AppError):
+    """Регистрацию через бота принять нельзя - 409; reason (invite_used, email_taken, ...) нужен боту для ответа."""
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
 class ProtocolError(AppError): ...
 
 
