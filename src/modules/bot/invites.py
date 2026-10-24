@@ -3,6 +3,7 @@
 import enum
 from collections.abc import Sequence
 from datetime import datetime, timezone
+from urllib.parse import quote
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -102,4 +103,4 @@ class BotInviteService:
     async def link(self, code: str) -> str | None:
         """Ссылка t.me/<бот>?start=<код>: имя бота известно, когда он хоть раз прислал heartbeat."""
         username = await self.keys.latest_bot_username()
-        return f"https://t.me/{username.lstrip('@')}?start={code}" if username else None
+        return f"https://t.me/{quote(username.lstrip('@'), safe='')}?start={quote(code, safe='')}" if username else None

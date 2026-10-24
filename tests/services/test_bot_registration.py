@@ -723,3 +723,22 @@ async def test_retry_that_fails_again_returns_to_failed(world: World, worker: Jo
     await drain(worker)
     await reload(world.session, failed)
     assert state(failed) == "failed" and failed.error
+
+
+async def test_a_stale_failed_job_does_not_fail_a_registration_retried_meanwhile(
+    world: World, worker: JobWorker
+) -> None:
+    """Старую (зависшую) задачу закрыли, админ повторил выдачу; когда старая наконец дошла до хука, итог за новой."""
+    scene = await bot_scene(world)
+    failed, _ = await failed_registration(world, scene, worker)
+    (old_job,) = await world.jobs(JobType.CREATE_USER)
+    await registration_service(world.session).retry(failed.id)  # вторая задача ждёт в очереди
+    await world.session.refresh(old_job)
+    old_job.status, old_job.error = JobStatus.FAILED, "late failure of the first job"
+    await registration_service(world.session).on_issue_finished(old_job)
+    await world.session.commit()
+    await reload(world.session, failed)
+    assert state(failed) == "provisioning"  # ждём итог второй задачи
+    await drain(worker)  # сервер всё ещё недоступен
+    await reload(world.session, failed)
+    assert state(failed) == "failed"

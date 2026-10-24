@@ -12,9 +12,10 @@ from modules.vpn_users.schemas import Email
 
 
 def _no_control_characters(value: str) -> str:
-    # Ввод из Telegram недоверенный: переводы строк, NUL, ESC и т.п. в имени ломают логи, письма и интерфейс.
-    if any(unicodedata.category(char) == "Cc" for char in value):
-        raise ValueError("Control characters are not allowed")
+    # Ввод из Telegram недоверенный: переводы строк, NUL, ESC в имени ломают логи и интерфейс, а невидимые символы
+    # (Cf: RLO, нулевой ширины; Zl/Zp: разделители строк) позволяют подменить то, что админ видит на экране.
+    if any(unicodedata.category(char) in ("Cc", "Cf", "Cs", "Zl", "Zp") for char in value):
+        raise ValueError("Control and invisible characters are not allowed")
     return value
 
 
@@ -138,5 +139,6 @@ class UserStatusRead(BaseModel):
 
 
 class HeartbeatRequest(BaseModel):
-    bot_username: Annotated[str, StringConstraints(min_length=1, max_length=64)]
+    # Имя бота подставляется в ссылку t.me/<имя>?start=<код>: только символы имени Telegram (допускается @ в начале).
+    bot_username: Annotated[str, StringConstraints(pattern=r"^@?[A-Za-z0-9_]{1,32}$")]
     version: Annotated[str, StringConstraints(min_length=1, max_length=32)]

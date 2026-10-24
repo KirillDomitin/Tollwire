@@ -9,11 +9,11 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-from modules.bot.models.invite import BotInvite
-from modules.bot.models.registration import BotRegistration
-from modules.bot.schemas import InviteCreate
 from pydantic import ValidationError
 
+from modules.bot.models.invite import BotInvite
+from modules.bot.models.registration import BotRegistration
+from modules.bot.schemas import HeartbeatRequest, InviteCreate
 from tests.bot_support import (
     EMAIL,
     EXPIRED,
@@ -84,6 +84,12 @@ def test_control_characters_are_refused_in_the_name(bad: str) -> None:
     assert not accepts(name=bad)
 
 
+@pytest.mark.parametrize("bad", ["a‮b", "a​b", "a b", "a b"])
+def test_invisible_and_direction_characters_are_refused_in_the_name(bad: str) -> None:
+    """RLO, нулевая ширина, разделители строк: по ним имя на экране админа можно подменить."""
+    assert not accepts(name=bad)
+
+
 @pytest.mark.parametrize("bad", ["a\x00b", "a\nb", "a\x1bb", "x" * 65])
 def test_telegram_username_refuses_control_characters_and_long_values(bad: str) -> None:
     assert not accepts(telegram_username=bad)
@@ -123,6 +129,17 @@ def test_missing_fields_are_refused() -> None:
         del fields[field]
         with pytest.raises(ValidationError):
             RegistrationCreate(**fields)
+
+
+@pytest.mark.parametrize("name", ["tollwire_bot", "@tollwire_bot", "A1_b2"])
+def test_heartbeat_accepts_telegram_bot_names(name: str) -> None:
+    assert HeartbeatRequest(bot_username=name, version="0.1.0").bot_username == name
+
+
+@pytest.mark.parametrize("name", ["", "evil/path?x=#", "a b", "bot\nname", "bot.name", "x" * 33, "@@bot"])
+def test_heartbeat_refuses_names_that_could_change_the_invite_link(name: str) -> None:
+    with pytest.raises(ValidationError):
+        HeartbeatRequest(bot_username=name, version="0.1.0")
 
 
 # --- InviteCreate --------------------------------------------------------------------------------------------------

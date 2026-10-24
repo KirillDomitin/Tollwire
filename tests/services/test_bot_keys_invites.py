@@ -6,9 +6,6 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-from modules.bot.invites import BotInviteService
-from modules.bot.keys import BotKeyService
-from modules.bot.schemas import BotKeyCreate
 from pydantic import ValidationError
 from sqlalchemy import select
 
@@ -18,6 +15,9 @@ from core.log import redact
 from core.security import hash_token
 from modules.audit.actor import AuditActor
 from modules.audit.models.audit_log import AuditLog
+from modules.bot.invites import BotInviteService
+from modules.bot.keys import BotKeyService
+from modules.bot.schemas import BotKeyCreate
 from tests.bot_support import (
     EXPIRED,
     REVOKED,
@@ -242,3 +242,13 @@ async def test_deleting_the_protocol_keeps_the_invite_without_a_protocol(world: 
         await other.commit()
     await world.session.refresh(invite)
     assert invite.protocol_id is None  # FK SET NULL: приглашение переживает протокол, но выдать по нему уже нельзя
+
+
+async def test_invite_link_points_to_the_reported_bot_and_escapes_what_it_inserts(world: World) -> None:
+    scene = await bot_scene(world)
+    service = BotInviteService(world.session, AuditActor(admin_id=None))
+    assert await service.link("code123") is None  # бот ещё не присылал heartbeat
+    scene.key.bot_username = "@tollwire_bot"
+    await world.session.commit()
+    assert await service.link("code_123-ABC") == "https://t.me/tollwire_bot?start=code_123-ABC"
+    assert await service.link("a/b?c") == "https://t.me/tollwire_bot?start=a%2Fb%3Fc"

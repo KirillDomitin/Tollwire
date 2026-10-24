@@ -201,6 +201,10 @@ class BotRegistrationService:
         if job.status == JobStatus.SUCCESS:
             self._activate(registration)
         elif job.status == JobStatus.FAILED:
+            # Админ мог повторить выдачу, пока эта (зависшая) задача ещё шла: итог решает новая, а не старая.
+            # Запрос сам сбрасывает в БД статус этой задачи (autoflush), так что она не считается незавершённой.
+            if await JobRepository(self.session).has_unfinished_for_grant(JobType.CREATE_USER, job.access_grant_id):
+                return
             self._fail(registration, job.error, job.id)
 
     def _activate(self, registration: BotRegistration) -> None:
