@@ -14,6 +14,9 @@ from modules.access.models.vpn_credential import VPNCredential  # noqa
 from modules.audit.models.audit_log import AuditLog  # noqa
 from modules.auth.models.admin import Admin  # noqa
 from modules.auth.models.admin_session import AdminSession  # noqa
+from modules.bot.models.invite import BotInvite  # noqa
+from modules.bot.models.key import BotKey  # noqa
+from modules.bot.models.registration import BotRegistration  # noqa
 from modules.gateway.models.gateway_assignment import GatewayAssignment  # noqa
 from modules.gateway.models.gateway_exit import GatewayExit  # noqa
 from modules.geoip.models.geoip import GeoipList, GeoipOverride  # noqa

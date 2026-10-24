@@ -104,6 +104,15 @@ class AuditAction(enum.Enum):
     )
     GATEWAY_EXIT_RECOVERED = "gateway_exit_recovered"  # отказавший выход снова исправен
     GATEWAY_CONTAINER_RECREATED = "gateway_container_recreated"  # контейнер шлюза пересоздан (клиенты переподключаются)
+    # Telegram-бот (25.1): ключи, приглашения, регистрации. В meta нет ключей, кодов, почты и telegram_id.
+    BOT_KEY_CREATED = "bot_key_created"
+    BOT_KEY_REVOKED = "bot_key_revoked"
+    BOT_INVITE_CREATED = "bot_invite_created"
+    BOT_INVITE_REVOKED = "bot_invite_revoked"
+    BOT_REGISTRATION_CREATED = "bot_registration_created"  # приглашение занято, доступ выдаётся
+    BOT_REGISTRATION_ACTIVATED = "bot_registration_activated"
+    BOT_REGISTRATION_FAILED = "bot_registration_failed"  # выдача не удалась: источник уведомления админу (25.5)
+    BOT_REGISTRATION_RETRIED = "bot_registration_retried"
 
 
 class AuditEntity:
@@ -116,6 +125,9 @@ class AuditEntity:
     ACCESS_GRANT = "access_grant"
     VPN_CREDENTIAL = "vpn_credential"
     GEOIP = "geoip"
+    BOT_KEY = "bot_key"
+    BOT_INVITE = "bot_invite"
+    BOT_REGISTRATION = "bot_registration"
 
 
 class AuditLog(UuidPkMixin, Base):
