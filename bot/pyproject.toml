@@ -1,0 +1,43 @@
+[project]
+name = "tollwire-bot"
+version = "0.1.0"
+description = "Telegram bot for Tollwire: registers people by invite through the panel's Bot API"
+requires-python = ">=3.12"
+dependencies = [
+    "aiogram>=3.31,<3.32",
+    "httpx>=0.28.1,<0.29",
+    "pydantic-settings>=2.15.0",
+    "certifi>=2024.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.0",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.16.0",
+    "mypy>=2.0.0",
+]
+
+# Приложение, а не библиотека: пакет не устанавливается, src/ добавляется в PYTHONPATH (Dockerfile, pytest).
+[tool.ruff]
+line-length = 120
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["tollwire_bot"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "src"
+packages = ["tollwire_bot"]
+
+[tool.pytest.ini_options]
+# Тесты бота живут в своём окружении (uv run --project bot pytest) и не импортируют ничего из корневого src/.
+# Файлы tests/ плоские (без __init__.py): fakes.py и support.py импортируются по имени, а корневой пакет `tests` не задет.
+pythonpath = ["src", "tests"]
+testpaths = ["tests"]
+asyncio_mode = "auto"

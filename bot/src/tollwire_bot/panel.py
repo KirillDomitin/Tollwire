@@ -1,0 +1,230 @@
+"""PanelClient: единственный путь бота к панели (Bot API, ключ в X-Bot-Key). Только httpx и стандартная библиотека.
+
+Исключения несут код и причину, но не тела запросов и ответов: в них бывают имя, почта, код приглашения."""
+
+import asyncio
+import logging
+import ssl
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from typing import Any
+from urllib.parse import urlsplit
+
+import certifi
+import httpx
+
+from tollwire_bot import __version__
+
+logger = logging.getLogger(__name__)
+
+API_PREFIX = "/api/v1/bot"
+# Паузы между повторами при сбое сети и 502/503/504; после последней паузы - PanelUnavailable.
+RETRY_DELAYS = (0.5, 1, 2, 4)
+RETRY_STATUSES = (502, 503, 504)
+MAX_RATE_LIMIT_WAIT = 10  # Retry-After дольше этого бот не ждёт
+CONFLICT_REASONS = frozenset(
+    {"invite_invalid", "invite_expired", "invite_used", "telegram_taken", "email_taken", "conflict"}
+)
+
+
+class PanelError(Exception):
+    """Базовая ошибка обращения к панели."""
+
+
+class PanelAuthError(PanelError):
+    """Панель не приняла ключ бота (неверный или отозван)."""
+
+
+class PanelUnavailable(PanelError):
+    """Панель недоступна: сеть, таймаут, 502/503/504, сертификат не прошёл проверку."""
+
+
+class PanelUnexpected(PanelError):
+    """Панель ответила не по контракту (переадресация, 5xx без повтора)."""
+
+
+class RateLimited(PanelError):
+    """Панель просит подождать дольше, чем бот готов ждать."""
+
+
+class Conflict(PanelError):
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
+class Rejected(PanelError):
+    """Панель отклонила ввод (422): field - какое поле."""
+
+    def __init__(self, field: str):
+        super().__init__(field)
+        self.field = field
+
+
+@dataclass(frozen=True)
+class Registration:
+    registration_id: str
+    status: str
+    config_url: str | None
+
+
+@dataclass(frozen=True)
+class UserStatus:
+    name: str
+    valid_until: str | None
+    protocol: str | None
+    config_url: str | None
+
+
+def _check_url(url: str) -> str:
+    """https - любой адрес; http - только имя внутри сети compose (без точки): ключ не идёт открытым текстом по сети."""
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    if parts.scheme == "https" and host:
+        return url.rstrip("/")
+    if parts.scheme == "http" and host and "." not in host and ":" not in host:
+        return url.rstrip("/")
+    raise ValueError("PANEL_URL must be https://… (plain http is allowed only for an internal host name)")
+
+
+def _ssl_context(ca_file: str | None) -> ssl.SSLContext:
+    context = ssl.create_default_context(cafile=certifi.where())
+    if ca_file:  # свой сертификат панели - в дополнение к штатному хранилищу: Let's Encrypt продолжит работать
+        context.load_verify_locations(ca_file)
+    return context
+
+
+class PanelClient:
+    def __init__(
+        self,
+        base_url: str,
+        api_key: str,
+        *,
+        ca_file: str | None = None,
+        transport: httpx.AsyncBaseTransport | None = None,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    ) -> None:
+        self._sleep = sleep
+        self._auth_failed = False  # ERROR про отклонённый ключ пишется один раз, пока панель не ответит нормально
+        self._http = httpx.AsyncClient(
+            base_url=_check_url(base_url) + API_PREFIX,
+            headers={"X-Bot-Key": api_key, "User-Agent": f"tollwire-bot/{__version__}"},
+            timeout=httpx.Timeout(10, connect=5),
+            follow_redirects=False,  # ключ не должен уйти на другой адрес
+            verify=_ssl_context(ca_file),
+            transport=transport,
+        )
+
+    async def aclose(self) -> None:
+        await self._http.aclose()
+
+    # --- методы Bot API ----------------------------------------------------------------------------------------------
+
+    async def heartbeat(self, bot_username: str, version: str) -> None:
+        await self._request("POST", "/heartbeat", {"bot_username": bot_username, "version": version})
+
+    async def check_invite(self, code: str) -> str:
+        response = await self._request("POST", "/invites/check", {"code": code})
+        return str(response.json()["status"])
+
+    async def register(
+        self, *, code: str, telegram_id: int, telegram_username: str | None, name: str, email: str
+    ) -> Registration:
+        body = {
+            "code": code,
+            "telegram_id": telegram_id,
+            "telegram_username": telegram_username,
+            "name": name,
+            "email": email,
+        }
+        return _registration(await self._request("POST", "/registrations", body))
+
+    async def registration(self, registration_id: str) -> Registration | None:
+        response = await self._request("GET", f"/registrations/{registration_id}", allow_missing=True)
+        return None if response.status_code == 404 else _registration(response)
+
+    async def user_by_telegram(self, telegram_id: int) -> UserStatus | None:
+        response = await self._request("GET", f"/users/by-telegram/{telegram_id}", allow_missing=True)
+        if response.status_code == 404:
+            return None
+        data = response.json()
+        return UserStatus(
+            name=data["name"],
+            valid_until=data.get("valid_until"),
+            protocol=data.get("protocol"),
+            config_url=data.get("config_url"),
+        )
+
+    # --- запрос ------------------------------------------------------------------------------------------------------
+
+    async def _request(
+        self, method: str, path: str, body: dict[str, Any] | None = None, *, allow_missing: bool = False
+    ) -> httpx.Response:
+        outage = 0  # сколько пауз по сбою уже было
+        rate_limited = False
+        while True:
+            try:
+                response = await self._http.request(method, path, json=body)
+            except httpx.TransportError as exc:
+                failure = type(exc).__name__
+            else:
+                failure = f"HTTP {response.status_code}" if response.status_code in RETRY_STATUSES else ""
+            if failure:
+                if outage == len(RETRY_DELAYS):
+                    raise PanelUnavailable(failure)
+                await self._sleep(RETRY_DELAYS[outage])
+                outage += 1
+                continue
+
+            status = response.status_code
+            if status == 429:
+                wait = _retry_after(response)
+                if rate_limited or wait is None or wait > MAX_RATE_LIMIT_WAIT:
+                    raise RateLimited(f"retry after {wait}")
+                rate_limited = True
+                await self._sleep(wait)
+                continue
+            if status == 401:
+                if not self._auth_failed:
+                    logger.error("the panel does not accept the bot key: it is wrong or revoked")
+                self._auth_failed = True
+                raise PanelAuthError("bot key rejected")
+            self._auth_failed = False
+            if status == 404 and allow_missing:
+                return response
+            if status == 409:
+                raise Conflict(_reason(response))
+            if status == 422:
+                raise Rejected(_field(response))
+            if 200 <= status < 300:
+                return response
+            raise PanelUnexpected(f"HTTP {status}")
+
+
+def _registration(response: httpx.Response) -> Registration:
+    data = response.json()
+    return Registration(
+        registration_id=str(data["registration_id"]), status=str(data["status"]), config_url=data.get("config_url")
+    )
+
+
+def _retry_after(response: httpx.Response) -> int | None:
+    value = response.headers.get("retry-after", "")
+    return int(value) if value.isdigit() else None
+
+
+def _reason(response: httpx.Response) -> str:
+    try:
+        reason = response.json().get("reason")
+    except (ValueError, AttributeError):
+        return "conflict"
+    return reason if reason in CONFLICT_REASONS else "conflict"
+
+
+def _field(response: httpx.Response) -> str:
+    """Поле из loc ответа 422. Сам detail не читаем дальше: в нём присланное значение."""
+    try:
+        location = response.json()["detail"][0]["loc"]
+        return str(location[-1])
+    except (ValueError, KeyError, IndexError, TypeError):
+        return ""

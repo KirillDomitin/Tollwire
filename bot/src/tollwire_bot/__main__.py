@@ -1,0 +1,78 @@
+"""Запуск бота: python -m tollwire_bot. Настройки - из окружения (см. config.py)."""
+
+import asyncio
+import contextlib
+import logging
+import sys
+import time
+from pathlib import Path
+
+from aiogram import Bot
+from aiogram.exceptions import TelegramUnauthorizedError
+from aiogram.types import BotCommand
+
+from tollwire_bot import __version__
+from tollwire_bot.app import build_dispatcher
+from tollwire_bot.config import Settings
+from tollwire_bot.heartbeat import Heartbeat
+from tollwire_bot.log import configure_logging
+from tollwire_bot.panel import PanelClient
+from tollwire_bot.storage import SqliteStorage
+from tollwire_bot.texts import t
+
+logger = logging.getLogger("tollwire_bot")
+
+ALIVE_FILE = Path("/tmp/alive")  # healthcheck контейнера: файл свежий, пока панель отвечает на heartbeat
+ALIVE_MAX_AGE = 90  # секунд
+
+
+async def keep_alive_file(heartbeat: Heartbeat) -> None:
+    while True:
+        if heartbeat.last_ok_at is not None and time.monotonic() - heartbeat.last_ok_at < ALIVE_MAX_AGE:
+            with contextlib.suppress(OSError):
+                ALIVE_FILE.touch()
+        await asyncio.sleep(10)
+
+
+async def run(settings: Settings) -> int:
+    panel = PanelClient(settings.panel_url, settings.bot_api_key.get_secret_value(), ca_file=settings.panel_ca_file)
+    storage = SqliteStorage(settings.state_file)
+    bot = Bot(settings.telegram_bot_token.get_secret_value())
+    dp = build_dispatcher(settings, panel, storage)
+    heartbeat = Heartbeat(bot, panel, version=__version__)
+    background: list[asyncio.Task[None]] = []
+    try:
+        try:
+            await heartbeat.start()  # getMe: неверный токен виден сразу, а не молчанием бота
+        except TelegramUnauthorizedError:
+            logger.error("Telegram rejected the bot token: check TELEGRAM_BOT_TOKEN")
+            return 1
+        await bot.set_my_commands(
+            [
+                BotCommand(command="status", description=t("cmd_status")),
+                BotCommand(command="help", description=t("cmd_help")),
+            ]
+        )
+        background = [asyncio.create_task(heartbeat.run()), asyncio.create_task(keep_alive_file(heartbeat))]
+        logger.info("the bot %s started", __version__)
+        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())  # SIGTERM/SIGINT останавливают
+        return 0
+    finally:
+        for task in background:
+            task.cancel()
+        for task in background:
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        await panel.aclose()
+        await storage.close()
+        await bot.session.close()
+
+
+def main() -> None:
+    settings = Settings()  # type: ignore[call-arg]  # поля читаются из окружения
+    configure_logging(settings)
+    sys.exit(asyncio.run(run(settings)))
+
+
+if __name__ == "__main__":
+    main()
