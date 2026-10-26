@@ -1,0 +1,28 @@
+# Telegram-бот на отдельном сервере (панель - на другом): docker compose -f bot/docker-compose.yml up -d --build
+# Настройки - в bot/.env (создаёт install-bot.sh). Бот ходит только исходящими запросами: в Telegram и в панель.
+name: tollwire-bot
+
+services:
+  bot:
+    build: .
+    image: tollwire-bot:latest
+    env_file: .env
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: [/tmp]
+    mem_limit: 128m
+    volumes:
+      - bot_data:/data
+      - ./certs:/certs:ro  # свой сертификат панели (panel-ca.pem), если он самоподписанный
+    healthcheck:
+      # Файл обновляется, пока панель отвечает на heartbeat (см. tollwire_bot.__main__).
+      test: ["CMD", "python", "-c", "import os, sys, time; sys.exit(0 if time.time() - os.stat('/tmp/alive').st_mtime < 90 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+
+volumes:
+  bot_data:

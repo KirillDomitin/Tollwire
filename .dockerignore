@@ -15,6 +15,7 @@ tests
 theory
 deploy
 frontend
+bot
 certs
 backups
 .env

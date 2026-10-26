@@ -54,8 +54,10 @@ class BotInviteService:
         self.audit = AuditService(session, actor)
         self.actor = actor
 
-    async def create(self, data: InviteCreate) -> tuple[BotInvite, str]:
-        """Новое приглашение и его открытый код: показывается один раз, в БД остаётся только хеш."""
+    async def create(self, data: InviteCreate, *, source: str | None = None) -> tuple[BotInvite, str]:
+        """Новое приглашение и его открытый код: показывается один раз, в БД остаётся только хеш.
+
+        source - откуда выпущено (cli - консоль на сервере панели); попадает в аудит."""
         if not await self.protocols.get_by_id(data.protocol_id):
             raise NotFoundError(f"Protocol '{data.protocol_id}' not found")
         if data.expires_at <= datetime.now(timezone.utc):
@@ -75,7 +77,12 @@ class BotInviteService:
             AuditAction.BOT_INVITE_CREATED,
             AuditEntity.BOT_INVITE,
             invite.id,
-            {"protocol_id": invite.protocol_id, "days": invite.days, "expires_at": invite.expires_at},
+            {
+                "protocol_id": invite.protocol_id,
+                "days": invite.days,
+                "expires_at": invite.expires_at,
+                **({"source": source} if source else {}),
+            },
         )
         await self.session.commit()
         return invite, code

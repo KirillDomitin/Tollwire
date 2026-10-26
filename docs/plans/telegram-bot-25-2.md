@@ -149,12 +149,12 @@ bot/tests/
 - [x] 1. `bot/`: pyproject, uv.lock, каркас пакета, `config`, `log`, `texts`, `validation`.
 - [x] 2. `panel.py` (клиент и ошибки) + `bot/tests/test_panel_client.py`; корневой `test_bot_client_contract.py`.
 - [x] 3. `storage`, `dialog`, `commands`, `watcher`, `heartbeat`, `app`, `__main__` + тесты диалога, watcher, логов.
-- [ ] 4. `tests/unit/test_bot_isolation.py`.
-- [ ] 5. `bot/Dockerfile`, `.dockerignore`, `docker-compose.yml`, `.env.example`, healthcheck (`/tmp/alive`: опрос Telegram
+- [x] 4. `tests/unit/test_bot_isolation.py`.
+- [x] 5. `bot/Dockerfile`, `.dockerignore`, `docker-compose.yml`, `.env.example`, healthcheck (`/tmp/alive`: опрос Telegram
   и последний ответ панели не старше 90 с); корневой `.dockerignore` += `bot`.
-- [ ] 6. Панель: `src/scripts/bot_key.py`, `src/scripts/bot_invite.py`, необязательная мета в `BotKeyService.create` /
+- [x] 6. Панель: `src/scripts/bot_key.py`, `src/scripts/bot_invite.py`, необязательная мета в `BotKeyService.create` /
   `BotInviteService.create`; тесты CLI.
-- [ ] 7. `docker-compose.prod.yml`: сервис `bot` с профилем.
+- [x] 7. `docker-compose.prod.yml`: сервис `bot` с профилем.
 - [ ] 8. Установка: `deploy/common.sh` (`env_set`), `deploy/bot.sh`, `install.sh` (флаг `--bot`, шаг после админа,
   проверка `vpn-panel-bot:latest` при `--no-build` с профилем), `panel` (`cmd_bot`, `SERVICES`, отпечаток в
   `cert status`), `deploy/ship-images.sh`, `bot/install-bot.sh`.

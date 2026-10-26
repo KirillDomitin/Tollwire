@@ -24,6 +24,10 @@ def generate_key() -> str:
     return KEY_PREFIX + generate_token(32)
 
 
+def _meta(key: BotKey, source: str | None) -> dict[str, str]:
+    return {"name": key.name, **({"source": source} if source else {})}
+
+
 class BotKeyService:
     def __init__(self, session: AsyncSession, actor: AuditActor):
         self.session = session
@@ -31,8 +35,10 @@ class BotKeyService:
         self.audit = AuditService(session, actor)
         self.actor = actor
 
-    async def create(self, data: BotKeyCreate) -> tuple[BotKey, str]:
-        """Новый ключ и его открытое значение: оно показывается один раз, в БД остаётся только хеш."""
+    async def create(self, data: BotKeyCreate, *, source: str | None = None) -> tuple[BotKey, str]:
+        """Новый ключ и его открытое значение: оно показывается один раз, в БД остаётся только хеш.
+
+        source - откуда выпущен (cli - консоль на сервере панели); попадает в аудит."""
         secret = generate_key()
         key = await self.keys.create(
             BotKey(
@@ -42,17 +48,17 @@ class BotKeyService:
                 created_by=self.actor.admin_id,
             )
         )
-        self.audit.record(AuditAction.BOT_KEY_CREATED, AuditEntity.BOT_KEY, key.id, {"name": key.name})
+        self.audit.record(AuditAction.BOT_KEY_CREATED, AuditEntity.BOT_KEY, key.id, _meta(key, source))
         await self.session.commit()
         return key, secret
 
-    async def revoke(self, key_id: UUID) -> BotKey:
+    async def revoke(self, key_id: UUID, *, source: str | None = None) -> BotKey:
         key = await self.keys.get_by_id(key_id, lock=True)
         if key is None:
             raise NotFoundError(f"Bot key '{key_id}' not found")
         if key.revoked_at is None:
             key.revoked_at = datetime.now(timezone.utc)
-            self.audit.record(AuditAction.BOT_KEY_REVOKED, AuditEntity.BOT_KEY, key.id, {"name": key.name})
+            self.audit.record(AuditAction.BOT_KEY_REVOKED, AuditEntity.BOT_KEY, key.id, _meta(key, source))
         await self.session.commit()
         return key
 

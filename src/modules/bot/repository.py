@@ -23,6 +23,11 @@ class BotKeyRepository:
     async def get_by_id(self, key_id: UUID, *, lock: bool = False) -> BotKey | None:
         return await self.session.get(BotKey, key_id, with_for_update=lock, populate_existing=lock)
 
+    async def get_by_hash(self, key_hash: str) -> BotKey | None:
+        """Ключ по хешу, в том числе отозванный (повторный revoke из консоли не считается ошибкой)."""
+        query = select(BotKey).where(BotKey.key_hash == key_hash)
+        return (await self.session.execute(query)).scalar_one_or_none()
+
     async def get_active_by_hash(self, key_hash: str) -> BotKey | None:
         query = select(BotKey).where(BotKey.key_hash == key_hash, BotKey.revoked_at.is_(None))
         return (await self.session.execute(query)).scalar_one_or_none()

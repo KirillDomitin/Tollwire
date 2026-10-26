@@ -1,0 +1,16 @@
+# В образ бота попадает только нужное для запуска: src, pyproject.toml, uv.lock.
+.venv
+**/__pycache__
+.mypy_cache
+.ruff_cache
+.pytest_cache
+tests
+certs
+.env
+.env.*
+!.env.example
+*.md
+docker-compose*.yml
+Dockerfile
+.dockerignore
+install-bot.sh

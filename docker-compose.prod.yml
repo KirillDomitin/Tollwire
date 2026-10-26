@@ -114,6 +114,39 @@ services:
       redis:
         condition: service_healthy
 
+  # Telegram-бот (профиль bot: поднимается, только если выбран при установке или `./panel bot enable`).
+  # Секреты бота (токен Telegram, ключ бота) лежат в отдельном .env.bot и в api/worker не попадают.
+  # Ходит в панель по внутренней сети (http://api:8000), в Telegram - исходящими запросами через edge.
+  bot:
+    <<: *hardened
+    profiles: [bot]
+    build: ./bot
+    image: vpn-panel-bot:latest
+    env_file:
+      - path: .env.bot
+        required: false  # Compose 2.24+: без файла сервис не стартует осмысленно, но `config` не падает
+    environment:
+      PANEL_URL: http://api:8000
+      STATE_DIR: /data
+    restart: unless-stopped
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: [/tmp]
+    mem_limit: 128m
+    volumes:
+      - bot_data:/data
+    networks: [edge]
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      # Файл обновляется, пока панель отвечает на heartbeat (см. tollwire_bot.__main__).
+      test: ["CMD", "python", "-c", "import os, sys, time; sys.exit(0 if time.time() - os.stat('/tmp/alive').st_mtime < 90 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+
   nginx:
     <<: *hardened
     # nginx со статикой фронтенда внутри (frontend/Dockerfile: сборка на Node → только файлы в образе nginx).
@@ -143,3 +176,4 @@ networks:
 volumes:
   pg_data:
   redis_data:
+  bot_data:
