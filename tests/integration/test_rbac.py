@@ -61,11 +61,22 @@ def api_routes(routes: list[Any]) -> list[APIRoute]:
 # Bot API (`/api/v1/bot/`) открывается ключом бота, а не правом админа: его маршруты проверяются отдельно ниже
 # (метка bot_key_required). Админский API бота (`/api/v1/bot-admin/`) остаётся в общей матрице.
 BOT_API_PREFIX = "/api/v1/bot/"
+# Публичный API (`/api/v1/public/`, этап 25.3) открыт без входа и без ключа: человек открывает свою страницу конфига
+# по токену. Его маршруты тоже вне матрицы, но список зафиксирован ниже: новый публичный маршрут - осознанный выбор.
+PUBLIC_API_PREFIX = "/api/v1/public/"
+EXPECTED_PUBLIC_ROUTES = {("POST", "/api/v1/public/config")}
 
 API_ROUTES = [
     (method, route.path, route)
     for route in api_routes(app.routes)
-    if route.path not in PUBLIC and not route.path.startswith(BOT_API_PREFIX)
+    if route.path not in PUBLIC and not route.path.startswith((BOT_API_PREFIX, PUBLIC_API_PREFIX))
+    for method in sorted(route.methods)
+]
+
+PUBLIC_API_ROUTES = [
+    (method, route.path, route)
+    for route in api_routes(app.routes)
+    if route.path.startswith(PUBLIC_API_PREFIX)
     for method in sorted(route.methods)
 ]
 
@@ -117,11 +128,25 @@ def test_every_bot_api_route_requires_the_bot_key_and_no_admin_permission() -> N
         ("POST", "registrations"),
         ("GET", "registrations/{}"),
         ("GET", "users/by-telegram/{}"),
+        ("POST", "users/by-telegram/{}/config-link"),
     }
     unmarked = [f"{m} {p}" for m, p, route in BOT_API_ROUTES if marks(route, "bot_key_required") != 1]
     assert unmarked == []
     with_permission = [f"{m} {p}" for m, p, route in BOT_API_ROUTES if required_permissions(route)]
     assert with_permission == []
+
+
+def test_public_routes_are_exactly_the_expected_ones_and_ask_for_nothing() -> None:
+    """Страница конфига открывается по токену: ни права админа, ни ключа бота у маршрута быть не должно, иначе человек
+    с телефона получил бы 401. И наоборот: лишний открытый маршрут здесь станет красным."""
+    assert {(method, path) for method, path, _ in PUBLIC_API_ROUTES} == EXPECTED_PUBLIC_ROUTES
+    for method, path, route in PUBLIC_API_ROUTES:
+        assert required_permissions(route) == [], f"{method} {path}"
+        assert marks(route, "bot_key_required") == 0, f"{method} {path}"
+
+
+def test_public_routes_are_kept_out_of_the_permission_matrix() -> None:
+    assert PUBLIC_API_ROUTES and not [path for _, path, _ in API_ROUTES if path.startswith(PUBLIC_API_PREFIX)]
 
 
 def test_no_admin_route_accepts_a_bot_key() -> None:

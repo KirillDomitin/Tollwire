@@ -487,3 +487,13 @@ describe("gateway and Russia-direct events", () => {
     ).toBeNull();
   });
 });
+
+describe("config link events (stage 25.3)", () => {
+  it("config_link_created is a bot event with a text in every language", async () => {
+    expect(AUDIT_ACTIONS.config_link_created.group).toBe("bot");
+    for (const language of ["ru", "en"]) {
+      await i18n.changeLanguage(language);
+      expect(auditActionText("config_link_created")).not.toBe("audit.actions.config_link_created");
+    }
+  });
+});

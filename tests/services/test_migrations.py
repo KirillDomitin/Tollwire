@@ -1344,3 +1344,151 @@ async def test_bot_migration_cycle_is_idempotent_and_leaves_no_orphans() -> None
     finally:
         await _alembic("upgrade", "head")
     assert tuple(row[0] for row in await _query(BOT_TABLES_SQL)) == BOT_TABLES
+
+
+# --- ссылки на страницу конфига (25.3): config_links ---
+
+BEFORE_CONFIG_LINKS = "a7d3e9b15c28"  # голова перед миграцией config_links
+CONFIG_LINKS_SQL = text("SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename = 'config_links'")
+CONFIG_LINK_INDEXES_SQL = text(
+    "SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'config_links' ORDER BY indexname"
+)
+CONFIG_LINK_COLUMNS_SQL = text(
+    "SELECT column_name, data_type, is_nullable, character_maximum_length FROM information_schema.columns "
+    "WHERE table_name = 'config_links' ORDER BY column_name"
+)
+
+
+async def _credential_id(conn: AsyncConnection, email: str = "links@example.org") -> UUID:
+    """Живой клиент на свежем сервере (INSERT мимо сервисов: схема проверяется без правил приложения)."""
+    user_id = await _insert_user(conn, email)
+    server_id = uuid4()
+    await conn.execute(
+        text("INSERT INTO vpn_servers (id, name, host) VALUES (:id, :name, '203.0.113.7')"),
+        {"id": server_id, "name": f"srv-{server_id.hex[:6]}"},
+    )
+    grant_id = await _insert_grant(conn, server_id, user_id, "AMNEZIA_WG")
+    credential_id = uuid4()
+    await conn.execute(
+        text(
+            "INSERT INTO vpn_credentials (id, access_grant_id, encrypted_config, client_address, client_public_key) "
+            "VALUES (:id, :gid, 'enc', '10.8.1.2', :key)"
+        ),
+        {"id": credential_id, "gid": grant_id, "key": uuid4().hex},
+    )
+    return credential_id
+
+
+def _link(credential_id: UUID, **override: Any) -> Any:
+    from modules.bot.models.config_link import ConfigLink
+
+    fields: dict[str, Any] = {"token_hash": uuid4().hex + uuid4().hex, "credential_id": credential_id}
+    return ConfigLink(**{**fields, **override})
+
+
+async def test_config_links_migration_creates_the_table_with_the_agreed_columns() -> None:
+    assert await _query(CONFIG_LINKS_SQL) == [("config_links",)]
+    columns = {row[0]: row[1:] for row in await _query(CONFIG_LINK_COLUMNS_SQL)}
+    assert set(columns) == {"id", "token_hash", "credential_id", "created_at", "revoked_at", "last_opened_at"}
+    assert columns["token_hash"] == ("character varying", "NO", 64)
+    assert columns["credential_id"][1] == "NO" and columns["created_at"][1] == "NO"
+    assert columns["revoked_at"][1] == "YES" and columns["last_opened_at"][1] == "YES"
+
+
+async def test_config_links_have_the_named_unique_indexes_and_the_live_one_is_partial() -> None:
+    indexes = {row[0]: str(row[1]) for row in await _query(CONFIG_LINK_INDEXES_SQL)}
+    assert "uq_config_links_token_hash" in indexes and "uq_config_links_live_per_credential" in indexes
+    assert "UNIQUE" in indexes["uq_config_links_token_hash"]
+    live = indexes["uq_config_links_live_per_credential"]
+    assert "UNIQUE" in live and "credential_id" in live and "revoked_at IS NULL" in live
+
+
+async def test_config_link_token_hash_is_unique() -> None:
+    async with engine.begin() as conn:
+        first, second = await _credential_id(conn, "a@example.org"), await _credential_id(conn, "b@example.org")
+    await _save(_link(first, token_hash="t" * 64))
+    assert "uq_config_links_token_hash" in await _refused_rows(_link(second, token_hash="t" * 64))
+
+
+async def test_a_client_has_at_most_one_live_link() -> None:
+    async with engine.begin() as conn:
+        credential_id = await _credential_id(conn)
+    await _save(_link(credential_id))
+    assert "uq_config_links_live_per_credential" in await _refused_rows(_link(credential_id))
+
+
+async def test_a_client_may_have_any_number_of_revoked_links_next_to_one_live() -> None:
+    async with engine.begin() as conn:
+        credential_id = await _credential_id(conn)
+    await _save(*[_link(credential_id, revoked_at=_later(minutes=-5)) for _ in range(3)])
+    await _save(_link(credential_id))
+    assert await _query(text("SELECT count(*) FROM config_links")) == [(4,)]
+
+
+async def test_another_client_may_have_its_own_live_link() -> None:
+    async with engine.begin() as conn:
+        first, second = await _credential_id(conn, "a@example.org"), await _credential_id(conn, "b@example.org")
+    await _save(_link(first), _link(second))
+    assert await _query(text("SELECT count(*) FROM config_links")) == [(2,)]
+
+
+async def test_config_link_defaults_agree_with_the_orm() -> None:
+    from modules.bot.models.config_link import ConfigLink
+
+    async with engine.begin() as conn:
+        credential_id = await _credential_id(conn)
+    await _save(_link(credential_id))
+    async with session_factory() as session:
+        (row,) = (await session.execute(select(ConfigLink))).scalars().all()
+    assert row.created_at is not None and row.id is not None
+    assert (row.revoked_at, row.last_opened_at) == (None, None)
+
+
+async def test_config_link_needs_an_existing_client() -> None:
+    assert "credential_id" in await _refused_rows(_link(uuid4()))
+
+
+async def test_config_links_follow_their_client_on_delete_cascade() -> None:
+    async with engine.begin() as conn:
+        credential_id = await _credential_id(conn)
+    await _save(_link(credential_id), _link(credential_id, revoked_at=_later(minutes=-1)))
+    fk = await _query(
+        text(
+            "SELECT confdeltype FROM pg_constraint WHERE conrelid = 'config_links'::regclass AND contype = 'f' "
+            "AND confrelid = 'vpn_credentials'::regclass"
+        )
+    )
+    assert fk == [("c",)]  # ON DELETE CASCADE
+
+    async with engine.begin() as conn:
+        await conn.execute(text("DELETE FROM vpn_credentials WHERE id = :id"), {"id": credential_id})
+
+    assert await _query(text("SELECT count(*) FROM config_links")) == [(0,)]
+
+
+async def test_config_links_migration_downgrade_drops_table_and_indexes_keeps_clients_then_upgrade_restores() -> None:
+    async with engine.begin() as conn:
+        credential_id = await _credential_id(conn)
+    await _save(_link(credential_id))
+    await _alembic("downgrade", BEFORE_CONFIG_LINKS)
+    try:
+        assert await _query(CONFIG_LINKS_SQL) == []
+        assert await _query(text("SELECT indexname FROM pg_indexes WHERE indexname LIKE '%config_links%'")) == []
+        assert await _query(text("SELECT id FROM vpn_credentials")) == [(credential_id,)]  # теряются только ссылки
+        assert tuple(row[0] for row in await _query(BOT_TABLES_SQL)) == BOT_TABLES  # бот 25.1 на месте
+    finally:
+        await _alembic("upgrade", "head")
+    assert await _query(CONFIG_LINKS_SQL) == [("config_links",)]
+    assert await _query(text("SELECT count(*) FROM config_links")) == [(0,)]  # люди снова напишут /config
+
+
+async def test_config_links_migration_cycle_is_idempotent_and_leaves_no_orphans() -> None:
+    await _alembic("downgrade", BEFORE_CONFIG_LINKS)
+    await _alembic("upgrade", "head")
+    await _alembic("downgrade", BEFORE_CONFIG_LINKS)
+    try:
+        assert await _query(CONFIG_LINKS_SQL) == []
+        assert await _query(text("SELECT indexname FROM pg_indexes WHERE indexname LIKE '%config_link%'")) == []
+    finally:
+        await _alembic("upgrade", "head")
+    assert len(await _query(CONFIG_LINK_INDEXES_SQL)) == 3  # первичный ключ и два уникальных индекса

@@ -7,7 +7,8 @@
 - `FakeTelegram` - перехват методов Bot API через `BaseRequestMiddleware` сессии. Сети нет вообще: до
   `make_request` дело не доходит. Журнал: что бот отправил, какие кнопки у сообщений видны сейчас, какие callback
   ответил. Апдейты в бота подаёт `dp.feed_raw_update(bot, update)`; сборщики апдейтов - ниже.
-- `FakePanel` - `httpx.MockTransport` с состоянием по `docs/bot/api.md`: приглашения, регистрации, пользователи.
+- `FakePanel` - `httpx.MockTransport` с состоянием по `docs/bot/api.md`: приглашения, регистрации, пользователи, ссылки
+  на страницу конфига (`POST /users/by-telegram/{id}/config-link`: каждая выдача гасит прежнюю живую ссылку).
   Режимы сбоев задаются `override(route, фабрика)`: 401/409/422/429/503/обрыв/таймаут отдаются по очереди, потом панель
   снова ведёт себя как настоящая. `hold(route)` останавливает запрос на сервере (для проверки гонок без `gather`).
 """
@@ -43,6 +44,8 @@ BOT_ID = 42
 BOT_TOKEN = "42:TEST"  # Bot("42:TEST"): настоящий токен тестам не нужен, в Telegram они не ходят
 BOT_USERNAME = "tollwire_test_bot"
 API_PREFIX = "/api/v1/bot"
+PUBLIC_URL = "https://panel.example.test"
+CONFIG_LINK = "POST /users/by-telegram/*/config-link"  # имя маршрута в журнале FakePanel (`calls`, `override`, `count`)
 
 # --- время ---------------------------------------------------------------------------------------------------------
 
@@ -356,6 +359,16 @@ def redirect(location: str) -> Outcome:
 
 
 @dataclass
+class IssuedLink:
+    """Ссылка, которую выдала FakePanel: `url` - как её видит человек, `live` - не погашена ли новой."""
+
+    telegram_id: int
+    token: str
+    url: str
+    live: bool = True
+
+
+@dataclass
 class Call:
     method: str
     path: str  # полный путь запроса, например /api/v1/bot/heartbeat
@@ -392,7 +405,9 @@ class FakePanel:
         self.key = key
         self.invites: dict[str, str] = {}  # код -> valid / used / expired / revoked
         self.invite_users: dict[str, int] = {}  # код -> telegram_id, который его занял
-        self.users: dict[int, dict[str, Any]] = {}  # telegram_id -> {name, valid_until, protocol, config_url}
+        self.users: dict[int, dict[str, Any]] = {}  # telegram_id -> {name, valid_until, protocol}
+        self.links: list[IssuedLink] = []  # все выданные ссылки по порядку; живая у человека одна (последняя)
+        self.link_refusal: dict[int, str] = {}  # telegram_id -> reason 409 на config-link (пока не уберут)
         self.registrations: dict[str, dict[str, Any]] = {}
         self.calls: list[Call] = []
         self.heartbeats: list[dict[str, Any]] = []
@@ -406,20 +421,18 @@ class FakePanel:
         self.invites[code] = status
         return code
 
-    def add_user(self, telegram_id: int, name: str = "Иван Петров", config_url: str | None = None) -> None:
-        self.users[telegram_id] = {
-            "name": name,
-            "valid_until": _FAR_DATE,
-            "protocol": "amneziawg",
-            "config_url": config_url,
-        }
+    def add_user(self, telegram_id: int, name: str = "Иван Петров") -> None:
+        self.users[telegram_id] = {"name": name, "valid_until": _FAR_DATE, "protocol": "amneziawg"}
 
-    def finish(self, registration_id: str, status: str = "active", config_url: str | None = None) -> None:
+    def finish(self, registration_id: str, status: str = "active") -> None:
         """Выдача закончилась: статус меняется, при `active` появляется пользователь (его покажет /status)."""
         registration = self.registrations[registration_id]
-        registration["status"], registration["config_url"] = status, config_url
+        registration["status"] = status
         if status == "active":
-            self.add_user(registration["telegram_id"], registration["name"], config_url)
+            self.add_user(registration["telegram_id"], registration["name"])
+
+    def live_links(self, telegram_id: int | None = None) -> list[IssuedLink]:
+        return [link for link in self.links if link.live and telegram_id in (None, link.telegram_id)]
 
     def only_registration(self) -> str:
         assert len(self.registrations) == 1, f"expected one registration, there are {len(self.registrations)}"
@@ -494,6 +507,8 @@ class FakePanel:
     @staticmethod
     def _route(method: str, path: str) -> str:
         tail = path.removeprefix(API_PREFIX)
+        if tail.startswith("/users/by-telegram/") and tail.endswith("/config-link"):
+            return f"{method} /users/by-telegram/*/config-link"
         for prefix in ("/registrations/", "/users/by-telegram/"):
             if tail.startswith(prefix):
                 tail = prefix + "*"
@@ -503,6 +518,8 @@ class FakePanel:
         if not path.startswith(API_PREFIX + "/"):
             return httpx.Response(404, json={"detail": "Not Found"})
         last = path.rsplit("/", 1)[-1]
+        if route == CONFIG_LINK:
+            return self._config_link(path.split("/")[-2])
         if route == "POST /heartbeat":
             return self._heartbeat(body)
         if route == "POST /invites/check":
@@ -525,6 +542,23 @@ class FakePanel:
                 return httpx.Response(404, json={"detail": "User not found"})
             return httpx.Response(200, json=user)
         return httpx.Response(404, json={"detail": "Not Found"})
+
+    def _config_link(self, raw_id: str) -> httpx.Response:
+        """Новая ссылка: прежняя живая гаснет. 404 - нет такого человека; 409 с reason - по `link_refusal`."""
+        if not raw_id.isdigit() or int(raw_id) < 1:
+            return self._invalid("telegram_id")
+        telegram_id = int(raw_id)
+        user = self.users.get(telegram_id)
+        if user is None:
+            return httpx.Response(404, json={"detail": "User not found"})
+        if telegram_id in self.link_refusal:
+            return self._conflict(self.link_refusal[telegram_id])
+        for link in self.live_links(telegram_id):
+            link.live = False
+        token = f"LinkToken{len(self.links) + 1:034d}"  # 43 символа, как у настоящего токена
+        link = IssuedLink(telegram_id, token, f"{PUBLIC_URL}/c#{token}")
+        self.links.append(link)
+        return httpx.Response(200, json={"config_url": link.url, "valid_until": user["valid_until"]})
 
     def _heartbeat(self, body: Any) -> httpx.Response:
         username, version = str(body.get("bot_username", "")), str(body.get("version", ""))
@@ -570,7 +604,6 @@ class FakePanel:
         registration_id = str(uuid.uuid4())
         self.registrations[registration_id] = {
             "status": "provisioning",
-            "config_url": None,
             "telegram_id": telegram_id,
             "name": name,
             "email": email,
@@ -584,7 +617,6 @@ class FakePanel:
         return {
             "registration_id": registration_id,
             "status": registration["status"],
-            "config_url": registration["config_url"],
         }
 
     @staticmethod

@@ -48,6 +48,7 @@ os.environ.update(
         "SSH_CONNECT_TIMEOUT": "5",
         "SSH_COMMAND_TIMEOUT": "5",
         "SCHEDULER_ENABLED": "false",
+        "PUBLIC_URL": "https://panel.example.test",  # адрес в ссылках на страницу конфига (этап 25.3)
         "COOKIE_SECURE": "false",  # httpx в тестах ходит по http://testserver — Secure-cookie он бы не вернул
     }
 )

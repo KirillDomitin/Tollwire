@@ -20,6 +20,12 @@
   смене состояния ok/down), `run()` (цикл: тик, `sleep(30)`).
 - `configure_logging(settings, *, stream)` ставит фильтр на корневой обработчик, пишущий в `stream`.
 - `Settings(telegram_bot_token=, bot_api_key=, panel_url=, state_dir=, log_level=)` (pydantic-settings, SecretStr).
+- Этап 25.3: `PanelClient.config_link(telegram_id)` -> объект с `config_url` и `valid_until`, `None` при 404 (как у
+  `user_by_telegram`); 409 с `reason` (`config_unavailable`, `not_ready`, `no_access`, `not_configured`) - `Conflict`.
+  Регистрация и статус больше не несут `config_url`: ссылку выдаёт только `config_link`. Текст `ready_link` берёт
+  `{url}` и `{until}` (срок - `valid_until` из ответа `config_link`); `ready_stub` удалён. Команда `/config`, пункт
+  меню `config`, ключи отказов `/config` - в `K` ниже (`config_*`). Текст самой новой ссылки в ответе на `/config` в
+  тестах ищется по адресу (`Person.links()`), поэтому его ключ в `K` не нужен.
 - Ключи текстов (`K`): если у реализации они называются иначе - правится только `K` ниже. Тест
   `test_texts.py::test_every_key_the_tests_rely_on_exists` покажет, каких ключей нет.
 
@@ -86,12 +92,17 @@ class K:
     email_taken = "email_taken"  # почта занята: введите другую
     # отправка и ожидание
     preparing = "preparing"  # «Готовим доступ…»
-    ready_stub = "ready_stub"  # {until}: «Доступ готов до ДД.ММ.ГГГГ. Конфиг пришлёт администратор…»
-    ready_link = "ready_link"  # {url}: доступ готов, вот ссылка
+    ready_link = "ready_link"  # {url}, {until}: доступ готов, вот ссылка, срок и «не пересылайте; новая - /config»
     failed = "failed"  # «не получилось, мы разберёмся»
     still_preparing = "still_preparing"  # «ещё готовится, проверьте /status»
     # команды
-    status = "status"  # {name}, {until}, {protocol}
+    status = "status"  # {name}, {until}, {protocol}; подсказка про /config
+    # отказы /config и watcher'а по причине 409 панели
+    config_unavailable = "config_unavailable"  # клиент импортирован: страницы конфига нет
+    config_no_access = "config_no_access"  # доступ закончился или отозван
+    config_not_ready = "config_not_ready"  # клиент ещё выдаётся
+    config_not_configured = "config_not_configured"  # у панели не задан публичный адрес
+    cmd_config = "cmd_config"  # описание команды /config в меню бота
     not_registered = "not_registered"
     help = "help"
     unknown_input = "unknown_input"
@@ -108,6 +119,14 @@ def t(key: str, **values: Any) -> str:
     from tollwire_bot.texts import t as translate
 
     return translate(key, **values)
+
+
+LINK_RE = re.compile(r"https?://[^\s]+/c#[A-Za-z0-9_-]+")
+
+
+def ready_link_text(url: str, until: str | None = None) -> str:
+    """Сообщение «доступ готов» со ссылкой; срок по умолчанию - тот, что отдаёт FakePanel."""
+    return t(K.ready_link, url=url, until=FAKE_UNTIL if until is None else until)
 
 
 def date_of(iso: str) -> str:
@@ -233,6 +252,10 @@ class Person:
 
     def heard(self, key: str, **values: Any) -> bool:
         return t(key, **values) in self.texts
+
+    def links(self) -> list[str]:
+        """Адреса страниц конфига во всём, что бот сказал человеку, по порядку."""
+        return [match for text in self.texts for match in LINK_RE.findall(text)]
 
     def buttons(self) -> list[str]:
         return [button.text for button in self.world.telegram.live_buttons(self.id)]

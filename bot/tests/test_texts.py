@@ -1,4 +1,4 @@
-"""Тексты бота (texts.py): каждый ключ есть, подстановки сходятся с вызовами, нет HTML и подсказки /config.
+"""Тексты бота (texts.py): каждый ключ есть, подстановки сходятся с вызовами, нет HTML, /config подсказан там, где надо.
 
 Проверка вызовов `t(...)` идёт по исходникам пакета (AST), а не по поведению: опечатка в ключе или лишняя подстановка
 в редкой ветке (сбой панели, таймаут) иначе всплыла бы только у живого человека."""
@@ -102,10 +102,32 @@ def test_no_text_contains_html() -> None:
         assert not re.search(r"</?[A-Za-z][^>]*>", versions["ru"]), key
 
 
-def test_no_text_advertises_config_yet() -> None:
-    """/config и ссылка на конфиг - этап 25.3: пока подсказки о них не показываем."""
+def test_the_stub_for_a_config_sent_by_the_admin_is_gone() -> None:
+    """С этапа 25.3 конфиг не «присылает администратор»: человек получает ссылку на страницу сам."""
+    assert "ready_stub" not in TEXTS
     for key, versions in TEXTS.items():
-        assert "/config" not in versions["ru"], key
+        assert "пришлёт администратор" not in versions["ru"], key
+
+
+def test_config_is_advertised_where_a_person_looks_for_it() -> None:
+    for key in (K.help, K.already_registered, K.status, K.ready_link):
+        assert "/config" in TEXTS[key]["ru"], key
+
+
+def test_the_link_message_warns_not_to_forward_and_shows_the_end_date() -> None:
+    text = TEXTS[K.ready_link]["ru"]
+    assert placeholders(text) == {"url", "until"}
+    assert "пересыл" in text.lower()  # «не пересылайте»: ссылка открывает конфиг любому, у кого она есть
+
+
+def test_the_link_message_puts_the_url_into_the_text_as_is() -> None:
+    url = "https://panel.example.test/c#LinkToken0000000000000000000000000000000001"
+    assert url in t(K.ready_link, url=url, until="25.11.2026")
+    assert "25.11.2026" in t(K.ready_link, url=url, until="25.11.2026")
+
+
+def test_the_menu_text_for_config_exists() -> None:
+    assert TEXTS[K.cmd_config]["ru"].strip()
 
 
 def test_every_text_fits_a_telegram_message() -> None:
@@ -118,18 +140,24 @@ def test_every_text_fits_a_telegram_message() -> None:
     [
         (K.no_code, ["закрыт"]),
         (K.bad_link, ["недействительна"]),
-        (K.already_registered, ["уже зарегистрированы", "/status"]),
+        (K.already_registered, ["уже зарегистрированы", "/status", "/config"]),
         (K.not_registered, ["не зарегистрированы"]),
         (K.preparing, ["Готовим доступ"]),
         (K.failed, ["не получилось", "разберёмся"]),
         (K.still_preparing, ["ещё готовится", "/status"]),
-        (K.ready_stub, ["Доступ готов до {until}", "Конфиг пришлёт администратор", "/status"]),
+        (K.ready_link, ["Доступ готов", "{url}", "{until}", "/config"]),
     ],
 )
 def test_texts_say_what_the_plan_says(key: str, fragments: list[str]) -> None:
     text = TEXTS[key]["ru"]
     for fragment in fragments:
         assert fragment.lower() in text.lower(), (key, fragment)
+
+
+def test_every_config_refusal_has_its_own_text() -> None:
+    keys = [K.config_unavailable, K.config_no_access, K.config_not_ready, K.config_not_configured]
+
+    assert len({t(key) for key in keys}) == len(keys)
 
 
 def test_every_invite_problem_has_its_own_text() -> None:

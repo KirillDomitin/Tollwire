@@ -17,6 +17,7 @@ import pytest
 
 from fakes import (
     API_PREFIX,
+    CONFIG_LINK,
     FakeClock,
     FakePanel,
     Outcome,
@@ -125,7 +126,7 @@ async def test_register_sends_the_person_and_returns_the_registration(panel: Fak
 
     (body,) = panel.bodies("POST /registrations")
     assert body == {"code": CODE, "telegram_id": TG_ID, "telegram_username": "ivan_p", "name": NAME, "email": EMAIL}
-    assert registration.status == "provisioning" and registration.config_url is None
+    assert registration.status == "provisioning" and getattr(registration, "config_url", None) is None
     assert registration.registration_id in panel.registrations
 
 
@@ -141,11 +142,11 @@ async def test_register_without_a_telegram_username_sends_none(panel: FakePanel,
 async def test_registration_status_is_read_by_id(panel: FakePanel, client: PanelClient) -> None:
     panel.add_invite(CODE)
     created = await register(client)
-    panel.finish(created.registration_id, "active", config_url="https://panel.example.test/c/token")
+    panel.finish(created.registration_id, "active")
 
     registration = await client.registration(created.registration_id)
 
-    assert registration.status == "active" and registration.config_url == "https://panel.example.test/c/token"
+    assert registration.status == "active" and getattr(registration, "config_url", None) is None
     assert panel.calls[-1].path == f"{API_PREFIX}/registrations/{created.registration_id}"
 
 
@@ -166,6 +167,116 @@ async def test_unknown_user_is_none(client: PanelClient) -> None:
     assert await client.user_by_telegram(TG_ID) is None
 
 
+async def test_config_link_posts_to_the_person_and_returns_url_and_date(panel: FakePanel, client: PanelClient) -> None:
+    panel.add_user(TG_ID, NAME)
+
+    link = await client.config_link(TG_ID)
+
+    assert link is not None and link.config_url == panel.links[0].url and link.valid_until
+    (call,) = [call for call in panel.calls if call.route == CONFIG_LINK]
+    assert call.method == "POST" and call.path == f"{API_PREFIX}/users/by-telegram/{TG_ID}/config-link"
+    assert call.headers["x-bot-key"] == panel.key
+
+
+async def test_config_link_of_an_unknown_person_is_none(client: PanelClient) -> None:
+    assert await client.config_link(TG_ID) is None
+
+
+@pytest.mark.parametrize("reason", ["config_unavailable", "not_ready", "no_access", "not_configured"])
+async def test_config_link_refusals_keep_their_reason(panel: FakePanel, client: PanelClient, reason: str) -> None:
+    panel.add_user(TG_ID, NAME)
+    panel.link_refusal[TG_ID] = reason
+
+    with pytest.raises(Conflict) as caught:
+        await client.config_link(TG_ID)
+
+    assert caught.value.reason == reason
+    assert panel.links == []
+
+
+async def test_config_link_with_an_unknown_reason_is_a_plain_conflict(panel: FakePanel, client: PanelClient) -> None:
+    panel.add_user(TG_ID, NAME)
+    panel.override(CONFIG_LINK, conflict("something_new"))
+
+    with pytest.raises(Conflict) as caught:
+        await client.config_link(TG_ID)
+
+    assert caught.value.reason == "conflict"
+
+
+async def test_config_link_is_retried_like_any_other_request_on_a_panel_outage(
+    panel: FakePanel, client: PanelClient, naps: Naps
+) -> None:
+    panel.add_user(TG_ID, NAME)
+    panel.override(CONFIG_LINK, unavailable(), times=2)
+
+    link = await client.config_link(TG_ID)
+
+    assert link is not None and naps.delays == [0.5, 1]
+
+
+async def test_config_link_gives_up_after_the_retries_with_panel_unavailable(
+    panel: FakePanel, client: PanelClient
+) -> None:
+    panel.add_user(TG_ID, NAME)
+    panel.override(CONFIG_LINK, unavailable(), times=5)
+
+    with pytest.raises(PanelUnavailable):
+        await client.config_link(TG_ID)
+
+
+async def test_config_link_waits_out_a_short_rate_limit_but_not_a_long_one(
+    panel: FakePanel, client: PanelClient, naps: Naps
+) -> None:
+    panel.add_user(TG_ID, NAME)
+    panel.override(CONFIG_LINK, rate_limited(3))
+    assert await client.config_link(TG_ID) is not None and naps.delays == [3]
+
+    panel.override(CONFIG_LINK, rate_limited(60))
+    with pytest.raises(RateLimited):
+        await client.config_link(TG_ID)
+
+
+async def test_config_link_rejects_a_wrong_key_without_retries(
+    panel: FakePanel, client: PanelClient, naps: Naps
+) -> None:
+    panel.add_user(TG_ID, NAME)
+    panel.override(CONFIG_LINK, unauthorized())
+
+    with pytest.raises(PanelAuthError):
+        await client.config_link(TG_ID)
+
+    assert naps.delays == []
+
+
+async def test_an_answer_without_the_link_is_panel_unexpected(panel: FakePanel, client: PanelClient) -> None:
+    import httpx
+
+    from tollwire_bot.panel import PanelUnexpected
+
+    panel.add_user(TG_ID, NAME)
+    panel.override(CONFIG_LINK, lambda: httpx.Response(200, json={"valid_until": "2026-11-25T12:00:00Z"}))
+
+    with pytest.raises(PanelUnexpected):
+        await client.config_link(TG_ID)
+
+
+async def test_the_url_of_a_link_never_reaches_the_log(
+    panel: FakePanel, client: PanelClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    panel.add_user(TG_ID, NAME)
+
+    with caplog.at_level(logging.DEBUG):
+        link = await client.config_link(TG_ID)
+        panel.override(CONFIG_LINK, unavailable(), times=5)
+        with pytest.raises(PanelUnavailable):
+            await client.config_link(TG_ID)
+
+    assert link is not None
+    logs = "\n".join(record.getMessage() + str(vars(record)) for record in caplog.records)
+    assert panel.links[0].token not in logs and "/c#" not in logs
+
+
 async def test_only_the_bot_api_is_ever_called(panel: FakePanel, client: PanelClient) -> None:
     panel.add_invite(CODE)
     await client.heartbeat("tollwire_test_bot", __version__)
@@ -173,8 +284,10 @@ async def test_only_the_bot_api_is_ever_called(panel: FakePanel, client: PanelCl
     created = await register(client)
     await client.registration(created.registration_id)
     await client.user_by_telegram(TG_ID)
+    panel.finish(created.registration_id)
+    await client.config_link(TG_ID)
 
-    assert len(panel.calls) == 5
+    assert len(panel.calls) == 6
     assert all(call.path.startswith(API_PREFIX + "/") for call in panel.calls)
 
 

@@ -639,7 +639,7 @@ async def test_help_explains_the_bot_without_asking_the_panel(world: World) -> N
     assert world.panel.calls == []
 
 
-@pytest.mark.parametrize("text", ["привет", "что ты умеешь?", "/config", "/frobnicate"])
+@pytest.mark.parametrize("text", ["привет", "что ты умеешь?", "/frobnicate"])
 async def test_anything_else_gets_a_short_hint_and_never_reaches_the_panel(world: World, text: str) -> None:
     ivan = world.person()
 

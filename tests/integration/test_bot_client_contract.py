@@ -11,7 +11,7 @@ from typing import Any
 
 import httpx
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.security import hash_token
@@ -20,9 +20,15 @@ from main import app
 from modules.bot.models.invite import BotInvite
 from tests.bot_client_support import Conflict, PanelAuthError, PanelClient, RateLimited, Rejected
 from tests.bot_support import (
+    CONFIG_UNAVAILABLE,
     EMAIL,
     KEYS_URL,
     NAME,
+    NO_ACCESS,
+    NOT_CONFIGURED,
+    NOT_READY,
+    PUBLIC_BASE,
+    PUBLIC_CONFIG_URL,
     SECOND_EMAIL,
     SECOND_TELEGRAM_ID,
     TELEGRAM_ID,
@@ -30,6 +36,8 @@ from tests.bot_support import (
     admin_create_invite,
     admin_create_key,
     audit_dump,
+    set_public_address,
+    token_of,
 )
 from tests.fixtures import World
 from tests.integration.conftest import drain
@@ -150,7 +158,7 @@ async def test_registration_goes_from_provisioning_to_active_and_shows_up_in_sta
     code = await scene.invite(days=30)
 
     created = await scene.register(code)
-    assert created.status == "provisioning" and created.config_url is None
+    assert created.status == "provisioning" and getattr(created, "config_url", None) is None  # URL даёт config-link
 
     assert await drain(worker) >= 1  # воркер выдаёт клиента на (фейковом) сервере
     registration = await scene.client.registration(created.registration_id)
@@ -186,6 +194,106 @@ async def test_a_name_with_unicode_and_a_long_telegram_id_survive_the_round_trip
 async def test_an_unknown_registration_and_an_unknown_user_are_none(scene: Scene) -> None:
     assert await scene.client.registration("00000000-0000-4000-8000-000000000000") is None
     assert await scene.client.user_by_telegram(TELEGRAM_ID) is None
+
+
+# --- ссылка на страницу конфига (25.3) -------------------------------------------------------------------------------
+
+
+async def active_person(scene: Scene, worker: JobWorker) -> None:
+    await scene.register(await scene.invite())
+    await drain(worker)
+
+
+async def test_config_link_gives_a_url_with_the_token_in_the_fragment_and_the_end_date(
+    scene: Scene, worker: JobWorker
+) -> None:
+    await active_person(scene, worker)
+
+    link = await scene.client.config_link(TELEGRAM_ID)
+
+    assert link is not None
+    assert len(token_of(link.config_url)) == 43 and link.config_url.startswith(f"{PUBLIC_BASE}/c#")
+    until = datetime.fromisoformat(str(link.valid_until).replace("Z", "+00:00"))
+    assert abs((until - (datetime.now(timezone.utc) + timedelta(days=30))).total_seconds()) < 300
+
+
+async def test_the_url_from_config_link_opens_the_page_and_a_new_one_closes_it(scene: Scene, worker: JobWorker) -> None:
+    await active_person(scene, worker)
+    first = await scene.client.config_link(TELEGRAM_ID)
+    second = await scene.client.config_link(TELEGRAM_ID)
+    assert first is not None and second is not None
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as person:
+        old = await person.post(PUBLIC_CONFIG_URL, json={"token": token_of(first.config_url)})
+        new = await person.post(PUBLIC_CONFIG_URL, json={"token": token_of(second.config_url)})
+
+    assert old.status_code == 404 and new.status_code == 200
+
+
+async def test_config_link_of_an_unknown_telegram_is_none(scene: Scene) -> None:
+    assert await scene.client.config_link(TELEGRAM_ID) is None
+
+
+async def test_config_link_while_the_client_is_being_issued_is_not_ready(scene: Scene) -> None:
+    await scene.register(await scene.invite())  # воркер не запускался
+
+    with pytest.raises(Conflict) as caught:
+        await scene.client.config_link(TELEGRAM_ID)
+
+    assert caught.value.reason == NOT_READY
+
+
+async def test_config_link_after_the_access_was_revoked_is_no_access(
+    scene: Scene, worker: JobWorker, session: AsyncSession
+) -> None:
+    await active_person(scene, worker)
+    grant_id = (await session.execute(text("SELECT id FROM access_grants"))).scalar_one()
+    assert (await scene.api.post(f"/api/v1/access/{grant_id}/revoke")).status_code == 200
+
+    with pytest.raises(Conflict) as caught:
+        await scene.client.config_link(TELEGRAM_ID)
+
+    assert caught.value.reason == NO_ACCESS
+
+
+async def test_config_link_of_an_imported_client_is_config_unavailable(
+    scene: Scene, worker: JobWorker, session: AsyncSession
+) -> None:
+    await active_person(scene, worker)
+    await session.execute(text("UPDATE vpn_credentials SET source = 'IMPORTED', encrypted_config = NULL"))
+    await session.commit()
+
+    with pytest.raises(Conflict) as caught:
+        await scene.client.config_link(TELEGRAM_ID)
+
+    assert caught.value.reason == CONFIG_UNAVAILABLE
+
+
+async def test_config_link_without_a_public_address_is_not_configured(
+    scene: Scene, worker: JobWorker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await active_person(scene, worker)
+    set_public_address(monkeypatch, "", domain="")
+
+    with pytest.raises(Conflict) as caught:
+        await scene.client.config_link(TELEGRAM_ID)
+
+    assert caught.value.reason == NOT_CONFIGURED
+
+
+async def test_config_link_with_a_telegram_id_out_of_range_is_rejected_by_field(scene: Scene) -> None:
+    with pytest.raises(Rejected) as caught:
+        await scene.client.config_link(0)
+
+    assert caught.value.field == "telegram_id"
+
+
+async def test_a_revoked_key_cannot_ask_for_a_link(scene: Scene, worker: JobWorker) -> None:
+    await active_person(scene, worker)
+    assert (await scene.api.post(f"{KEYS_URL}/{scene.key['id']}/revoke")).status_code == 200
+
+    with pytest.raises(PanelAuthError):
+        await scene.client.config_link(TELEGRAM_ID)
 
 
 # --- 409 -------------------------------------------------------------------------------------------------------------
@@ -355,3 +463,12 @@ async def test_the_key_is_not_in_the_audit_after_a_whole_conversation(scene: Sce
 
     dump = await audit_dump()
     assert scene.key["key"] not in dump and code not in dump
+
+
+async def test_the_token_of_a_link_is_not_in_the_audit(scene: Scene, worker: JobWorker) -> None:
+    await active_person(scene, worker)
+    link = await scene.client.config_link(TELEGRAM_ID)
+    assert link is not None
+
+    dump = await audit_dump()
+    assert token_of(link.config_url) not in dump and hash_token(token_of(link.config_url)) not in dump

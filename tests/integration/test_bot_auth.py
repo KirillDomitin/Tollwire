@@ -32,8 +32,16 @@ BOT_ROUTES: list[tuple[str, str, dict[str, Any] | None]] = [
     ("POST", "/api/v1/bot/registrations", registration_body("abcdefgh12345678")),
     ("GET", "/api/v1/bot/registrations/00000000-0000-0000-0000-000000000000", None),
     ("GET", f"/api/v1/bot/users/by-telegram/{TELEGRAM_ID}", None),
+    ("POST", f"/api/v1/bot/users/by-telegram/{TELEGRAM_ID}/config-link", None),
 ]
-ROUTE_IDS = ["heartbeat", "invites-check", "registrations-post", "registrations-get", "users-by-telegram"]
+ROUTE_IDS = [
+    "heartbeat",
+    "invites-check",
+    "registrations-post",
+    "registrations-get",
+    "users-by-telegram",
+    "config-link",
+]
 
 
 async def call(http: httpx.AsyncClient, route: tuple[str, str, dict[str, Any] | None]) -> httpx.Response:

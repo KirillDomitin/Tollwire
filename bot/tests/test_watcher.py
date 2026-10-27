@@ -1,23 +1,24 @@
 """Watcher: после «Готовим доступ…» бот опрашивает GET /registrations/{id} и сообщает итог человеку.
 
-Расписание: через 2, 3, 5 с, затем каждые 10 с, всего до 3 минут. Итог: active (ссылка или заглушка «конфиг пришлёт
-администратор»), failed, таймаут. Список ожидающих лежит в хранилище: после рестарта бота опрос продолжается.
+Расписание: через 2, 5, 10 с, затем каждые 10 с, всего до 3 минут. Итог: active (бот просит у панели ссылку на страницу
+конфига: `POST .../config-link`), failed, таймаут; сбои панели и «клиент ещё выдаётся» - повтор на следующем опросе.
+Список ожидающих лежит в хранилище: после рестарта бота опрос продолжается.
 Время виртуальное (FakeClock): три минуты проходят за доли секунды, моменты запросов точны."""
 
 import pytest
 from aiogram.exceptions import TelegramForbiddenError
 from aiogram.methods import SendMessage
 
-from fakes import conflict, rate_limited, unavailable
+from fakes import CONFIG_LINK, conflict, rate_limited, unavailable
 from support import (
     CODE,
-    FAKE_UNTIL,
     OTHER_CODE,
     OTHER_EMAIL,
     OTHER_TG_ID,
     K,
     Person,
     World,
+    ready_link_text,
     settle,
     t,
     wait_until,
@@ -25,8 +26,6 @@ from support import (
 )
 
 POLL = "GET /registrations/*"
-BY_TELEGRAM = "GET /users/by-telegram/*"
-LINK = "https://panel.example.test/c/ConfigPageToken"
 
 
 @pytest.fixture
@@ -50,6 +49,14 @@ def said_times(world: World, person: Person, text: str) -> list[float]:
 
 async def heard(person: Person, text: str) -> None:
     await wait_until(lambda: text in person.texts, what="the bot to say it")
+
+
+async def heard_link(person: Person) -> str:
+    """Ждёт сообщение «доступ готов» со ссылкой и возвращает ссылку; текст сообщения - ровно `ready_link`."""
+    await wait_until(lambda: bool(person.links()), what="the bot to send the link")
+    (url,) = person.links()
+    assert ready_link_text(url) in person.texts
+    return url
 
 
 # --- расписание ------------------------------------------------------------------------------------------------------
@@ -84,26 +91,102 @@ async def test_polling_gives_up_after_three_minutes_and_says_to_check_status(iva
 # --- итоги -----------------------------------------------------------------------------------------------------------
 
 
-async def test_ready_without_a_config_page_gives_the_date_and_says_the_admin_will_send_it(
-    ivan: Person, world: World
-) -> None:
+async def test_ready_asks_the_panel_for_a_link_and_gives_it_with_the_date(ivan: Person, world: World) -> None:
     await ivan.register()
     world.panel.at(7, lambda: world.panel.finish(world.panel.only_registration()))
 
-    await heard(ivan, t(K.ready_stub, until=FAKE_UNTIL))
+    url = await heard_link(ivan)
 
-    (said,) = said_times(world, ivan, t(K.ready_stub, until=FAKE_UNTIL))
+    (said,) = said_times(world, ivan, ready_link_text(url))
     assert said - started_at(world) == 10  # статус стал active в 7 с, третий опрос - на 10-й
-    assert world.panel.routes()[-1] == BY_TELEGRAM  # дата доступа - из /users/by-telegram
+    assert world.panel.routes()[-1] == CONFIG_LINK  # ссылку и срок бот берёт у панели, а не из статуса регистрации
+    assert world.panel.live_links(ivan.id)[0].url == url
 
 
-async def test_ready_with_a_config_page_gives_the_link_and_no_stub(ivan: Person, world: World) -> None:
+async def test_the_link_is_requested_for_the_person_by_the_path_with_an_empty_body(ivan: Person, world: World) -> None:
     await ivan.register()
-    world.panel.at(3, lambda: world.panel.finish(world.panel.only_registration(), config_url=LINK))
+    world.panel.finish(world.panel.only_registration())
 
-    await heard(ivan, t(K.ready_link, url=LINK))
+    await heard_link(ivan)
 
-    assert t(K.ready_stub, until=FAKE_UNTIL) not in ivan.texts
+    (call,) = [call for call in world.panel.calls if call.route == CONFIG_LINK]
+    assert call.path.endswith(f"/users/by-telegram/{ivan.id}/config-link")
+    assert call.method == "POST" and not call.body
+
+
+async def test_while_the_client_is_not_ready_the_next_poll_asks_again(ivan: Person, world: World) -> None:
+    await ivan.register()
+    world.panel.override(CONFIG_LINK, conflict("not_ready"), times=2)
+    world.panel.finish(world.panel.only_registration())
+
+    url = await heard_link(ivan)
+
+    (said,) = said_times(world, ivan, ready_link_text(url))
+    assert said - started_at(world) == 10  # опросы на 2 и 5 с получили not_ready, на 10 с - ссылку
+    assert world.panel.count(CONFIG_LINK) == 3 and len(world.panel.links) == 1
+    assert t(K.still_preparing) not in ivan.texts and t(K.config_not_ready) not in ivan.texts
+
+
+async def test_a_panel_failure_on_the_link_request_does_not_end_the_polling(ivan: Person, world: World) -> None:
+    await ivan.register()
+    world.panel.override(CONFIG_LINK, unavailable(), times=5)  # клиент панели исчерпывает повторы и сдаётся
+    world.panel.finish(world.panel.only_registration())
+
+    await heard_link(ivan)
+
+    assert t(K.failed) not in ivan.texts and t(K.still_preparing) not in ivan.texts
+    assert world.panel.count(CONFIG_LINK) >= 2
+
+
+async def test_a_rate_limit_on_the_link_request_does_not_end_the_polling(ivan: Person, world: World) -> None:
+    await ivan.register()
+    world.panel.override(CONFIG_LINK, rate_limited(60), times=2)
+    world.panel.finish(world.panel.only_registration())
+
+    await heard_link(ivan)
+
+
+@pytest.mark.parametrize(
+    ("reason", "key"), [("config_unavailable", K.config_unavailable), ("no_access", K.config_no_access)]
+)
+async def test_a_client_that_will_never_have_a_page_gets_its_own_text_and_the_polling_ends(
+    ivan: Person, world: World, reason: str, key: str
+) -> None:
+    await ivan.register()
+    world.panel.link_refusal[ivan.id] = reason
+    world.panel.finish(world.panel.only_registration())
+
+    await heard(ivan, t(key))
+    await settle()
+
+    assert ivan.texts.count(t(key)) == 1 and not ivan.links()
+    assert world.panel.count(CONFIG_LINK) == 1  # дальше не спрашиваем: ответ не изменится
+    assert await watch_ids(world.storage) == []
+    assert t(K.failed) not in ivan.texts and t(K.still_preparing) not in ivan.texts
+
+
+async def test_a_failed_send_is_retried_with_a_new_link_and_the_old_one_is_dead(ivan: Person, world: World) -> None:
+    await ivan.register()
+    world.telegram.fail(SendMessage, RuntimeError("network is down"))
+    world.panel.finish(world.panel.only_registration())
+
+    url = await heard_link(ivan)
+
+    assert world.panel.count(CONFIG_LINK) == 2 and len(world.panel.links) == 2
+    first, second = world.panel.links
+    assert not first.live and second.live and second.url == url  # человек получил ту ссылку, что действует
+    assert first.url not in "\n".join(ivan.texts)
+    assert await watch_ids(world.storage) == []
+
+
+async def test_a_finished_registration_with_a_link_is_not_announced_twice(ivan: Person, world: World) -> None:
+    await ivan.register()
+    world.panel.finish(world.panel.only_registration())
+
+    await heard_link(ivan)
+    await settle()
+
+    assert len(ivan.links()) == 1 and len(world.panel.links) == 1
 
 
 async def test_failed_says_we_will_sort_it_out(ivan: Person, world: World) -> None:
@@ -113,7 +196,8 @@ async def test_failed_says_we_will_sort_it_out(ivan: Person, world: World) -> No
     await heard(ivan, t(K.failed))
 
     assert ivan.texts.count(t(K.failed)) == 1
-    assert not any(text in ivan.texts for text in (t(K.ready_stub, until=FAKE_UNTIL), t(K.still_preparing)))
+    assert not ivan.links() and t(K.still_preparing) not in ivan.texts
+    assert world.panel.count(CONFIG_LINK) == 0  # по упавшей регистрации ссылку не просят
 
 
 @pytest.mark.parametrize("status", ["active", "failed"])
@@ -123,21 +207,21 @@ async def test_a_finished_registration_stops_the_polling_and_leaves_the_list(
     await ivan.register()
     world.panel.at(1, lambda: world.panel.finish(world.panel.only_registration(), status))
 
-    await heard(ivan, t(K.ready_stub, until=FAKE_UNTIL) if status == "active" else t(K.failed))
+    if status == "active":
+        await heard_link(ivan)
+    else:
+        await heard(ivan, t(K.failed))
     await settle()
 
     assert world.panel.count(POLL) == 1  # статус уже был итоговым на первом опросе
     assert await watch_ids(world.storage) == []
 
 
-async def test_the_final_message_comes_once(ivan: Person, world: World) -> None:
+async def test_the_polling_that_never_sees_active_gives_no_link_and_asks_for_none(ivan: Person, world: World) -> None:
     await ivan.register()
-    world.panel.finish(world.panel.only_registration())
+    await heard(ivan, t(K.still_preparing))
 
-    await heard(ivan, t(K.ready_stub, until=FAKE_UNTIL))
-    await settle()
-
-    assert ivan.texts.count(t(K.ready_stub, until=FAKE_UNTIL)) == 1
+    assert not ivan.links() and world.panel.count(CONFIG_LINK) == 0
 
 
 # --- сбои на пути ----------------------------------------------------------------------------------------------------
@@ -148,7 +232,7 @@ async def test_panel_outage_between_polls_does_not_kill_the_polling(ivan: Person
     world.panel.override(POLL, unavailable(), times=12)
     world.panel.at(20, lambda: world.panel.finish(world.panel.only_registration()))
 
-    await heard(ivan, t(K.ready_stub, until=FAKE_UNTIL))
+    await heard_link(ivan)
 
     assert t(K.still_preparing) not in ivan.texts
 
@@ -158,7 +242,7 @@ async def test_a_rate_limit_between_polls_does_not_kill_the_polling(ivan: Person
     world.panel.override(POLL, rate_limited(60), times=3)
     world.panel.at(5, lambda: world.panel.finish(world.panel.only_registration()))
 
-    await heard(ivan, t(K.ready_stub, until=FAKE_UNTIL))
+    await heard_link(ivan)
 
 
 async def test_a_person_who_blocked_the_bot_does_not_break_anything(ivan: Person, world: World) -> None:
@@ -170,7 +254,7 @@ async def test_a_person_who_blocked_the_bot_does_not_break_anything(ivan: Person
     world.panel.finish(world.panel.only_registration())
 
     await wait_until(lambda: world.telegram.count(SendMessage) >= 2, what="the attempt to tell the person")
-    await wait_until(lambda: world.panel.count(BY_TELEGRAM) >= 1, what="the final step")
+    await wait_until(lambda: world.panel.count(CONFIG_LINK) >= 1, what="the final step")
     await settle()
 
     assert await watch_ids(world.storage) == []  # ждать больше нечего: сказать некому
@@ -198,11 +282,11 @@ async def test_every_person_hears_only_about_their_own_registration(ivan: Person
     world.panel.finish(first_id)
     world.panel.at(30, lambda: world.panel.finish(second_id, "failed"))
 
-    await heard(ivan, t(K.ready_stub, until=FAKE_UNTIL))
+    await heard_link(ivan)
     await heard(maria, t(K.failed))
 
     assert t(K.failed) not in ivan.texts
-    assert t(K.ready_stub, until=FAKE_UNTIL) not in maria.texts
+    assert not maria.links() and world.panel.live_links(maria.id) == []
 
 
 # --- рестарт бота ----------------------------------------------------------------------------------------------------
@@ -215,25 +299,25 @@ async def test_polling_continues_after_a_restart(ivan: Person, world: World) -> 
     seen = world.panel.count(POLL)
 
     world.panel.finish(registration_id)
-    await heard(ivan, t(K.ready_stub, until=FAKE_UNTIL))
+    await heard_link(ivan)
 
     assert world.panel.count(POLL) > seen
     assert ivan.texts.count(t(K.preparing)) == 1  # «Готовим доступ…» заново не повторяли
     await settle()
-    assert ivan.texts.count(t(K.ready_stub, until=FAKE_UNTIL)) == 1  # и итог не задвоился
+    assert len(ivan.links()) == 1  # и итог не задвоился
     assert await watch_ids(world.storage) == []
 
 
 async def test_a_finished_registration_is_not_announced_again_after_a_restart(ivan: Person, world: World) -> None:
     await ivan.register()
     world.panel.finish(world.panel.only_registration())
-    await heard(ivan, t(K.ready_stub, until=FAKE_UNTIL))
+    await heard_link(ivan)
     await settle()
 
     await world.restart()
     await settle()
 
-    assert ivan.texts.count(t(K.ready_stub, until=FAKE_UNTIL)) == 1
+    assert len(ivan.links()) == 1 and len(world.panel.links) == 1  # новой ссылки после рестарта никто не просил
 
 
 async def test_the_three_minutes_are_counted_from_the_start_not_from_the_restart(ivan: Person, world: World) -> None:
@@ -257,7 +341,7 @@ async def test_a_registration_older_than_the_storage_lifetime_is_dropped_quietly
     await settle()
 
     assert await watch_ids(world.storage) == []
-    assert t(K.ready_stub, until=FAKE_UNTIL) not in ivan.texts
+    assert not ivan.links()
 
 
 async def test_the_resumed_polling_asks_the_panel_for_the_same_registration(ivan: Person, world: World) -> None:

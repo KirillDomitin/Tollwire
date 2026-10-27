@@ -153,6 +153,59 @@ def test_settings_do_not_show_secrets_when_printed(tmp_path: Path) -> None:
     assert SECRET_TOKEN not in shown and SECRET_KEY not in shown
 
 
+# --- ссылка на страницу конфига (этап 25.3) --------------------------------------------------------------------------
+
+LINK_TOKEN = "LinkToken" + "Zx7" * 11 + "Q"  # 43 символа, как у настоящего токена ссылки
+LINK_URL = f"https://panel.example.test/c#{LINK_TOKEN}"
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        LINK_URL,
+        f"sending {LINK_URL} to the person",
+        f"<{LINK_URL}>",
+        f"link=({LINK_URL})",
+        f"https://other.panel.example.org:8443/c#{LINK_TOKEN}",
+    ],
+    ids=["bare", "in a sentence", "in angle brackets", "in parentheses", "other host and port"],
+)
+def test_a_config_page_url_never_reaches_the_log(stream: io.StringIO, tmp_path: Path, line: str) -> None:
+    """Токен в адресе открывает конфиг любому, у кого он есть: в журнале (его читают админы и собирают в сторонние
+    системы) ссылки быть не должно - ни в тексте, ни в аргументах, ни в traceback, ни у чужих логгеров."""
+    configure(stream, tmp_path)
+    log = logging.getLogger("tollwire_bot.test")
+
+    log.error(line)
+    log.error("sending %s", line)
+    log.error("mapping %r", {"url": line})
+    logging.getLogger("aiogram.event").error("update failed: %s", line)
+    try:
+        raise RuntimeError(f"cannot send {line}")
+    except RuntimeError:
+        log.exception("handler failed")
+
+    output = stream.getvalue()
+    assert output.count("handler failed") == 1 and "RuntimeError" in output  # строки на месте
+    assert LINK_TOKEN not in output
+
+
+def test_the_log_keeps_ordinary_urls_of_the_panel_readable(stream: io.StringIO, tmp_path: Path) -> None:
+    configure(stream, tmp_path)
+
+    logging.getLogger("tollwire_bot.test").warning("the panel https://panel.example.test does not answer")
+
+    assert "https://panel.example.test does not answer" in stream.getvalue()
+
+
+def test_a_debug_line_with_the_text_of_a_sent_message_loses_the_link(stream: io.StringIO, tmp_path: Path) -> None:
+    configure(stream, tmp_path, level="DEBUG")
+
+    logging.getLogger("aiogram.event").debug("Update id=1 is handled. Duration 3 ms by bot id=42 text=%r", LINK_URL)
+
+    assert LINK_TOKEN not in stream.getvalue()
+
+
 # --- сквозной диалог -------------------------------------------------------------------------------------------------
 
 
@@ -185,8 +238,10 @@ async def test_a_whole_conversation_leaves_no_secrets_and_no_personal_data_in_th
         await ivan.press(K.btn_yes)  # 422 со значением внутри
         await ivan.say(EMAIL)
         await ivan.press(K.btn_yes)
-        panel.finish(panel.only_registration(), "active", config_url="https://panel.example.test/c/SomeLinkTokenValue")
+        panel.finish(panel.only_registration(), "active")
         await ivan.say("/status")
+        await ivan.say("/config")  # человек просит ссылку: токен есть в ответе панели и в чате, но не в логе
+        await ivan.say("/config")
         panel.override("GET /users/by-telegram/*", unauthorized())
         await ivan.say("/status")  # ключ отозван
         world.telegram.fail(SendMessage, RuntimeError(f"cannot reach /bot{SECRET_TOKEN}/sendMessage"))
@@ -203,7 +258,8 @@ async def test_a_whole_conversation_leaves_no_secrets_and_no_personal_data_in_th
         NAME,
         CODE,
         private_phrase,
-        "SomeLinkTokenValue",
+        panel.links[0].token,
+        panel.links[-1].token,
         "Value error",
         t(K.preparing),
     ]

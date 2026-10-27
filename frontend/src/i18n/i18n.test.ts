@@ -18,6 +18,23 @@ describe("translations", () => {
     expect(rootKeys(en)).toEqual(rootKeys(ru));
   });
 
+  it("have the public page dictionary (public.*) in both languages", () => {
+    // Страница конфига (25.3) открывается без входа: её словарь не может зависеть от строк панели.
+    const publicKeys = (dictionary: unknown) =>
+      keysOf((dictionary as Record<string, unknown>).public).filter((key) => key !== "undefined");
+    expect(publicKeys(ru).length).toBeGreaterThan(10);
+    expect(rootKeys({ public: (en as Record<string, unknown>).public })).toEqual(
+      rootKeys({ public: (ru as Record<string, unknown>).public }),
+    );
+  });
+
+  it("tell the person of the public page to write /config to the bot", () => {
+    for (const dictionary of [ru, en] as Record<string, Record<string, unknown>>[]) {
+      const text = JSON.stringify(dictionary.public);
+      expect(text).toContain("/config");
+    }
+  });
+
   it("have no empty strings", () => {
     for (const dictionary of [ru, en]) {
       const empty = keysOf(dictionary).filter((key) => {

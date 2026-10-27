@@ -22,11 +22,12 @@
   админский API — `/api/v1/bot-admin/{keys,invites,registrations}`.
 """
 
+import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 import httpx
@@ -62,6 +63,9 @@ from modules.servers.models.server import VPNServer
 from modules.vpn_users.models.user import VPNUser
 from tests.fakes.fake_ssh import FakeServer
 from tests.fixtures import World
+
+if TYPE_CHECKING:  # модули этапа 25.3 подключаются внутри функций: файл не падает на импорте, пока кода нет
+    from modules.bot.models.config_link import ConfigLink
 
 __all__ = [
     "AppError",
@@ -327,3 +331,124 @@ def accepted(response: httpx.Response) -> bool:
 
 def new_uuid() -> str:
     return str(uuid4())
+
+
+# --- страница конфига (этап 25.3) ----------------------------------------------------------------------------------
+#
+# Тесты написаны до кода. Принятое из плана: `modules.bot.models.config_link.ConfigLink` (`config_links`: token_hash,
+# credential_id, created_at, revoked_at, last_opened_at), `modules.bot.config_links.ConfigLinkService(session, actor)`,
+# `POST /api/v1/bot/users/by-telegram/{id}/config-link` -> `{config_url, valid_until}`, `POST /api/v1/public/config
+# {token}` -> `PublicConfigRead`, 409 `reason`: config_unavailable / not_ready / no_access / not_configured, один
+# одинаковый 404 `{"detail": "Not found"}` на любой отказ при открытии.
+#
+# Допущения, которых в плане нет (правятся ТОЛЬКО здесь):
+#
+# - `ConfigLinkService.issue_for_telegram(telegram_id) -> (ConfigLink, token)` (как `BotKeyService.create`);
+#   `ConfigLinkService.open(token) -> PublicConfigRead` (атрибуты name, valid_until, server_name, config, share_link,
+#   share_qr, file_name); отказ открытия - `NotFoundError`; отказ выпуска - `ReasonConflictError` с `.reason`
+#   (у `NotFoundError` для неизвестного telegram_id);
+# - адрес панели берётся из `settings.public_url` / `panel_domain` / `https_port` в момент запроса (см.
+#   `set_public_address`), а результат читается атрибутом `PUBLIC_ADDRESS_ATTR` у `Settings`;
+# - успешный выпуск по HTTP - 200 или 201.
+
+PUBLIC_BASE = "https://panel.example.test"
+PUBLIC_CONFIG_URL = "/api/v1/public/config"
+PUBLIC_ADDRESS_ATTR = "public_base_url"  # вычисляемый адрес панели у Settings: https://домен[:порт] или None
+TOKEN_SHAPE = re.compile(r"^[A-Za-z0-9_-]{43}$")
+NOT_FOUND_BODY = {"detail": "Not found"}
+# Причины 409 выпуска ссылки (поле `reason`).
+CONFIG_UNAVAILABLE, NOT_READY, NO_ACCESS, NOT_CONFIGURED = (
+    "config_unavailable",
+    "not_ready",
+    "no_access",
+    "not_configured",
+)
+
+
+def config_link_path(telegram_id: int = TELEGRAM_ID) -> str:
+    return f"/api/v1/bot/users/by-telegram/{telegram_id}/config-link"
+
+
+def set_public_address(monkeypatch: Any, url: str = PUBLIC_BASE, *, domain: str = "", port: int = 443) -> None:
+    """Публичный адрес панели в настройках (по умолчанию тесты работают с PUBLIC_BASE, см. tests/conftest.py)."""
+    from core.config import settings
+
+    monkeypatch.setattr(settings, "public_url", url)
+    monkeypatch.setattr(settings, "panel_domain", domain)
+    monkeypatch.setattr(settings, "https_port", port)
+
+
+def token_of(config_url: str) -> str:
+    """Токен из адреса `<панель>/c#<токен>`."""
+    base, _, token = config_url.partition("#")
+    assert base == f"{PUBLIC_BASE}/c", config_url
+    return token
+
+
+@dataclass
+class IssuedLink:
+    link: "ConfigLink"
+    token: str
+
+
+async def issue_link(
+    session: AsyncSession, telegram_id: int = TELEGRAM_ID, actor: AuditActor = SYSTEM_ACTOR
+) -> IssuedLink:
+    from modules.bot.config_links import ConfigLinkService
+
+    link, token = await ConfigLinkService(session, actor).issue_for_telegram(telegram_id)
+    return IssuedLink(link, token)
+
+
+async def open_link(session: AsyncSession, token: str, actor: AuditActor = SYSTEM_ACTOR) -> Any:
+    from modules.bot.config_links import ConfigLinkService
+
+    return await ConfigLinkService(session, actor).open(token)
+
+
+async def links_in_db() -> list["ConfigLink"]:
+    """Все строки config_links отдельной сессией (только закоммиченное)."""
+    from modules.bot.models.config_link import ConfigLink
+
+    async with session_factory() as session:
+        return list((await session.execute(select(ConfigLink).order_by(ConfigLink.created_at))).scalars())
+
+
+async def live_links_in_db() -> list["ConfigLink"]:
+    return [link for link in await links_in_db() if link.revoked_at is None]
+
+
+async def activate_registration(
+    world: World, scene: BotScene, worker: Any, *, telegram_id: int = TELEGRAM_ID, email: str = EMAIL
+) -> BotRegistration:
+    """Регистрация бота доведена воркером до `active`: у человека есть живой клиент на фейковом сервере."""
+    from tests.integration.conftest import drain
+
+    _, code = await create_invite(world.session, scene.protocol.id)
+    registration = await register(world.session, code, key=scene.key, telegram_id=telegram_id, email=email)
+    await drain(worker)
+    await reload(world.session, registration)
+    assert status_value(registration.status) == "active"
+    return registration
+
+
+async def http_activate(
+    api: httpx.AsyncClient, bot: httpx.AsyncClient, protocol_id: UUID | str, worker: Any, **fields: Any
+) -> dict[str, Any]:
+    """Через HTTP: приглашение админа -> POST /registrations бота -> воркер -> active. Возвращает тело регистрации."""
+    from tests.integration.conftest import drain
+
+    invite = await admin_create_invite(api, protocol_id)
+    response = await bot.post("/api/v1/bot/registrations", json=registration_body(invite["code"], **fields))
+    assert accepted(response), response.text
+    await drain(worker)
+    body: dict[str, Any] = response.json()
+    return body
+
+
+async def request_link(bot: httpx.AsyncClient, telegram_id: int = TELEGRAM_ID) -> httpx.Response:
+    return await bot.post(config_link_path(telegram_id))
+
+
+async def open_over_http(client: httpx.AsyncClient, token: str) -> httpx.Response:
+    return await client.post(PUBLIC_CONFIG_URL, json={"token": token})

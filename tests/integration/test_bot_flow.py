@@ -27,6 +27,9 @@ from tests.bot_support import (
     EMAIL,
     INVITES_URL,
     KEYS_URL,
+    NO_ACCESS,
+    PUBLIC_BASE,
+    PUBLIC_CONFIG_URL,
     REGISTRATIONS_URL,
     REVOKED,
     SECOND_EMAIL,
@@ -44,6 +47,8 @@ from tests.bot_support import (
     fetch,
     new_uuid,
     registration_body,
+    request_link,
+    token_of,
 )
 from tests.fakes.fake_ssh import CONFIG_FILE, FakeServer
 from tests.fixtures import World
@@ -106,13 +111,13 @@ async def test_invite_to_active_user_end_to_end(api: httpx.AsyncClient, worker: 
     response = await scene.bot.post("/api/v1/bot/registrations", json=registration_body(invite["code"]))
     assert accepted(response), response.text
     started = response.json()
-    assert started["status"] == "provisioning" and started["config_url"] is None
+    assert started["status"] == "provisioning" and "config_url" not in started
     registration_id = started["registration_id"]
     assert (await registration_status(scene, registration_id))["status"] == "provisioning"
 
     assert await drain(worker) == 1  # одна задача CREATE_USER
     done = await registration_status(scene, registration_id)
-    assert done["status"] == "active" and done["config_url"] is None  # ссылка на конфиг - этап 25.3
+    assert done["status"] == "active" and "config_url" not in done  # ссылку отдаёт только POST .../config-link
 
     assert len(scene.fake.interface_peers) == 1
     assert "grant-" in scene.fake.files[CONFIG_FILE]  # клиент записан в конфиг сервера
@@ -121,7 +126,7 @@ async def test_invite_to_active_user_end_to_end(api: httpx.AsyncClient, worker: 
     status = await scene.bot.get(f"/api/v1/bot/users/by-telegram/{TELEGRAM_ID}")
     assert status.status_code == 200, status.text
     body = status.json()
-    assert body["name"] == "Иван Петров" and body["config_url"] is None
+    assert body["name"] == "Иван Петров" and "config_url" not in body
     valid_until = datetime.fromisoformat(body["valid_until"])
     assert abs(valid_until - (datetime.now(timezone.utc) + timedelta(days=30))) < timedelta(minutes=5)
 
@@ -170,6 +175,51 @@ async def test_check_does_not_reveal_invite_details(api: httpx.AsyncClient, scen
 @pytest.mark.parametrize("code", ["", "x" * 65])
 async def test_check_with_an_empty_or_oversized_code_is_422(scene: Scene, code: str) -> None:
     assert (await scene.bot.post("/api/v1/bot/invites/check", json={"code": code})).status_code == 422
+
+
+# --- ссылка на страницу конфига (этап 25.3) ------------------------------------------------------------------------
+
+
+async def test_registration_link_page_revoked_access_and_config_again_end_to_end(
+    api: httpx.AsyncClient, worker: JobWorker, scene: Scene
+) -> None:
+    started, _ = await start_registration(scene, api)
+    await drain(worker)
+    assert (await registration_status(scene, started["registration_id"]))["status"] == "active"
+
+    issued = await request_link(scene.bot)  # бот при active
+    assert issued.status_code in (200, 201), issued.text
+    assert issued.json()["config_url"].startswith(f"{PUBLIC_BASE}/c#")
+    token = token_of(issued.json()["config_url"])
+
+    async with bot_client() as person:  # человек открывает страницу: ни ключа, ни входа
+        page = await person.post(PUBLIC_CONFIG_URL, json={"token": token})
+        assert page.status_code == 200 and page.json()["name"] == "Иван Петров"
+        assert page.json()["config"].lstrip().startswith("[Interface]")
+
+        registration = await fetch(BotRegistration, UUID(started["registration_id"]))
+        assert (await api.post(f"/api/v1/access/{registration.access_grant_id}/revoke")).status_code == 200
+        closed = await person.post(PUBLIC_CONFIG_URL, json={"token": token})  # задача REVOKE_ACCESS ещё не выполнена
+        assert closed.status_code == 404
+        await drain(worker)
+        assert (await person.post(PUBLIC_CONFIG_URL, json={"token": token})).status_code == 404
+
+    again = await request_link(scene.bot)  # человек пишет /config
+    assert again.status_code == 409 and again.json()["reason"] == NO_ACCESS
+
+
+async def test_the_status_of_a_person_with_an_active_registration_tells_nothing_about_the_link(
+    api: httpx.AsyncClient, worker: JobWorker, scene: Scene
+) -> None:
+    started, _ = await start_registration(scene, api)
+    await drain(worker)
+    await request_link(scene.bot)
+
+    status = (await scene.bot.get(f"/api/v1/bot/users/by-telegram/{TELEGRAM_ID}")).json()
+    registration = await registration_status(scene, started["registration_id"])
+
+    assert "config_url" not in status and "config_url" not in registration
+    assert "/c#" not in str(status) + str(registration)
 
 
 # --- повтор и конфликты --------------------------------------------------------------------------------------------
