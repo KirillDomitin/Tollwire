@@ -23,7 +23,18 @@ RETRY_DELAYS = (0.5, 1, 2, 4)
 RETRY_STATUSES = (502, 503, 504)
 MAX_RATE_LIMIT_WAIT = 10  # Retry-After дольше этого бот не ждёт
 CONFLICT_REASONS = frozenset(
-    {"invite_invalid", "invite_expired", "invite_used", "telegram_taken", "email_taken", "conflict"}
+    {
+        "invite_invalid",
+        "invite_expired",
+        "invite_used",
+        "telegram_taken",
+        "email_taken",
+        "config_unavailable",
+        "not_ready",
+        "no_access",
+        "not_configured",
+        "conflict",
+    }
 )
 
 
@@ -65,7 +76,6 @@ class Rejected(PanelError):
 class Registration:
     registration_id: str
     status: str
-    config_url: str | None
 
 
 @dataclass(frozen=True)
@@ -73,7 +83,17 @@ class UserStatus:
     name: str
     valid_until: str | None
     protocol: str | None
-    config_url: str | None
+
+
+@dataclass(frozen=True)
+class ConfigLink:
+    """Ссылка на страницу конфига: адрес с токеном во фрагменте и конец доступа. В лог не попадает."""
+
+    config_url: str
+    valid_until: str | None
+
+    def __repr__(self) -> str:  # токен в адресе открывает конфиг любому: даже случайный repr в лог его не понесёт
+        return "ConfigLink(...)"
 
 
 def _check_url(url: str) -> str:
@@ -160,8 +180,20 @@ class PanelClient:
             name=data["name"],
             valid_until=data.get("valid_until"),
             protocol=data.get("protocol"),
-            config_url=data.get("config_url"),
         )
+
+    async def config_link(self, telegram_id: int) -> ConfigLink | None:
+        """Новая ссылка на страницу конфига (прежняя гаснет). None - человека в панели нет; Conflict(reason) - нельзя:
+        config_unavailable / not_ready / no_access / not_configured."""
+        response = await self._request("POST", f"/users/by-telegram/{telegram_id}/config-link", allow_missing=True)
+        if response.status_code == 404:
+            return None
+        data = _json(response)
+        url = data.get("config_url")
+        if not isinstance(url, str) or not url:
+            raise PanelUnexpected("no link in the answer")
+        valid_until = data.get("valid_until")
+        return ConfigLink(config_url=url, valid_until=valid_until if isinstance(valid_until, str) else None)
 
     # --- запрос ------------------------------------------------------------------------------------------------------
 
@@ -224,9 +256,7 @@ def _registration(response: httpx.Response) -> Registration:
     data = _json(response)
     if not isinstance(data.get("registration_id"), str) or not isinstance(data.get("status"), str):
         raise PanelUnexpected("unexpected registration answer")
-    return Registration(
-        registration_id=data["registration_id"], status=data["status"], config_url=data.get("config_url")
-    )
+    return Registration(registration_id=data["registration_id"], status=data["status"])
 
 
 def _retry_after(response: httpx.Response) -> int | None:

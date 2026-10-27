@@ -5,7 +5,8 @@ from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 
 from tollwire_bot.dialog import problem_text
-from tollwire_bot.panel import PanelClient, PanelError
+from tollwire_bot.panel import Conflict, PanelClient, PanelError
+from tollwire_bot.refusals import CONFIG_REFUSAL_TEXT
 from tollwire_bot.texts import format_date, t
 
 
@@ -24,6 +25,23 @@ def register_commands(router: Router) -> None:
         await message.answer(
             t("status", name=user.name, until=format_date(user.valid_until), protocol=user.protocol or "-")
         )
+
+    @router.message(Command("config"))
+    async def config(message: Message, panel: PanelClient) -> None:
+        """Новая ссылка на страницу конфига; прежняя перестаёт открываться. В чат уходит только адрес страницы."""
+        assert message.from_user is not None
+        try:
+            link = await panel.config_link(message.from_user.id)
+        except Conflict as refusal:
+            await message.answer(t(CONFIG_REFUSAL_TEXT.get(refusal.reason, "conflict_generic")))
+            return
+        except PanelError as error:
+            await message.answer(problem_text(error))
+            return
+        if link is None:
+            await message.answer(t("not_registered"))
+            return
+        await message.answer(t("config_link", url=link.config_url, until=format_date(link.valid_until)))
 
     @router.message(Command("help"))
     async def help_(message: Message) -> None:

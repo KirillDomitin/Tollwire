@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 from aiogram import Bot
+from aiogram.client.default import DefaultBotProperties
 from aiogram.exceptions import TelegramUnauthorizedError
 from aiogram.types import BotCommand
 from pydantic import ValidationError
@@ -47,7 +48,10 @@ async def purge_loop(storage: SqliteStorage) -> None:
 async def run(settings: Settings) -> int:
     panel = PanelClient(settings.panel_url, settings.bot_api_key.get_secret_value(), ca_file=settings.panel_ca_file)
     storage = SqliteStorage(settings.state_file)
-    bot = Bot(settings.telegram_bot_token.get_secret_value())
+    # Превью ссылок выключено: Telegram сам открыл бы страницу с ключом, чтобы нарисовать карточку.
+    bot = Bot(
+        settings.telegram_bot_token.get_secret_value(), default=DefaultBotProperties(link_preview_is_disabled=True)
+    )
     dp = build_dispatcher(settings, panel, storage)
     heartbeat = Heartbeat(bot, panel, version=__version__)
     background: list[asyncio.Task[None]] = []
@@ -60,6 +64,7 @@ async def run(settings: Settings) -> int:
         await bot.set_my_commands(
             [
                 BotCommand(command="status", description=t("cmd_status")),
+                BotCommand(command="config", description=t("cmd_config")),
                 BotCommand(command="help", description=t("cmd_help")),
             ]
         )

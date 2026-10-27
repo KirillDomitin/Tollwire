@@ -103,7 +103,7 @@ server). Фрагмент в логи не попадает, маска пути
 - [x] 6. nginx: `X-Robots-Tag`.
 - [x] 7. Фронтенд: `export_openapi` → `gen:api`; `AuthProvider` на маршруты; `api/public.ts`; `components/QrSeries.tsx`;
   `pages/public/PublicConfigPage`; словари; `AUDIT_ACTIONS`.
-- [ ] 8. Бот: `panel.py`, `watcher.py`, `commands.py`, `texts.py`, `__main__.py`, `log.py`.
+- [x] 8. Бот: `panel.py`, `watcher.py`, `commands.py`, `texts.py`, `__main__.py`, `log.py`.
 - [ ] 9. Документация: `modules/bot/CLAUDE.md`, `docs/bot/api.md`, `docs/bot/config-page.md`, `docs/bot/tests.md`,
   `access/CLAUDE.md`, `core/CLAUDE.md`, `alembic/CLAUDE.md`, `frontend/CLAUDE.md`, `docs/frontend/structure.md`,
   `bot/CLAUDE.md`, `docs/bot-service/*`, `tests/CLAUDE.md`, INSTALL (`PUBLIC_URL`), CHANGELOG. Issues `tech-debt`:

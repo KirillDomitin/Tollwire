@@ -11,6 +11,9 @@ from tollwire_bot.config import Settings
 
 _TOKEN_SHAPE = re.compile(r"\d{6,}:[A-Za-z0-9_-]{30,}")  # токен BotFather
 _KEY_SHAPE = re.compile(r"twb_[A-Za-z0-9_-]+")  # ключ бота в панели
+# Адрес страницы конфига: токен во фрагменте открывает ключ любому, у кого он есть. Маскируется адрес целиком,
+# в том числе когда его окружают скобки, кавычки или угловые скобки.
+_PAGE_URL_SHAPE = re.compile(r"(?:https?://[^\s<>()\[\]'\"]*)?/c#[A-Za-z0-9_-]+")
 _MASK = "***"
 
 
@@ -24,7 +27,7 @@ class RedactingFormatter(logging.Formatter):
         text = super().format(record)  # вместе с traceback
         for secret in self._secrets:
             text = text.replace(secret, _MASK)
-        return _KEY_SHAPE.sub(_MASK, _TOKEN_SHAPE.sub(_MASK, text))
+        return _PAGE_URL_SHAPE.sub(_MASK, _KEY_SHAPE.sub(_MASK, _TOKEN_SHAPE.sub(_MASK, text)))
 
 
 def configure_logging(settings: Settings, *, stream: TextIO | None = None) -> None:

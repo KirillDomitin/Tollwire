@@ -12,7 +12,8 @@ from collections.abc import Awaitable, Callable
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 
-from tollwire_bot.panel import PanelClient, PanelError
+from tollwire_bot.panel import Conflict, PanelClient, PanelError
+from tollwire_bot.refusals import CONFIG_REFUSAL_TEXT
 from tollwire_bot.storage import SqliteStorage, Watch
 from tollwire_bot.texts import format_date, t
 
@@ -107,15 +108,18 @@ class Watcher:
             return await self._tell(watch, t("failed"))
         if registration.status != "active":
             return False
-        if registration.config_url:
-            return await self._tell(watch, t("ready_link", url=registration.config_url))
         try:
-            user = await self._panel.user_by_telegram(watch.telegram_id)
+            link = await self._panel.config_link(watch.telegram_id)
+        except Conflict as refusal:
+            text_key = CONFIG_REFUSAL_TEXT.get(refusal.reason)
+            if text_key is None or refusal.reason == "not_ready":
+                return False  # клиента ещё выдают (или причина неизвестна): спросим на следующем опросе
+            return await self._tell(watch, t(text_key))  # страницы не будет: ответ не изменится
         except PanelError:
             return False
-        if user is None:
+        if link is None:
             return False
-        return await self._tell(watch, t("ready_stub", until=format_date(user.valid_until)))
+        return await self._tell(watch, t("ready_link", url=link.config_url, until=format_date(link.valid_until)))
 
     async def _tell(self, watch: Watch, text: str) -> bool:
         """Сказать человеку. True - слежение закончено; False - не вышло, попробуем в следующий срок."""
