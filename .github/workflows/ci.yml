@@ -51,6 +51,27 @@ jobs:
       - name: Tests
         run: uv run pytest -q
 
+  bot:
+    name: Telegram bot (ruff, mypy, pytest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: bot/uv.lock
+      - name: Install dependencies
+        run: uv sync --frozen
+      - name: Lint
+        run: uv run ruff check . && uv run ruff format --check .
+      - name: Types
+        run: uv run mypy
+      - name: Tests
+        run: uv run pytest -q
+
   frontend:
     name: Frontend (typecheck, lint, test, build)
     runs-on: ubuntu-latest

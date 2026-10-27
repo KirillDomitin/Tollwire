@@ -155,11 +155,11 @@ bot/tests/
 - [x] 6. Панель: `src/scripts/bot_key.py`, `src/scripts/bot_invite.py`, необязательная мета в `BotKeyService.create` /
   `BotInviteService.create`; тесты CLI.
 - [x] 7. `docker-compose.prod.yml`: сервис `bot` с профилем.
-- [ ] 8. Установка: `deploy/common.sh` (`env_set`), `deploy/bot.sh`, `install.sh` (флаг `--bot`, шаг после админа,
+- [x] 8. Установка: `deploy/common.sh` (`env_set`), `deploy/bot.sh`, `install.sh` (флаг `--bot`, шаг после админа,
   проверка `vpn-panel-bot:latest` при `--no-build` с профилем), `panel` (`cmd_bot`, `SERVICES`, отпечаток в
   `cert status`), `deploy/ship-images.sh`, `bot/install-bot.sh`.
-- [ ] 9. Тесты установщика; `tests/unit/install_support.py` (`deploy/bot.sh`, `bot/install-bot.sh`, новые заглушки).
-- [ ] 10. CI-задача `bot`.
+- [x] 9. Тесты установщика; `tests/unit/install_support.py` (`deploy/bot.sh`, `bot/install-bot.sh`, новые заглушки).
+- [x] 10. CI-задача `bot`.
 - [ ] 11. Документация: `INSTALL.md`/`INSTALL.ru.md` (раздел «Telegram-бот»), `bot/CLAUDE.md`, `src/modules/bot/CLAUDE.md`,
   `src/scripts/CLAUDE.md`, `tests/CLAUDE.md`, `docs/bot/tests.md`, корневой `CLAUDE.md`, `CHANGELOG*.md`.
 
