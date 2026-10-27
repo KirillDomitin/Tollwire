@@ -1071,6 +1071,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/bot/users/by-telegram/{telegram_id}/config-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Config Link
+         * @description Новая ссылка на страницу конфига; прежняя перестаёт открываться. Ссылка видна только в этом ответе.
+         *     404: человека нет; 409 с `reason`: config_unavailable / not_ready / no_access / not_configured.
+         */
+        post: operations["config_link_api_v1_bot_users_by_telegram__telegram_id__config_link_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/bot-admin/keys": {
         parameters: {
             query?: never;
@@ -1198,6 +1219,26 @@ export interface paths {
          * @description Повторить выдачу упавшей регистрации (только из `failed`): тот же пользователь и доступ, новая задача.
          */
         post: operations["retry_registration_api_v1_bot_admin_registrations__registration_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open Config
+         * @description Содержимое страницы конфига по токену. 404 без подробностей: токена нет, он заменён, доступ закончился.
+         */
+        post: operations["open_config_api_v1_public_config_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1361,7 +1402,7 @@ export interface components {
          * AuditAction
          * @enum {string}
          */
-        AuditAction: "login" | "login_failed" | "login_locked" | "logout" | "password_changed" | "password_change_failed" | "admin_created" | "admin_updated" | "server_created" | "server_updated" | "server_deleted" | "server_credentials_set" | "server_credentials_deleted" | "server_host_key_pinned" | "server_host_key_reset" | "server_host_key_mismatch" | "server_install_started" | "server_install_completed" | "server_install_failed" | "server_sync_started" | "server_sync_completed" | "server_sync_failed" | "server_discover_started" | "server_discover_completed" | "server_discover_failed" | "server_ssh_key_install_started" | "server_ssh_key_install_completed" | "server_ssh_key_install_failed" | "protocol_install_started" | "protocol_install_completed" | "protocol_install_failed" | "protocol_remove_started" | "protocol_remove_completed" | "protocol_remove_failed" | "vpn_user_created" | "vpn_user_updated" | "vpn_user_deleted" | "subscription_created" | "subscription_updated" | "subscription_activated" | "subscription_revoked" | "subscription_expired" | "subscription_deleted" | "access_granted" | "access_updated" | "access_revoked" | "access_expired" | "access_deleted" | "credential_issued" | "credential_imported" | "credential_issue_failed" | "credential_revoked" | "credential_revoke_failed" | "config_viewed" | "clients_import_started" | "clients_import_completed" | "clients_import_failed" | "gateway_exit_add_started" | "gateway_exit_add_completed" | "gateway_exit_add_failed" | "gateway_exit_remove_started" | "gateway_exit_remove_completed" | "gateway_exit_remove_failed" | "gateway_exit_updated" | "gateway_client_assigned" | "gateway_client_unassigned" | "geoip_list_updated" | "geoip_list_activated" | "geoip_override_added" | "geoip_override_removed" | "gateway_ru_applied" | "gateway_ru_apply_failed" | "gateway_client_moved" | "gateway_failover" | "gateway_all_exits_down" | "gateway_exit_recovered" | "gateway_container_recreated" | "bot_key_created" | "bot_key_revoked" | "bot_invite_created" | "bot_invite_revoked" | "bot_registration_created" | "bot_registration_activated" | "bot_registration_failed" | "bot_registration_retried";
+        AuditAction: "login" | "login_failed" | "login_locked" | "logout" | "password_changed" | "password_change_failed" | "admin_created" | "admin_updated" | "server_created" | "server_updated" | "server_deleted" | "server_credentials_set" | "server_credentials_deleted" | "server_host_key_pinned" | "server_host_key_reset" | "server_host_key_mismatch" | "server_install_started" | "server_install_completed" | "server_install_failed" | "server_sync_started" | "server_sync_completed" | "server_sync_failed" | "server_discover_started" | "server_discover_completed" | "server_discover_failed" | "server_ssh_key_install_started" | "server_ssh_key_install_completed" | "server_ssh_key_install_failed" | "protocol_install_started" | "protocol_install_completed" | "protocol_install_failed" | "protocol_remove_started" | "protocol_remove_completed" | "protocol_remove_failed" | "vpn_user_created" | "vpn_user_updated" | "vpn_user_deleted" | "subscription_created" | "subscription_updated" | "subscription_activated" | "subscription_revoked" | "subscription_expired" | "subscription_deleted" | "access_granted" | "access_updated" | "access_revoked" | "access_expired" | "access_deleted" | "credential_issued" | "credential_imported" | "credential_issue_failed" | "credential_revoked" | "credential_revoke_failed" | "config_viewed" | "clients_import_started" | "clients_import_completed" | "clients_import_failed" | "gateway_exit_add_started" | "gateway_exit_add_completed" | "gateway_exit_add_failed" | "gateway_exit_remove_started" | "gateway_exit_remove_completed" | "gateway_exit_remove_failed" | "gateway_exit_updated" | "gateway_client_assigned" | "gateway_client_unassigned" | "geoip_list_updated" | "geoip_list_activated" | "geoip_override_added" | "geoip_override_removed" | "gateway_ru_applied" | "gateway_ru_apply_failed" | "gateway_client_moved" | "gateway_failover" | "gateway_all_exits_down" | "gateway_exit_recovered" | "gateway_container_recreated" | "bot_key_created" | "bot_key_revoked" | "bot_invite_created" | "bot_invite_revoked" | "bot_registration_created" | "bot_registration_activated" | "bot_registration_failed" | "bot_registration_retried" | "config_link_created";
         /** AuditActorRead */
         AuditActorRead: {
             /**
@@ -1467,7 +1508,7 @@ export interface components {
         };
         /**
          * BotRegistrationRead
-         * @description Ответ боту: статус регистрации и, когда будет страница конфига (25.3), ссылка на неё.
+         * @description Ответ боту: статус регистрации. Ссылку на конфиг бот просит отдельно (`config-link`).
          */
         BotRegistrationRead: {
             /**
@@ -1476,8 +1517,6 @@ export interface components {
              */
             registration_id: string;
             status: components["schemas"]["RegistrationStatus"];
-            /** Config Url */
-            config_url?: string | null;
         };
         /** ChangePasswordRequest */
         ChangePasswordRequest: {
@@ -1499,6 +1538,19 @@ export interface components {
             valid_until: string;
             /** Clients */
             clients: components["schemas"]["ImportClient"][];
+        };
+        /**
+         * ConfigLinkRead
+         * @description Ответ бота `config-link`: ссылка видна один раз, повторно её получить нельзя (в БД только хеш токена).
+         */
+        ConfigLinkRead: {
+            /** Config Url */
+            config_url: string;
+            /**
+             * Valid Until
+             * Format: date-time
+             */
+            valid_until: string;
         };
         /** CredentialCreate */
         CredentialCreate: {
@@ -2108,6 +2160,34 @@ export interface components {
          * @enum {string}
          */
         ProtocolType: "amnezia_wg" | "amnezia_app_awg" | "amnezia_app_awg2" | "amnezia_gateway";
+        /**
+         * PublicConfigRead
+         * @description Содержимое страницы конфига: открывается по токену без входа. Приватный ключ клиента внутри `config`.
+         */
+        PublicConfigRead: {
+            /** Name */
+            name: string;
+            /**
+             * Valid Until
+             * Format: date-time
+             */
+            valid_until: string;
+            /** Server Name */
+            server_name: string;
+            /** Config */
+            config: string;
+            /** Share Link */
+            share_link: string | null;
+            /** Share Qr */
+            share_qr: string[] | null;
+            /** File Name */
+            file_name: string;
+        };
+        /** PublicConfigRequest */
+        PublicConfigRequest: {
+            /** Token */
+            token: string;
+        };
         /** RegistrationCreate */
         RegistrationCreate: {
             /** Code */
@@ -2314,8 +2394,6 @@ export interface components {
             valid_until: string | null;
             /** Protocol */
             protocol: string | null;
-            /** Config Url */
-            config_url?: string | null;
         };
         /** VPNCredentialConfigRead */
         VPNCredentialConfigRead: {
@@ -4830,6 +4908,37 @@ export interface operations {
             };
         };
     };
+    config_link_api_v1_bot_users_by_telegram__telegram_id__config_link_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                telegram_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigLinkRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_keys_api_v1_bot_admin_keys_get: {
         parameters: {
             query?: never;
@@ -5078,6 +5187,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RegistrationRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    open_config_api_v1_public_config_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublicConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicConfigRead"];
                 };
             };
             /** @description Validation Error */

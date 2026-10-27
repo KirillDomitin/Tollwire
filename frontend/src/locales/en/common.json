@@ -27,5 +27,13 @@
     "kilobitPerSecond": "Kbit/s",
     "megabitPerSecond": "Mbit/s",
     "gigabitPerSecond": "Gbit/s"
+  },
+  "qr": {
+    "label": "QR code of the config",
+    "codeOf": "Code {{current}} of {{total}}",
+    "next": "Next code",
+    "pause": "Pause",
+    "resume": "Resume",
+    "failed": "Could not draw the QR code — download the .conf file."
   }
 }

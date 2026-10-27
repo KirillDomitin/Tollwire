@@ -27,5 +27,13 @@
     "kilobitPerSecond": "Кбит/с",
     "megabitPerSecond": "Мбит/с",
     "gigabitPerSecond": "Гбит/с"
+  },
+  "qr": {
+    "label": "QR-код конфига",
+    "codeOf": "Код {{current}} из {{total}}",
+    "next": "Следующий код",
+    "pause": "Пауза",
+    "resume": "Продолжить",
+    "failed": "QR-код не получился — скачайте файл .conf."
   }
 }

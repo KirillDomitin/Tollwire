@@ -1,0 +1,27 @@
+.series {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  font-variant-numeric: tabular-nums;
+}
+
+.controls {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.hint {
+  margin: 0;
+  color: var(--pine-soft);
+}
+
+/* QR всегда тёмный на белом, в любой теме: так его читают камеры телефонов. */
+.qr {
+  justify-self: center;
+  max-width: 100%;
+  height: auto;
+  background: #fff;
+}

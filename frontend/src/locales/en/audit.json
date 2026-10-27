@@ -95,7 +95,8 @@
     "bot_registration_created": "Bot registration: invite used, access is being issued",
     "bot_registration_activated": "Bot registration finished: access issued",
     "bot_registration_failed": "Bot registration: access could not be issued",
-    "bot_registration_retried": "Access issuing retried for a bot registration"
+    "bot_registration_retried": "Access issuing retried for a bot registration",
+    "config_link_created": "Config page link issued (via the bot)"
   },
   "details": {
     "reason": "Reason",

@@ -1,12 +1,12 @@
 import { useMutation } from "@tanstack/react-query";
-import QRCode from "qrcode";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { api, unwrap } from "../../api/client";
 import { Button } from "../../components/Button";
 import { Dialog, DialogActions } from "../../components/Dialog";
 import { Notice } from "../../components/Notice";
+import { QrCode, QrSeries } from "../../components/QrSeries";
 import styles from "./UserPage.module.css";
 
 /**
@@ -121,58 +121,4 @@ export function ConfigDialog({
       )}
     </Dialog>
   );
-}
-
-const SERIES_STEP_MS = 1000;
-
-/**
- * Серия QR, как на экране экспорта в AmneziaVPN: коды сменяются сами, сканер приложения собирает их в любом
- * порядке. При «уменьшить движение» в системе коды не листаются сами — только кнопкой.
- */
-function QrSeries({ codes }: { codes: string[] }) {
-  const { t } = useTranslation();
-  const [index, setIndex] = useState(0);
-  const reducedMotion =
-    typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const current = index % codes.length;
-
-  useEffect(() => {
-    if (codes.length < 2 || reducedMotion) return;
-    const timer = window.setInterval(() => setIndex((value) => value + 1), SERIES_STEP_MS);
-    return () => window.clearInterval(timer);
-  }, [codes.length, reducedMotion]);
-
-  return (
-    <>
-      <QrCode text={codes[current] ?? ""} />
-      {codes.length > 1 && (
-        <div className={styles.qrSeries}>
-          <span className={styles.hint}>
-            {t("users.config.codeOf", { current: current + 1, total: codes.length })}
-          </span>
-          <Button variant="quiet" onClick={() => setIndex((value) => value + 1)}>
-            {t("users.config.nextCode")}
-          </Button>
-        </div>
-      )}
-    </>
-  );
-}
-
-/** QR рисуется прямо в браузере — текст конфига никуда не отправляется. */
-function QrCode({ text }: { text: string }) {
-  const { t } = useTranslation();
-  const canvas = useRef<HTMLCanvasElement>(null);
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    if (!canvas.current) return;
-    // Тёмное на белом и с полями — иначе камеры телефонов читают код хуже (и в тёмной теме тоже).
-    // Коррекция ошибок L: строка vpn:// длинная (~1,5 тыс. символов), а с экрана код не «повреждается» —
-    // меньше избыточности → крупнее модули → камера читает легче. Ширина — во всё окно (~130 модулей по 3+ px).
-    QRCode.toCanvas(canvas.current, text, { errorCorrectionLevel: "L", margin: 2, width: 440 }).catch(() =>
-      setFailed(true),
-    );
-  }, [text]);
-  if (failed) return <Notice>{t("users.config.qrFailed")}</Notice>;
-  return <canvas ref={canvas} className={styles.qr} role="img" aria-label={t("users.config.qrLabel")} />;
 }

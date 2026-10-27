@@ -1,0 +1,64 @@
+{
+  "documentTitle": "Your config · Tollwire",
+  "title": "Your connection config",
+  "loading": "Loading the config…",
+  "name": "Name",
+  "validUntil": "Access valid until",
+  "server": "Server",
+  "key": {
+    "title": "Key for the AmneziaVPN app",
+    "label": "vpn:// key",
+    "labelConfig": "Config",
+    "copy": "Copy the vpn:// key",
+    "copyConfig": "Copy the config",
+    "copied": "Copied"
+  },
+  "download": "Download the .conf file",
+  "downloadHint": "The .conf file is for the AmneziaWG app and routers.",
+  "qr": {
+    "title": "Another device",
+    "hint": "In AmneziaVPN tap “+” → “QR code” and point the camera at this screen: the app collects the codes by itself."
+  },
+  "how": {
+    "title": "How to connect",
+    "android": {
+      "summary": "Android",
+      "steps": "Install AmneziaVPN from Google Play or from amnezia.org. Open the app, tap “+” and paste the vpn:// key or scan the QR code from another screen. Then tap “Connect”."
+    },
+    "ios": {
+      "summary": "iOS",
+      "steps": "Install AmneziaVPN from the App Store. Open the app, tap “+” and paste the copied vpn:// key, or scan the QR code from another screen. Then tap “Connect”."
+    },
+    "windows": {
+      "summary": "Windows",
+      "steps": "Install AmneziaVPN from amnezia.org. In the app tap “+” and paste the vpn:// key, or open the .conf file. Then tap “Connect”."
+    },
+    "macos": {
+      "summary": "macOS",
+      "steps": "Install AmneziaVPN from the App Store or from amnezia.org. In the app tap “+” and paste the vpn:// key, or open the .conf file. Then tap “Connect”."
+    }
+  },
+  "warning": "This is your personal key. Do not forward or publish the link. If someone else may have seen it, message the bot /config: the old link stops opening and the bot sends a new one.",
+  "errors": {
+    "invalid": {
+      "title": "This link is not valid",
+      "hint": "It may have expired or been replaced. Message the bot /config and it will send a new link."
+    },
+    "tooMany": {
+      "title": "Too many attempts",
+      "hint": "Wait a few minutes and open the link again."
+    },
+    "network": {
+      "title": "No connection to the server",
+      "hint": "Check your internet and reload the page."
+    },
+    "failed": {
+      "title": "The page did not open",
+      "hint": "Reload the page in a little while. If that does not help, message the bot /config."
+    }
+  },
+  "hidden": {
+    "title": "The config was removed from the screen",
+    "hint": "To open it again, open the link from the bot. If you lost the link, message the bot /config."
+  }
+}

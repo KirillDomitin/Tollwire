@@ -106,6 +106,7 @@ export const AUDIT_ACTIONS: Record<AuditAction, ActionInfo> = {
   bot_registration_activated: { group: "bot" },
   bot_registration_failed: { group: "bot", tone: "down" },
   bot_registration_retried: { group: "bot" },
+  config_link_created: { group: "bot" },
 };
 
 /** Безличная фраза о событии на языке интерфейса: кто действовал, показывается отдельно. */

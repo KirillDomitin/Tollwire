@@ -8,7 +8,6 @@ import { useTranslation } from "react-i18next";
 import { RouterProvider } from "react-router";
 
 import { router } from "./App";
-import { AuthProvider } from "./auth/AuthContext";
 import "./i18n";
 import { applyTheme, loadTheme } from "./lib/theme";
 
@@ -33,9 +32,7 @@ function LocalizedRouter() {
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <LocalizedRouter />
-      </AuthProvider>
+      <LocalizedRouter />
     </QueryClientProvider>
   </StrictMode>,
 );

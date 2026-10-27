@@ -3929,6 +3929,56 @@
         }
       }
     },
+    "/api/v1/bot/users/by-telegram/{telegram_id}/config-link": {
+      "post": {
+        "tags": [
+          "bot"
+        ],
+        "summary": "Config Link",
+        "description": "Новая ссылка на страницу конфига; прежняя перестаёт открываться. Ссылка видна только в этом ответе.\n404: человека нет; 409 с `reason`: config_unavailable / not_ready / no_access / not_configured.",
+        "operationId": "config_link_api_v1_bot_users_by_telegram__telegram_id__config_link_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "telegram_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "title": "Telegram Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigLinkRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/bot-admin/keys": {
       "get": {
         "tags": [
@@ -4331,6 +4381,48 @@
         }
       }
     },
+    "/api/v1/public/config": {
+      "post": {
+        "tags": [
+          "public"
+        ],
+        "summary": "Open Config",
+        "description": "Содержимое страницы конфига по токену. 404 без подробностей: токена нет, он заменён, доступ закончился.",
+        "operationId": "open_config_api_v1_public_config_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicConfigRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicConfigRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health",
@@ -4699,7 +4791,8 @@
           "bot_registration_created",
           "bot_registration_activated",
           "bot_registration_failed",
-          "bot_registration_retried"
+          "bot_registration_retried",
+          "config_link_created"
         ],
         "title": "AuditAction"
       },
@@ -5017,17 +5110,6 @@
           },
           "status": {
             "$ref": "#/components/schemas/RegistrationStatus"
-          },
-          "config_url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Config Url"
           }
         },
         "type": "object",
@@ -5036,7 +5118,7 @@
           "status"
         ],
         "title": "BotRegistrationRead",
-        "description": "Ответ боту: статус регистрации и, когда будет страница конфига (25.3), ссылка на неё."
+        "description": "Ответ боту: статус регистрации. Ссылку на конфиг бот просит отдельно (`config-link`)."
       },
       "ChangePasswordRequest": {
         "properties": {
@@ -5087,6 +5169,26 @@
         ],
         "title": "ClientImportCreate",
         "description": "Тело POST /servers/{id}/import."
+      },
+      "ConfigLinkRead": {
+        "properties": {
+          "config_url": {
+            "type": "string",
+            "title": "Config Url"
+          },
+          "valid_until": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Valid Until"
+          }
+        },
+        "type": "object",
+        "required": [
+          "config_url",
+          "valid_until"
+        ],
+        "title": "ConfigLinkRead",
+        "description": "Ответ бота `config-link`: ссылка видна один раз, повторно её получить нельзя (в БД только хеш токена)."
       },
       "CredentialCreate": {
         "properties": {
@@ -6791,6 +6893,82 @@
         ],
         "title": "ProtocolType"
       },
+      "PublicConfigRead": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "valid_until": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Valid Until"
+          },
+          "server_name": {
+            "type": "string",
+            "title": "Server Name"
+          },
+          "config": {
+            "type": "string",
+            "title": "Config"
+          },
+          "share_link": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Share Link"
+          },
+          "share_qr": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Share Qr"
+          },
+          "file_name": {
+            "type": "string",
+            "title": "File Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "valid_until",
+          "server_name",
+          "config",
+          "share_link",
+          "share_qr",
+          "file_name"
+        ],
+        "title": "PublicConfigRead",
+        "description": "Содержимое страницы конфига: открывается по токену без входа. Приватный ключ клиента внутри `config`."
+      },
+      "PublicConfigRequest": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "maxLength": 256,
+            "title": "Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "token"
+        ],
+        "title": "PublicConfigRequest"
+      },
       "RegistrationCreate": {
         "properties": {
           "code": {
@@ -7355,17 +7533,6 @@
               }
             ],
             "title": "Protocol"
-          },
-          "config_url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Config Url"
           }
         },
         "type": "object",

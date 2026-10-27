@@ -177,10 +177,6 @@
     "copy": "Copy",
     "download": "Download .conf",
     "done": "Done",
-    "codeOf": "Code {{current}} of {{total}}",
-    "nextCode": "Next code",
-    "qrFailed": "Couldn't make the QR code — download the .conf file.",
-    "qrLabel": "Config QR code",
     "errors": {
       "revoked": "The config is unavailable: it is revoked, or the client was taken over from AmneziaVPN and the panel has no client key. For a revoked one, issue a new config."
     }

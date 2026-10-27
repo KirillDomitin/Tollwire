@@ -11,6 +11,7 @@ const lastDrawn = () => vi.mocked(QRCode.toCanvas).mock.calls.at(-1)?.[1];
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
   vi.mocked(QRCode.toCanvas).mockClear();
 });
 
@@ -64,6 +65,8 @@ describe("QrSeries (shared by the config dialog and the public page)", () => {
 
   it("can be paused, and goes on when the same control is pressed again", async () => {
     vi.useFakeTimers();
+    // Testing Library ждёт тик через setTimeout и продвигает часы только для jest: сообщаем ему, что часы поддельные.
+    vi.stubGlobal("jest", { advanceTimersByTime: vi.advanceTimersByTime });
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<QrSeries codes={CODES} />);
 
