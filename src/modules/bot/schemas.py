@@ -101,11 +101,10 @@ class RegistrationCreate(BaseModel):
 
 
 class BotRegistrationRead(BaseModel):
-    """Ответ боту: статус регистрации и, когда будет страница конфига (25.3), ссылка на неё."""
+    """Ответ боту: статус регистрации. Ссылку на конфиг бот просит отдельно (`config-link`)."""
 
     registration_id: UUID
     status: RegistrationStatus
-    config_url: str | None = None
 
 
 class RegistrationRead(BaseModel):
@@ -126,13 +125,31 @@ class RegistrationRead(BaseModel):
     finished_at: datetime | None
 
 
+class PublicConfigRead(BaseModel):
+    """Содержимое страницы конфига: открывается по токену без входа. Приватный ключ клиента внутри `config`."""
+
+    name: str
+    valid_until: datetime
+    server_name: str
+    config: str  # .conf целиком
+    share_link: str | None  # vpn://… для приложения AmneziaVPN
+    share_qr: list[str] | None  # серия QR для сканера приложения
+    file_name: str  # имя файла для скачивания без расширения: ASCII [A-Za-z0-9_-]
+
+
+class ConfigLinkRead(BaseModel):
+    """Ответ бота `config-link`: ссылка видна один раз, повторно её получить нельзя (в БД только хеш токена)."""
+
+    config_url: str
+    valid_until: datetime
+
+
 class UserStatusRead(BaseModel):
     """/status в боте: имя, до какого числа доступ, протокол."""
 
     name: str
     valid_until: datetime | None
     protocol: str | None
-    config_url: str | None = None
 
 
 # --- heartbeat -----------------------------------------------------------------------------------------------------

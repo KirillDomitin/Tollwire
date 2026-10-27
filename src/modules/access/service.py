@@ -1,6 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -69,6 +70,15 @@ def inactive_reason(grant: AccessGrant, subscription: Subscription, now: datetim
     if now >= subscription.valid_until:
         return "Subscription period has ended"
     return None
+
+
+@dataclass(frozen=True)
+class RenderedConfig:
+    """Расшифрованный конфиг клиента и его формат для приложения протокола (None - формата нет)."""
+
+    config: str
+    share_link: str | None
+    share_qr: list[str] | None
 
 
 class SubscriptionService:
@@ -509,15 +519,27 @@ class VPNCredentialService:
         )
         # Сначала фиксируем факт выдачи: если запись не сохранится, конфиг не уйдёт.
         await self.session.commit()
-        config = decrypt_secret(credential.encrypted_config)
-        share_link, share_qr = await self._app_formats(grant, config)
+        rendered = await self.render_config(credential, grant)
         return VPNCredentialConfigRead(
             id=credential.id,
             access_grant_id=credential.access_grant_id,
-            config=config,
-            share_link=share_link,
-            share_qr=share_qr,
+            config=rendered.config,
+            share_link=rendered.share_link,
+            share_qr=rendered.share_qr,
         )
+
+    async def render_config(self, credential: VPNCredential, grant: AccessGrant) -> RenderedConfig:
+        """Расшифровывает конфиг и строит форматы приложения. Единственное место расшифровки.
+
+        Не проверяет доступ и не пишет аудит: это дело вызывающего (reveal_config для админа - с аудитом; страница
+        конфига по ссылке - после своей проверки ссылки). У импортированного клиента конфига нет."""
+        if credential.encrypted_config is None:
+            raise ConfigUnavailableError(
+                "Config is not stored: the client was imported from AmneziaVPN, its private key stays in the app"
+            )
+        config = decrypt_secret(credential.encrypted_config)
+        share_link, share_qr = await self._app_formats(grant, config)
+        return RenderedConfig(config=config, share_link=share_link, share_qr=share_qr)
 
     async def _app_formats(self, grant: AccessGrant, config: str) -> tuple[str | None, list[str] | None]:
         """Конфиг в формате приложения протокола (строка и серия QR) с именем сервера из панели.

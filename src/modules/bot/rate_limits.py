@@ -10,6 +10,18 @@ BOT_AUTH_FAILURES_BY_IP = Limit(
 )
 # Все запросы бота по ключу: бот опрашивает статус регистрации раз в 2-3 с, очередь - раз в 5 с, heartbeat - раз в 30 с.
 BOT_REQUESTS_BY_KEY = Limit("bot_key_requests", settings.bot_key_max_requests, settings.bot_key_window_seconds)
+# Страница конфига открыта без входа: перебор токенов ограничен по IP. Считаются НЕУДАЧИ (неверный токен), а не
+# открытия: иначе люди за общим адресом оператора (CGNAT) запирали бы друг друга. Отдельно - число запросов с адреса.
+PUBLIC_CONFIG_FAILURES_BY_IP = Limit(
+    "public_config_ip_failures",
+    settings.public_config_ip_max_failures,
+    settings.public_config_ip_failure_window_seconds,
+)
+PUBLIC_CONFIG_REQUESTS_BY_IP = Limit(
+    "public_config_ip_requests",
+    settings.public_config_ip_max_requests,
+    settings.public_config_ip_request_window_seconds,
+)
 # Регистрации - свой, более строгий лимит: каждая создаёт пользователя и задачу на реальном сервере.
 BOT_REGISTRATIONS_BY_KEY = Limit(
     "bot_key_registrations", settings.bot_registrations_max, settings.bot_registrations_window_seconds

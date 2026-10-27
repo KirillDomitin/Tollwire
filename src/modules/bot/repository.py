@@ -1,14 +1,22 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 from collections.abc import Sequence
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from modules.access.models import CredentialSource
+from modules.access.models.access_grant import AccessGrant
+from modules.access.models.subscription import Subscription
+from modules.access.models.vpn_credential import VPNCredential
+from modules.bot.models.config_link import ConfigLink
 from modules.bot.models.invite import BotInvite
 from modules.bot.models.key import BotKey
 from modules.bot.models.registration import OPEN_STATUSES, BotRegistration, RegistrationStatus
+from modules.servers.models.server import VPNServer
+from modules.vpn_users.models.user import VPNUser
 
 
 class BotKeyRepository:
@@ -112,3 +120,104 @@ class BotRegistrationRepository:
             .execution_options(populate_existing=True)
         )
         return (await self.session.execute(query)).scalars().all()
+
+
+class ConfigLinkRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def create(self, link: ConfigLink) -> ConfigLink:
+        self.session.add(link)
+        await self.session.flush()
+        return link
+
+    async def credentials_of_user(self, user_id: UUID) -> list[tuple[VPNCredential, AccessGrant, Subscription]]:
+        """Не отозванные клиенты человека вместе с доступом и подпиской (годность доступа решает вызывающий)."""
+        query = (
+            select(VPNCredential, AccessGrant, Subscription)
+            .join(AccessGrant, VPNCredential.access_grant_id == AccessGrant.id)
+            .join(Subscription, AccessGrant.subscription_id == Subscription.id)
+            .where(Subscription.user_id == user_id, VPNCredential.revoked_at.is_(None))
+            .execution_options(populate_existing=True)
+        )
+        rows = (await self.session.execute(query)).all()
+        return [(credential, grant, subscription) for credential, grant, subscription in rows]
+
+    async def grants_of_user(self, user_id: UUID) -> list[tuple[AccessGrant, Subscription]]:
+        query = (
+            select(AccessGrant, Subscription)
+            .join(Subscription, AccessGrant.subscription_id == Subscription.id)
+            .where(Subscription.user_id == user_id)
+            .execution_options(populate_existing=True)
+        )
+        return [(grant, subscription) for grant, subscription in (await self.session.execute(query)).all()]
+
+    async def registered_grant_id(self, telegram_id: int) -> UUID | None:
+        """Доступ последней завершённой регистрации через бота этого человека (его клиент важнее более нового)."""
+        query = (
+            select(BotRegistration.access_grant_id)
+            .where(
+                BotRegistration.telegram_id == telegram_id,
+                BotRegistration.status == RegistrationStatus.ACTIVE,
+                BotRegistration.access_grant_id.is_not(None),
+            )
+            .order_by(BotRegistration.created_at.desc())
+            .limit(1)
+        )
+        return (await self.session.execute(query)).scalar_one_or_none()
+
+    async def lock_credential(self, credential_id: UUID) -> VPNCredential | None:
+        """Клиент под блокировкой строки до конца транзакции, со свежими данными из БД."""
+        query = (
+            select(VPNCredential)
+            .where(VPNCredential.id == credential_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return (await self.session.execute(query)).scalar_one_or_none()
+
+    async def live_links(self, credential_id: UUID) -> list[ConfigLink]:
+        query = (
+            select(ConfigLink)
+            .where(ConfigLink.credential_id == credential_id, ConfigLink.revoked_at.is_(None))
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return list((await self.session.execute(query)).scalars())
+
+    async def valid_until_of(self, credential_id: UUID) -> datetime | None:
+        """Конец подписки, по которой выдан клиент."""
+        query = (
+            select(Subscription.valid_until)
+            .join(AccessGrant, AccessGrant.subscription_id == Subscription.id)
+            .join(VPNCredential, VPNCredential.access_grant_id == AccessGrant.id)
+            .where(VPNCredential.id == credential_id)
+        )
+        return (await self.session.execute(query)).scalar_one_or_none()
+
+    async def open_target(
+        self, token_hash: str
+    ) -> tuple[ConfigLink, VPNCredential, AccessGrant, Subscription, str, str] | None:
+        """Всё для страницы по хешу токена одним запросом: живая ссылка, не отозванный выданный клиент с конфигом, его
+        доступ, подписка, имя человека и имя сервера. Годность доступа по датам и статусам решает вызывающий."""
+        query = (
+            select(ConfigLink, VPNCredential, AccessGrant, Subscription, VPNUser.username, VPNServer.name)
+            .join(VPNCredential, ConfigLink.credential_id == VPNCredential.id)
+            .join(AccessGrant, VPNCredential.access_grant_id == AccessGrant.id)
+            .join(Subscription, AccessGrant.subscription_id == Subscription.id)
+            .join(VPNUser, Subscription.user_id == VPNUser.id)
+            .join(VPNServer, AccessGrant.server_id == VPNServer.id)
+            .where(
+                ConfigLink.token_hash == token_hash,
+                ConfigLink.revoked_at.is_(None),
+                VPNCredential.revoked_at.is_(None),
+                VPNCredential.source == CredentialSource.ISSUED,
+                VPNCredential.encrypted_config.is_not(None),
+            )
+            .execution_options(populate_existing=True)
+        )
+        row = (await self.session.execute(query)).first()
+        if row is None:
+            return None
+        link, credential, grant, subscription, username, server_name = row
+        return link, credential, grant, subscription, username, server_name

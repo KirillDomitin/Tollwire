@@ -113,6 +113,8 @@ class AuditAction(enum.Enum):
     BOT_REGISTRATION_ACTIVATED = "bot_registration_activated"
     BOT_REGISTRATION_FAILED = "bot_registration_failed"  # выдача не удалась: источник уведомления админу (25.5)
     BOT_REGISTRATION_RETRIED = "bot_registration_retried"
+    # Ссылка на страницу конфига (25.3): выпуск без токена и хеша; открытия в аудит не пишутся.
+    CONFIG_LINK_CREATED = "config_link_created"
 
 
 class AuditEntity:
@@ -128,6 +130,7 @@ class AuditEntity:
     BOT_KEY = "bot_key"
     BOT_INVITE = "bot_invite"
     BOT_REGISTRATION = "bot_registration"
+    CONFIG_LINK = "config_link"
 
 
 class AuditLog(UuidPkMixin, Base):

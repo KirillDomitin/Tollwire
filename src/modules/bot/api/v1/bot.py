@@ -7,6 +7,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Path
 
+from modules.bot.config_links import ConfigLinkService
 from modules.bot.dependencies import BotKeyContext
 from modules.bot.invites import BotInviteService
 from modules.bot.keys import BotKeyService
@@ -14,6 +15,7 @@ from modules.bot.models.registration import BotRegistration
 from modules.bot.registrations import BotRegistrationService
 from modules.bot.schemas import (
     BotRegistrationRead,
+    ConfigLinkRead,
     HeartbeatRequest,
     InviteCheckRequest,
     InviteCheckResponse,
@@ -62,3 +64,12 @@ async def registration_status(registration_id: UUID, context: BotKeyContext) -> 
 async def user_status(telegram_id: Annotated[int, Path(ge=1, le=2**63 - 1)], context: BotKeyContext) -> UserStatusRead:
     """/status в боте: имя, до какого числа доступ, протокол."""
     return await BotRegistrationService(context.session, context.actor).by_telegram(telegram_id)
+
+
+@router.post("/users/by-telegram/{telegram_id}/config-link", response_model=ConfigLinkRead)
+async def config_link(telegram_id: Annotated[int, Path(ge=1, le=2**63 - 1)], context: BotKeyContext) -> ConfigLinkRead:
+    """Новая ссылка на страницу конфига; прежняя перестаёт открываться. Ссылка видна только в этом ответе.
+    404: человека нет; 409 с `reason`: config_unavailable / not_ready / no_access / not_configured."""
+    service = ConfigLinkService(context.session, context.actor)
+    link, token = await service.issue_for_telegram(telegram_id)
+    return await service.url_of(link, token)

@@ -46,6 +46,7 @@ from modules.auth.api.v1.admins import router as admins_router
 from modules.auth.api.v1.router import router as auth_router
 from modules.bot.api.v1.admin import router as bot_admin_router
 from modules.bot.api.v1.bot import router as bot_router
+from modules.bot.api.v1.public import router as public_router
 from modules.gateway.api.v1.router import router as gateway_router
 from modules.geoip.api.v1.router import router as geoip_router
 from modules.jobs.api.v1.router import router as job_router
@@ -148,6 +149,7 @@ app.include_router(audit_router)
 app.include_router(monitoring_router)
 app.include_router(bot_router)
 app.include_router(bot_admin_router)
+app.include_router(public_router)
 
 
 @app.get("/health")

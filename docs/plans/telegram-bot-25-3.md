@@ -94,14 +94,14 @@ server). Фрагмент в логи не попадает, маска пути
   `.env.example`, `.env.prod.example`, комментарий про `PANEL_DOMAIN`), `exceptions.py` (`ReasonConflictError`,
   `RegistrationConflictError` — потомок; `PublicUrlNotConfiguredError`), `main.py` (`reason` для базового класса),
   `log.py` (шаблон `token`).
-- [ ] 2. Модель `config_links`, миграция, импорт в `alembic/env.py`.
-- [ ] 3. `access`: `VPNCredentialService.render_config`; репозиторий — живые credential пользователя с грантом и подпиской.
-- [ ] 4. `modules/bot`: `ConfigLinkRepository`, `config_links.py` (`ConfigLinkService.issue_for_telegram`, `open`), лимиты,
+- [x] 2. Модель `config_links`, миграция, импорт в `alembic/env.py`.
+- [x] 3. `access`: `VPNCredentialService.render_config`; репозиторий — живые credential пользователя с грантом и подпиской.
+- [x] 4. `modules/bot`: `ConfigLinkRepository`, `config_links.py` (`ConfigLinkService.issue_for_telegram`, `open`), лимиты,
   аудит `CONFIG_LINK_CREATED`/`AuditEntity.CONFIG_LINK`.
-- [ ] 5. Роутеры: `POST …/config-link` в Bot API, новый `api/v1/public.py` (`POST /api/v1/public/config`), схемы
+- [x] 5. Роутеры: `POST …/config-link` в Bot API, новый `api/v1/public.py` (`POST /api/v1/public/config`), схемы
   (`config_url` убрать из `BotRegistrationRead`/`UserStatusRead`), `include_router`.
-- [ ] 6. nginx: `X-Robots-Tag`.
-- [ ] 7. Фронтенд: `export_openapi` → `gen:api`; `AuthProvider` на маршруты; `api/public.ts`; `components/QrSeries.tsx`;
+- [x] 6. nginx: `X-Robots-Tag`.
+- [x] 7. Фронтенд: `export_openapi` → `gen:api`; `AuthProvider` на маршруты; `api/public.ts`; `components/QrSeries.tsx`;
   `pages/public/PublicConfigPage`; словари; `AUDIT_ACTIONS`.
 - [ ] 8. Бот: `panel.py`, `watcher.py`, `commands.py`, `texts.py`, `__main__.py`, `log.py`.
 - [ ] 9. Документация: `modules/bot/CLAUDE.md`, `docs/bot/api.md`, `docs/bot/config-page.md`, `docs/bot/tests.md`,

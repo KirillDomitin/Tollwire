@@ -1454,7 +1454,7 @@ async def test_config_links_follow_their_client_on_delete_cascade() -> None:
     await _save(_link(credential_id), _link(credential_id, revoked_at=_later(minutes=-1)))
     fk = await _query(
         text(
-            "SELECT confdeltype FROM pg_constraint WHERE conrelid = 'config_links'::regclass AND contype = 'f' "
+            "SELECT confdeltype::text FROM pg_constraint WHERE conrelid = 'config_links'::regclass AND contype = 'f' "
             "AND confrelid = 'vpn_credentials'::regclass"
         )
     )
