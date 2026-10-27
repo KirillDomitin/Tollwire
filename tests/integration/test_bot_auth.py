@@ -9,8 +9,8 @@ from uuid import UUID
 
 import httpx
 import pytest
-from modules.bot.models.key import BotKey
 
+from modules.bot.models.key import BotKey
 from tests.bot_support import (
     BOT_KEY_HEADER,
     INVITES_URL,

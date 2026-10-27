@@ -14,14 +14,14 @@ from uuid import UUID
 
 import httpx
 import pytest
-from modules.bot.models.invite import BotInvite
-from modules.bot.models.registration import BotRegistration
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database.postgres import session_factory
 from infrastructure.workers.worker import JobWorker
 from modules.auth.models.admin import AdminRole
+from modules.bot.models.invite import BotInvite
+from modules.bot.models.registration import BotRegistration
 from modules.jobs.models.job import Job, JobType
 from tests.bot_support import (
     EMAIL,
