@@ -160,6 +160,19 @@ describe("public config page: what the person sees", () => {
     expect(await navigator.clipboard.readText()).toBe("vpn://test-share-link");
   });
 
+  it("tells to copy by hand when the browser has no clipboard", async () => {
+    stubFetch();
+    const user = userEvent.setup();
+    openPage();
+    const field = await screen.findByDisplayValue("vpn://test-share-link");
+    vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(new Error("denied"));
+
+    await user.click(screen.getByRole("button", { name: /Скопировать/ }));
+
+    expect(await screen.findByText(/скопируйте его вручную/i)).toBeInTheDocument();
+    expect(field).toBeInTheDocument();
+  });
+
   it("downloads the .conf under the name from the answer", async () => {
     stubFetch();
     const blobs: Blob[] = [];

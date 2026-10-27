@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 
 import { router } from "./App";
 import { setAccessToken } from "./api/session";
+import i18n from "./i18n";
 import { json } from "./test/render";
 
 vi.mock("qrcode", () => ({ default: { toCanvas: vi.fn(async () => {}) } }));
@@ -91,5 +92,18 @@ describe("routes", () => {
     renderApp("/login");
 
     expect(await screen.findByLabelText("Пароль")).toBeInTheDocument();
+  });
+
+  it("does not restore the admin session again when the language is switched", async () => {
+    stubBackend();
+    renderApp("/login");
+    await screen.findByLabelText("Пароль");
+    const refreshes = () => paths.filter((path) => path === "POST /api/v1/auth/refresh").length;
+    expect(refreshes()).toBe(1);
+
+    await act(async () => void (await i18n.changeLanguage("en")));
+
+    expect(await screen.findByLabelText("Password")).toBeInTheDocument(); // экран перерисован на новом языке
+    expect(refreshes()).toBe(1); // а сессию заново не восстанавливали: лишний refresh ротирует одноразовый токен
   });
 });

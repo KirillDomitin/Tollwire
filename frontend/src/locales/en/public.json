@@ -11,7 +11,8 @@
     "labelConfig": "Config",
     "copy": "Copy the vpn:// key",
     "copyConfig": "Copy the config",
-    "copied": "Copied"
+    "copied": "Copied",
+    "copyFailed": "Could not copy automatically: the key is selected, copy it by hand."
   },
   "download": "Download the .conf file",
   "downloadHint": "The .conf file is for the AmneziaWG app and routers.",

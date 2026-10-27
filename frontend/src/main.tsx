@@ -4,7 +4,6 @@ import "./styles/global.css";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { useTranslation } from "react-i18next";
 import { RouterProvider } from "react-router";
 
 import { router } from "./App";
@@ -23,16 +22,10 @@ const queryClient = new QueryClient({
   },
 });
 
-/** Смена языка пересоздаёт интерфейс: даты, числа и подписи, посчитанные вне компонентов, обновляются разом. */
-function LocalizedRouter() {
-  const { i18n } = useTranslation();
-  return <RouterProvider key={i18n.resolvedLanguage} router={router} />;
-}
-
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <LocalizedRouter />
+      <RouterProvider router={router} />
     </QueryClientProvider>
   </StrictMode>,
 );

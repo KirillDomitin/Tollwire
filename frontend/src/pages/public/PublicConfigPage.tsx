@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "react-router";
 
@@ -102,13 +102,22 @@ function Problem({ scope }: { scope: keyof typeof PROBLEM_TEXT }) {
 function Config({ page }: { page: PublicConfig }) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
+  const keyField = useRef<HTMLInputElement & HTMLTextAreaElement>(null);
   const shareLink = page.share_link ?? null;
   const shareQr = page.share_qr ?? null;
   const keyText = shareLink ?? page.config;
 
   async function copy() {
-    await navigator.clipboard.writeText(keyText);
-    setCopied(true);
+    try {
+      await navigator.clipboard.writeText(keyText);
+      setCopied(true);
+      setCopyFailed(false);
+    } catch {
+      // Во встроенных браузерах мессенджеров буфера может не быть: поле выделяем, человек скопирует сам.
+      setCopyFailed(true);
+      keyField.current?.select();
+    }
   }
 
   function download() {
@@ -116,8 +125,11 @@ function Config({ page }: { page: PublicConfig }) {
     const link = document.createElement("a");
     link.href = url;
     link.download = `${page.file_name}.conf`;
+    // Ссылка в документе и отложенный revoke: Safari и часть WebView иначе обрывают скачивание.
+    document.body.append(link);
     link.click();
-    URL.revokeObjectURL(url);
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
   }
 
   return (
@@ -144,9 +156,9 @@ function Config({ page }: { page: PublicConfig }) {
         <label className={styles.field}>
           <span>{shareLink ? t("public.key.label") : t("public.key.labelConfig")}</span>
           {shareLink ? (
-            <input readOnly value={shareLink} className={styles.input} />
+            <input ref={keyField} readOnly value={shareLink} className={styles.input} />
           ) : (
-            <textarea readOnly value={page.config} rows={8} className={styles.input} />
+            <textarea ref={keyField} readOnly value={page.config} rows={8} className={styles.input} />
           )}
         </label>
         <div className={styles.actions}>
@@ -157,6 +169,11 @@ function Config({ page }: { page: PublicConfig }) {
             {t("public.download")}
           </Button>
         </div>
+        {copyFailed && (
+          <p role="status" className={styles.hint}>
+            {t("public.key.copyFailed")}
+          </p>
+        )}
         <p className={styles.hint}>{t("public.downloadHint")}</p>
       </section>
 

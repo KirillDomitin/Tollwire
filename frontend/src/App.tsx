@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Navigate, Outlet, createBrowserRouter } from "react-router";
 
 import { AuthProvider } from "./auth/AuthContext";
@@ -6,11 +7,16 @@ import { AppShell } from "./components/AppShell";
 import { LoginPage } from "./pages/LoginPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 
-/** Сессия админа восстанавливается только на маршрутах панели: публичная страница конфига (/c) её не трогает. */
+/**
+ * Сессия админа восстанавливается только на маршрутах панели: публичная страница конфига (/c) её не трогает.
+ * Смена языка пересоздаёт экраны (даты, числа и подписи, посчитанные вне компонентов, обновляются разом), но не
+ * сам AuthProvider: иначе каждая смена языка запускала бы лишний POST /auth/refresh.
+ */
 function WithAuth() {
+  const { i18n } = useTranslation();
   return (
     <AuthProvider>
-      <Outlet />
+      <Outlet key={i18n.resolvedLanguage} />
     </AuthProvider>
   );
 }
