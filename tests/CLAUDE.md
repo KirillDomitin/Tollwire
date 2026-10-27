@@ -29,18 +29,29 @@
 | `integration/` | Через HTTP (`httpx.ASGITransport`, `base_url=http://testserver`), настоящий вход, RBAC-матрица (`test_rbac.py`), сквозной сценарий `test_mvp_flow.py`, воркер через `process_next()` / `drain(worker)`. | `admin`, `api`, `make_admin`/`login_client`, `worker` (`integration/conftest.py`) |
 
 Общие сцены: `tests/import_support.py` (сервер с приложением AmneziaVPN), `integration/discovery_support.py`,
-`tests/gateway_support.py` (шлюз и выходы), `tests/geoip_support.py` (синтетические списки RIPE), `tests/bot_support.py` (бот: сцены и обёртки; перечень тестов — `docs/bot/tests.md`).
+`tests/gateway_support.py` (шлюз и выходы), `tests/geoip_support.py` (синтетические списки RIPE), бот: `tests/bot_support.py`
+(сцены и обёртки), `tests/bot_client_support.py` (настоящий `PanelClient` без aiogram), `tests/bot_cli_support.py` (`Console`
+скриптов ключей и приглашений); перечень тестов бота — `docs/bot/tests.md`.
 
 ## Установщик и `./panel`
 
-Файлы: `unit/test_install_*.py`, `unit/test_panel.py`, `unit/test_provider_layout.py` (раскладка контейнера: подкласс с другим именем/папкой/подсетью не касается ничего «обычного», golden-журнал команд — `unit/golden/provider_default_commands.json`; `FakeServer(layout=...)`), `unit/test_ship_images.py`, `unit/test_letsencrypt.py`, `install_support.py`.
+Файлы: `unit/test_install_*.py` (в том числе бота: `test_install_bot.py`, `test_install_bot_remote.py`), `unit/test_panel.py`,
+`unit/test_panel_bot.py`, `unit/test_bot_review_fixes.py`, `unit/test_provider_layout.py` (раскладка контейнера: подкласс с другим именем/папкой/подсетью не касается ничего «обычного», golden-журнал команд — `unit/golden/provider_default_commands.json`; `FakeServer(layout=...)`), `unit/test_ship_images.py`, `unit/test_letsencrypt.py`, `install_support.py`.
 
 `install.sh` запускается по-настоящему (bash) в копии каталога во временной папке; Docker и curl — заглушки в `PATH`
-(`FakeDocker` пишет вызовы в журнал, поведением управляют переменные `FAKE_*`). Настоящий `.env.prod`, `certs/` и
-тома разработчика не затрагиваются. Язык сообщений фиксирован (`PANEL_LANG=ru`); проверки прав POSIX пропускаются на
-Windows и идут в CI на Linux. Ветка «создать админа в терминале» и вопрос подтверждения `./panel restore` без псевдотерминала не
-проверяются — их смотреть живым прогоном на Linux (`script -qec`). `./panel update` проверяется на настоящем
-git (локальный «сервер» + второй клон, из которого выходят версии).
+(`FakeDocker` пишет вызовы в журнал, поведением управляют переменные `FAKE_*`; `FakeCurl` читает конфиг из `-K -` и
+отвечает на getMe и heartbeat бота). Настоящий `.env.prod`, `certs/` и тома разработчика не затрагиваются. Язык
+сообщений фиксирован (`PANEL_LANG=ru`). Тесты с правами POSIX и псевдотерминалом помечены `requires_posix`
+(`install_support.py`): на Windows пропускаются, в CI идут на Linux. Ветка «создать админа в терминале» и вопрос
+подтверждения `./panel restore` без псевдотерминала не проверяются — их смотреть живым прогоном на Linux (`script -qec`).
+`./panel update` проверяется на настоящем git (локальный «сервер» + второй клон, из которого выходят версии).
+
+## Бот
+
+`bot/tests` — отдельный набор со своим окружением (`uv run --project bot pytest`), в корневом прогоне не участвует.
+Здесь — то, что стыкует бот с панелью: `unit/test_bot_isolation.py` (AST-обход `bot/**/*.py`: бот не импортирует код
+панели), `integration/test_bot_client_contract.py` (настоящий `PanelClient` против настоящего API: каждый метод,
+каждый `reason` 409, 401, 429), `integration/test_bot_key_cli.py`, `integration/test_bot_invite_cli.py`.
 
 ## Фейковый SSH (`fakes/fake_ssh.py`)
 

@@ -172,7 +172,7 @@ git clone <repository-url> tollwire && cd tollwire
 
 In one run the installer checks Docker, creates `.env.prod` with random secrets, issues a TLS certificate, starts the panel, waits until it is ready and offers to create the first administrator (a random password is shown once; the panel asks for your own at the first sign-in). The first image build takes a few minutes. Running it again is safe: an existing `.env.prod` and certificate are never touched, the panel is just brought back to a running state. The steps below describe the same thing by hand.
 
-Options: `--domain`, `--cert`/`--key` (your own certificate), `--admin-email`, `--no-start` (only prepare the files). `INSTALL_WAIT_SECONDS` is how long to wait for readiness (300 s by default); the ports `HTTP_PORT`/`HTTPS_PORT` are read from the environment or `.env.prod`. Messages are in English or Russian: `PANEL_LANG=ru|en`, otherwise the system locale.
+Options: `--domain`, `--cert`/`--key` (your own certificate), `--admin-email`, `--bot local|remote|none` (Telegram bot, see below), `--no-start` (only prepare the files). `INSTALL_WAIT_SECONDS` is how long to wait for readiness (300 s by default); the ports `HTTP_PORT`/`HTTPS_PORT` are read from the environment or `.env.prod`. Messages are in English or Russian: `PANEL_LANG=ru|en`, otherwise the system locale.
 
 ### If the server cannot download images
 
@@ -192,7 +192,7 @@ It builds `vpn-panel` and `vpn-panel-web` from the committed state (git HEAD), s
 
 ### Requirements
 
-- a Linux server with Docker and Docker Compose (the `docker compose` plugin);
+- a Linux server with Docker and **Docker Compose 2.24 or newer** (the `docker compose` plugin): the panel's compose file uses `env_file` with `required`, and older versions fail on every command;
 - a domain pointing at the server and a TLS certificate for it;
 - inbound ports 80 and 443 open; outbound SSH access to the VPN servers (the worker uses it).
 
@@ -285,6 +285,48 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm api pyth
 
 It asks for the email and offers a password: a **random** one (the default — shown once, stored nowhere; the panel asks you to set your own at the first sign-in) or your own (at least 12 characters). `--only-if-empty` does nothing when admins already exist. `./install.sh` runs this step itself when it has a terminal; without one it prints the ready command. Then sign in at `https://<your-domain>`; it is easier to create the other admins in the panel.
 
+### Telegram bot (optional)
+
+People get access by an invitation link: they open the bot through the link, give their name and email, and confirm. The panel registers them, and the bot tells them that the access is ready; the administrator sends the config (the bot does not send a config link yet). The bot is a separate container. It talks to the panel only through the Bot API with its own key and never gets the panel's secrets.
+
+**1. Create the bot.** Write to [@BotFather](https://t.me/BotFather), send `/newbot` and keep the token (`123456789:AAF…`). The token is never written to `.env.prod`.
+
+**2. Choose where it runs.**
+
+**On the panel's server:** run `./install.sh --bot local`, or answer `1` to the question in a terminal during the first installation (the default is `3`, no bot). The installer asks for the token with hidden input (or takes `TELEGRAM_BOT_TOKEN` from the environment), checks it with Telegram, issues a key, writes `.env.bot` (owner-only) and starts the `bot` container. This server must reach `api.telegram.org` over outgoing port 443. If it cannot, run the bot on another server.
+
+**On another server** (for example, when Telegram is blocked where the panel is): `./install.sh --bot remote`, or `./panel bot key --remote` later. The panel issues a key and prints the command for the second server:
+
+```bash
+git clone <repository-url> tollwire && cd tollwire
+./bot/install-bot.sh --panel-url https://panel.example.com --panel-fingerprint <SHA-256>
+```
+
+On the second server (Docker and git are needed; outgoing port 443 to `api.telegram.org` and to the panel) the script asks for the key and the token with hidden input, or reads `BOT_API_KEY` and `TELEGRAM_BOT_TOKEN`. The key is shown once, only in a terminal, and never goes into the command. The panel address must start with `https://`.
+
+`--panel-fingerprint` is printed only for a self-signed panel certificate. Compare it with the SHA-256 from `./panel cert status` on the panel's server. Without it the script asks you to confirm in a terminal and refuses without one. A Let's Encrypt certificate needs no fingerprint.
+
+**3. Manage it** (on the panel's server):
+
+| Command | What it does |
+|---|---|
+| `./panel bot enable` | turn the bot on here (asks for the token if the bot is not set up yet); `--no-build` takes the image brought by `ship-images.sh` |
+| `./panel bot disable` | stop the bot and remove it from startup; its settings are kept, and its key stays valid |
+| `./panel bot key` | replace the key: the new one is written and the bot restarts; the old key is revoked only after the bot has reached the panel with the new one |
+| `./panel bot key --remote` | issue a key for a bot on another server and show it once |
+| `./panel bot revoke` | revoke a key (paste it at the hidden prompt) |
+| `./panel bot status` | list the keys and when the bot was last seen |
+| `./panel bot invite protocols` | the protocols you can invite to, with their ids |
+| `./panel bot invite create --protocol ID --days 30 --expires-in 7d` | create a one-time invitation for 30 days of access; `--expires-in` is `7d` or `12h`; `--note TEXT` records for whom |
+
+`invite create` prints a `t.me/<bot>?start=<code>` link, shown once. The link needs the bot's name, which the bot reports when it first reaches the panel; until then only the code is printed.
+
+The installer adds `COMPOSE_PROFILES=bot` to `.env.prod`, so the bot is part of the panel's compose project (`down` stops it too); `./panel bot disable` takes `bot` out of that line. Logs: `./panel logs bot`; for a bot on another server, `docker compose -f bot/docker-compose.yml logs bot` on that server.
+
+`./deploy/ship-images.sh SERVER` also sends the bot image `vpn-panel-bot:latest` when the repository has `bot/`. With `--no-build` the installer checks that this image is on the machine when the bot is enabled. The bot on another server is built there.
+
+`./panel update` does not ask about the bot and leaves its settings as they are.
+
 ### Updating
 
 ```bash
@@ -373,3 +415,5 @@ The data (volumes `pg_data`, `redis_data`) stays. **`down -v` deletes the volume
 | prod: nginx does not start | `certs/fullchain.pem` / `certs/privkey.pem` are missing |
 | prod: "port in use" | something on the host already listens on 80/443 — free it or set `HTTP_PORT`/`HTTPS_PORT` (with a non-standard HTTPS port the http redirect sends you to 443 without the port — open `https://…:<port>` directly) |
 | a server job failed with `Host key of … is not pinned` | pin the host key on the server's page (the first preparation step) — the password is sent only to a server with a pinned key |
+| the installer or `./panel` says "Docker Compose 2.24 or newer is needed" | update the `docker-compose-plugin` package; `docker compose version` shows the current version |
+| the bot does not answer or does not reach the panel | `./panel logs bot` (on another server: `docker compose -f bot/docker-compose.yml logs bot`); check outgoing port 443 to `api.telegram.org` and the panel address |

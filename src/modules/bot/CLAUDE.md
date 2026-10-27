@@ -1,21 +1,22 @@
 # modules/bot — Telegram-бот: ключи, приглашения, регистрации
 
-Бот — внешний клиент; в репозитории только сторона панели. Бот видит только Bot API и входит ключом `X-Bot-Key`.
+Бот — отдельный пакет `bot/` (см. `bot/CLAUDE.md`); здесь только сторона панели. Бот видит только Bot API и входит
+ключом `X-Bot-Key`.
 Админ выпускает ключи и приглашения через админский API (JWT). Регистрация по приглашению создаёт пользователя,
 подписку, грант и задачу `CREATE_USER` существующей цепочкой (`modules/access`, `modules/jobs`). Веб-интерфейса
 пока нет: в панели видны только тексты событий аудита.
 
 Подробно: `docs/bot/api.md` (поля, коды, лимиты, компромиссы), `docs/bot/registration.md` (шаги регистрации,
-статусы, причины 409, хук, повтор, сверка), `docs/bot/tests.md` (перечень тестов).
+статусы, причины 409, хук, повтор, сверка), `docs/bot/tests.md` (перечень тестов, в том числе бота и установки).
 
 ## Файлы
 
 | Путь | Что |
 |---|---|
 | `models/key.py`, `invite.py`, `registration.py` | `BotKey` (`bot_keys`), `BotInvite` (`bot_invites`), `BotRegistration` (`bot_registrations`), `RegistrationStatus`, `OPEN_STATUSES` |
-| `repository.py` | Репозитории трёх моделей; `get_by_hash(lock=True)`, `list_provisioning` (`SKIP LOCKED`) |
-| `keys.py` | `BotKeyService`: выпуск (`twb_` + 43 символа), список, отзыв, `heartbeat` |
-| `invites.py` | `BotInviteService`: создание (код 24 символа), список, отзыв, `check`, `link`; `invite_status` |
+| `repository.py` | Репозитории трёх моделей; у приглашений `get_by_hash(lock=True)`, у ключей `get_by_hash` (в том числе отозванный, для `revoke` из консоли), `get_active_by_hash` (для `seen`), `list_provisioning` (`SKIP LOCKED`) |
+| `keys.py` | `BotKeyService`: выпуск (`twb_` + 43 символа), список, отзыв, `heartbeat`; `create` и `revoke` принимают `source` |
+| `invites.py` | `BotInviteService`: создание (код 24 символа, `source`), список, отзыв, `check`, `link`; `invite_status` |
 | `registrations.py` | `BotRegistrationService`: `register`, `get`, `by_telegram`, `retry`, `on_issue_finished` (хук воркера), `reconcile` (правило `stale_jobs`) |
 | `payment.py` | `PaymentPolicy` и `InviteFree` (всегда `PAID`) |
 | `dependencies.py` | `require_bot_key`, `BotContext`, метка `bot_key_required` (её читает тест RBAC) |
@@ -50,6 +51,15 @@
   Значения и порядок проверок — `docs/bot/api.md`.
 - Логи: `core/log.py` маскирует `twb_…`, `X-Bot-Key` и поле `code`.
 
+## Консольные скрипты (`src/scripts`)
+
+- `bot_key.py`: `create --name N [--raw]`, `revoke` (ключ из stdin), `list`, `seen --within S` (ключ из stdin, код выхода
+  0, если бот выходил на связь не позже S секунд назад). Выпуск — `BotKeyService.create(source="cli")`.
+- `bot_invite.py`: `protocols`, `create --protocol ID --days N --expires-in 7d|12h [--note] [--raw]`. Выпуск —
+  `BotInviteService.create(source="cli")`.
+- Ключ и код показываются только в терминале; без терминала скрипт отказывается до выпуска, пока не задан `--raw`.
+  Установщики вызывают `create --raw` и передают ключ в `revoke` и `seen` через stdin, не аргументом.
+
 ## Регистрация (`registrations.py`)
 
 - Одна транзакция, SSH не делается. Приглашение `FOR UPDATE` → проверки → регистрация `payment_pending` →
@@ -70,7 +80,8 @@
 
 `bot_key_created/revoked`, `bot_invite_created/revoked`, `bot_registration_created/activated/failed/retried`;
 сущности `bot_key`, `bot_invite`, `bot_registration`. Актор бота — без админа, только IP. В `meta` нет кодов,
-ключей, почты и `telegram_id`. Пользователь, созданный ботом, — `vpn_user_created` с `{source: bot}`.
+ключей, почты и `telegram_id`. Пользователь, созданный ботом, — `vpn_user_created` с `{source: bot}`. Ключ и приглашение,
+выпущенные консолью, — с `source: cli` в `meta`; из админского API этого поля нет.
 
 ## Принятые компромиссы
 
@@ -78,6 +89,8 @@
 - `email_taken` и `telegram_taken` — оракул по базе, ограничен 10 регистрациями в минуту на ключ.
 - Лимит неудач по IP блокирует и валидный ключ с того же IP; повтор регистрации тоже тратит лимит.
 - Любой действующий ключ читает регистрацию по id и статус по любому `telegram_id`.
+- API доверяет `X-Forwarded-For` из сети `edge`, где стоит и бот: скомпрометированный бот подменяет IP в логах и лимитах
+  по IP (`bot/CLAUDE.md`).
 
 ## Ограничения текущей версии
 

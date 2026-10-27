@@ -27,17 +27,19 @@ REST API + веб-интерфейс для управления VPN-серве�
 - VPN — только через `VPNProvider`; бизнес-логика не знает SSH, Docker и форматов конфигов.
 - `infrastructure/` не импортирует `modules/` (кроме воркера и планировщика).
 - Доменные ошибки — `core/exceptions.py`, в HTTP-коды их переводит `main.py`.
+- `bot/` не импортирует `src/`: к панели только через Bot API (`tests/unit/test_bot_isolation.py`).
 
 ## Безопасность
 
 Секреты (SSH, VPN-конфиги) — в БД только зашифрованными; `ENCRYPTION_KEY` и `.env*` — не читать, не коммитить.
 Никакого пользовательского ввода в SSH-команды. В логи — никаких паролей, ключей, токенов, конфигов.
+Токен Telegram и ключ бота — только в `.env.bot` (сервер панели) или `bot/.env` (0600), не в `.env.prod`.
 
 ## Где что
 
 `src/core` общее · `src/infrastructure/{ssh,vpn,workers,monitoring}` внешний мир · `src/modules/*` домен
-(auth, servers, protocols, vpn_users, access, jobs, audit, monitoring, bot) · `src/scripts` утилиты · `alembic` миграции
-· `tests` · `frontend` интерфейс.
+(auth, servers, protocols, vpn_users, access, jobs, audit, monitoring, bot) · `src/scripts` утилиты (в т.ч. ключи и
+приглашения бота) · `bot` Telegram-бот, отдельный пакет (`bot/CLAUDE.md`) · `alembic` миграции · `tests` · `frontend` интерфейс.
 
 ## Команды
 
@@ -50,9 +52,11 @@ uv run pytest --testmon -q -x                     # только тесты, з�
 uv run pytest -n 4 -q                             # полный прогон (~2000 тестов) — в фоне или через агента test-runner
 uv run pytest tests/unit/test_x.py::test_y       # один тест
 uv run alembic upgrade head / downgrade -1       # миграции
+uv run --project bot pytest                      # тесты бота (своё окружение bot/; проверки как в CI — из bot/)
 ```
 
 Фронтенд (`frontend/`): `npm run dev`, проверки — `npm run typecheck && npm run lint && npm test`.
 
-Прод: `./install.sh` (установка одной командой), `./panel backup|restore|update|logs` (обслуживание); общий код
-скриптов — `deploy/common.sh`. Тесты — `tests/unit/test_install_*.py` и `test_panel.py` (подробности в `tests/CLAUDE.md`).
+Прод: `./install.sh` (установка одной командой; `--bot local|remote|none` — Telegram-бот), `./panel backup|restore|update|logs|cert|bot`
+(обслуживание и бот); общий код скриптов — `deploy/common.sh`, `deploy/bot.sh`. Нужен Docker Compose 2.24+.
+Тесты установщика и бота — `tests/unit/test_install_*.py`, `test_panel*.py`, `bot/tests` (подробности в `tests/CLAUDE.md`).

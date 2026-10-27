@@ -62,3 +62,45 @@
   метка `bot_key_required` и нет прав админа; ни один маршрут админского API не принимает ключ бота; права
   `/api/v1/bot-admin/*` (чтение — `bot:read`, ключи — `bot:keys`, остальное записи — `bot:manage`); матрица ролей
   (viewer не пишет); `POST /api/v1/bot-admin/keys` — `bot:keys` в списке критичных маршрутов.
+
+## Бот в репозитории: корневой `tests/`
+
+Тесты самого бота (`bot/tests`) — в `docs/bot-service/tests.md`. Здесь — то, что стыкует бот с панелью и установкой.
+Общие сцены: `tests/bot_client_support.py` (настоящий `PanelClient` без aiogram), `tests/bot_cli_support.py` (`Console`
+и отказы скриптов), заглушки установщика — `tests/unit/install_support.py`.
+
+### unit
+
+- `unit/test_bot_isolation.py` — обход AST всех `bot/**/*.py` (код и тесты): нет импортов `core`, `modules`,
+  `infrastructure`, `scripts`, `main`, `worker`, `src`; `PanelClient` требует только httpx, certifi и stdlib; в
+  зависимостях `bot/pyproject.toml` нет стека панели; `bot/` содержит свой Dockerfile, compose, `.env.example`,
+  установщик; корневой `.dockerignore` исключает `bot`.
+- `unit/test_bot_review_fixes.py` — исправления по ревью: исполняемые скрипты с режимом `+x` в git; секреты бота и
+  временные файлы установщиков не коммитятся, `bot/.env.example` в git; Compose ниже 2.24 останавливает установщик и
+  все команды `./panel`, нечитаемая версия старой не считается; адрес репозитория для `git clone` без порта ssh и
+  учётных данных, адрес с метасимволами не печатается в команду; `curl -q` не читает `~/.curlrc`.
+- `unit/test_install_bot.py` — `install.sh --bot local` (`install_support.py`: `FakeDocker`, `FakeCurl`): токен и ключ не
+  попадают в вывод, `ps` (аргументы) и `.env.prod` (только `COMPOSE_PROFILES=bot`, остальные строки байт в байт);
+  `.env.bot` 0600; `getMe` не прошёл → предупреждение и выбор; повторный запуск и `update` не спрашивают; вопрос
+  «1/2/3» — в псевдотерминале (POSIX).
+- `unit/test_install_bot_remote.py` — `install.sh --bot remote` и `bot/install-bot.sh` на втором сервере: ключ виден один
+  раз и только в терминале, в команду для второго сервера не вставляется; отпечаток сверяется до записи `bot/.env`;
+  TLS-сервер в процессе теста с сертификатом той же командой openssl; `--reconfigure` меняет только ключ; 401 и сбой
+  сети выводятся разными сообщениями.
+- `unit/test_panel_bot.py` — `./panel bot enable|disable|key|key --remote|revoke|status|invite`: `disable` убирает
+  профиль и оставляет ключ действующим; `key` записывает новый ключ, перезапускает бота и только потом отзывает старый;
+  если новый не вышел на связь, старый не отзывается.
+- `unit/test_ship_images.py` — `ship-images.sh` собирает третий образ `vpn-panel-bot`, если есть `bot/`, и тегирует его на
+  сервере.
+
+### integration
+
+- `integration/test_bot_client_contract.py` — настоящий `PanelClient` против настоящего API (`ASGITransport`, воркер,
+  фейковый SSH): каждый метод; каждый `reason` 409; 422 с именем поля; 401 для неверного и отозванного ключа (без
+  повторов); 429 по лимиту регистраций; ключ не попадает в аудит после целого диалога.
+- `integration/test_bot_key_cli.py` — `scripts.bot_key` (`create`, `revoke`, `list`, `seen`): ключ один раз и только в
+  терминале или с `--raw`; отказ вне терминала до выпуска; в БД только хеш; аудит `source: cli` без ключа; `revoke` и
+  `seen` читают ключ из stdin.
+- `integration/test_bot_invite_cli.py` — `scripts.bot_invite` (`protocols`, `create`): ссылка или код один раз; срок
+  `7d` или `12h`; отказ вне терминала до создания; в аудите `source: cli` без кода и ссылки; приглашение неотличимо от
+  созданного через API.

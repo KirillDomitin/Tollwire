@@ -22,6 +22,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   the invite's protocol are created, and the client is issued like any other. A failed issue is listed in
   `GET /api/v1/bot-admin/registrations` and can be retried (`POST .../retry`). The audit log has a new "Bot"
   group; its entries contain no codes, keys, emails or Telegram ids.
+- Telegram bot. A person opens it by an invitation link, gives a name and an email and confirms; the panel registers
+  them and the bot says the access is ready (the administrator sends the config, there is no config link yet). `/status`
+  shows the access period and the protocol, `/help` lists the commands. The bot works in private chats only.
+- Installing the bot: `./install.sh --bot local|remote|none` (or the question in a terminal on the first run), `./panel bot`
+  (`enable`, `disable`, `key`, `revoke`, `status`, `invite`), and `bot/install-bot.sh` for a bot on another server. The
+  token is entered hidden; the settings are kept in owner-only files. A key for another server is shown once.
+- Console commands for bot keys and invitations: `python -m scripts.bot_key` and `python -m scripts.bot_invite`. Their
+  audit entries carry `source: cli`.
+- `./deploy/ship-images.sh` also sends the bot image `vpn-panel-bot:latest` when the repository has `bot/`.
+- CI has a separate `bot` job: ruff, mypy and the bot's tests.
 - Gateway in the web UI. A server with the gateway protocol gets a "Gateway" section on its card: a summary (client
   subnet, port, container check, healthy exits, clients with and without an exit), the exits table (slot, state, health and handshake
   age, weight, client limit, assigned clients) with add / change / remove (removal that would leave clients without an
@@ -127,6 +137,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Changed
 
 - Password-change attempts and events (`password_changed`, `password_change_failed`) appear in the audit log.
+- The panel needs Docker Compose 2.24 or newer. `install.sh` and `./panel` stop with a message on an older version.
 
 ## [0.2.0] - 2026-10-10
 

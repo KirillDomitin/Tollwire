@@ -160,8 +160,10 @@ bot/tests/
   `cert status`), `deploy/ship-images.sh`, `bot/install-bot.sh`.
 - [x] 9. Тесты установщика; `tests/unit/install_support.py` (`deploy/bot.sh`, `bot/install-bot.sh`, новые заглушки).
 - [x] 10. CI-задача `bot`.
-- [ ] 11. Документация: `INSTALL.md`/`INSTALL.ru.md` (раздел «Telegram-бот»), `bot/CLAUDE.md`, `src/modules/bot/CLAUDE.md`,
+- [x] 11. Документация: `INSTALL.md`/`INSTALL.ru.md` (раздел «Telegram-бот»), `bot/CLAUDE.md`, `src/modules/bot/CLAUDE.md`,
   `src/scripts/CLAUDE.md`, `tests/CLAUDE.md`, `docs/bot/tests.md`, корневой `CLAUDE.md`, `CHANGELOG*.md`.
+
+Статус: готово (этап 25.2), живой прогон на реальном сервере не выполнялся; тесты в псевдотерминале и проверки прав 0600 выполняет CI на Linux.
 
 ## Риски
 
