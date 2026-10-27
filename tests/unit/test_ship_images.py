@@ -163,3 +163,54 @@ def test_messages_follow_the_language(repo: Path) -> None:
     english = ship(repo, "homelab", PANEL_LANG="en")
 
     assert "Done:" in english.stdout and "Next, on the server" in english.stdout
+
+
+# --- образ бота (этап 25.2) ------------------------------------------------------------------------------------------
+
+
+def add_bot(repo: Path) -> None:
+    (repo / "bot").mkdir()
+    (repo / "bot" / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "add the bot")
+
+
+def test_the_bot_image_is_shipped_as_the_third_one_when_the_repository_has_it(repo: Path) -> None:
+    add_bot(repo)
+
+    result = ship(repo, "homelab")
+
+    assert result.returncode == 0, result.stderr
+    rev = git(repo, "rev-parse", "--short=12", "HEAD").strip()
+    lines = log(repo)
+    assert any(line.startswith("docker build") and f"tollwire-ship/bot:{rev}" in line for line in lines)
+    save = next(line for line in lines if line.startswith("docker save"))
+    assert all(name in save for name in (f"app:{rev}", f"web:{rev}", f"bot:{rev}"))
+    remote = next(line for line in lines if line.startswith("ssh homelab"))
+    assert f"docker tag tollwire-ship/bot:{rev} vpn-panel-bot:latest" in remote
+    assert "vpn-panel-bot:latest" in result.stdout
+
+
+def test_without_a_bot_directory_only_two_images_are_shipped(repo: Path) -> None:
+    result = ship(repo, "homelab")
+
+    assert result.returncode == 0, result.stderr
+    assert not any("tollwire-ship/bot" in line or "vpn-panel-bot" in line for line in log(repo))
+    assert "vpn-panel-bot" not in result.stdout
+
+
+def test_the_bot_image_does_not_overwrite_the_panels_own_tag(repo: Path) -> None:
+    add_bot(repo)
+
+    ship(repo, "homelab")
+
+    builds = [line for line in log(repo) if line.startswith("docker build")]
+    assert builds and not any("vpn-panel-bot:latest" in line for line in builds)
+
+
+def test_a_failed_bot_build_sends_nothing(repo: Path) -> None:
+    add_bot(repo)
+
+    result = ship(repo, "homelab", FAKE_BUILD_FAIL="1")
+
+    assert result.returncode != 0 and not any(line.startswith("ssh") for line in log(repo))

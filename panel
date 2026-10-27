@@ -6,6 +6,7 @@
 #   ./panel update  [--no-backup] [--no-pull]
 #   ./panel logs    [SERVICE...] [--tail N] [--no-follow]
 #   ./panel cert    [status | letsencrypt [--email E] [--accept-le-terms] | renew]
+#   ./panel bot     enable | disable | key [--remote] | revoke | status | invite ARGS…
 #
 # В бэкап попадает только дамп базы: ключ шифрования (ENCRYPTION_KEY из .env.prod) нарочно не кладётся рядом с
 # данными — иначе тот, кто унесёт файл, получит и данные, и ключ к ним. Храните копию .env.prod отдельно.
@@ -19,7 +20,7 @@ COMPOSE_FILE=docker-compose.prod.yml
 DEFAULT_BACKUP_DIR=backups
 DEFAULT_KEEP=14
 DEFAULT_TAIL=100
-SERVICES="nginx api worker postgres redis migrate"
+SERVICES="nginx api worker postgres redis migrate bot"
 CERT_DIR=certs
 CERT_FILE=$CERT_DIR/fullchain.pem
 KEY_FILE=$CERT_DIR/privkey.pem
@@ -29,6 +30,8 @@ KEY_FILE=$CERT_DIR/privkey.pem
 source deploy/common.sh
 # shellcheck source=deploy/letsencrypt.sh
 source deploy/letsencrypt.sh
+# shellcheck source=deploy/bot.sh
+source deploy/bot.sh
 
 part_file=""
 cleanup() {
@@ -88,6 +91,7 @@ msg_ru() {
         cert_no_domain) printf '%s' "в %s нет корректного PANEL_DOMAIN — укажите домен панели." ;;
         cert_renew_no_certbot) printf '%s' "сертификат не от Let's Encrypt или certbot не установлен. Выпустить: ./panel cert letsencrypt" ;;
         cert_renewed) printf '%s' "Проверка обновления выполнена." ;;
+        cert_fingerprint) printf '%s' "Отпечаток SHA-256: %s" ;;
     esac
 }
 
@@ -142,6 +146,7 @@ msg_en() {
         cert_no_domain) printf '%s' "%s has no valid PANEL_DOMAIN - set the panel domain." ;;
         cert_renew_no_certbot) printf '%s' "the certificate is not from Let's Encrypt or certbot is not installed. Issue one: ./panel cert letsencrypt" ;;
         cert_renewed) printf '%s' "Renewal check done." ;;
+        cert_fingerprint) printf '%s' "SHA-256 fingerprint: %s" ;;
     esac
 }
 
@@ -159,11 +164,16 @@ usage() {
           Бэкап, затем git pull --ff-only, затем пересборка и запуск (./install.sh) с ожиданием готовности.
           --no-build — не собирать, взять образы, привезённые ./deploy/ship-images.sh.
   logs    [СЕРВИС...] [--tail N] [--no-follow]
-          Логи сервисов (nginx api worker postgres redis migrate); по умолчанию последние 100 строк и слежение.
+          Логи сервисов (nginx api worker postgres redis migrate bot); по умолчанию последние 100 строк и слежение.
 
   cert    [status | letsencrypt [--email EMAIL] [--accept-le-terms] | renew]
-          Сертификат: status — срок и издатель; letsencrypt — перейти на настоящий сертификат Let's Encrypt
+          Сертификат: status — срок, издатель и отпечаток; letsencrypt — перейти на настоящий сертификат Let's Encrypt
           (ставит certbot, на секунды останавливает nginx, обновляется само); renew — проверить обновление.
+  bot     enable | disable | key [--remote] | revoke | status | invite ARGS…
+          Telegram-бот: enable — включить на этом сервере (токен от @BotFather в TELEGRAM_BOT_TOKEN или скрытым вводом);
+          disable — остановить; key — заменить ключ бота (--remote — выпустить ключ для бота на другом сервере и
+          показать его один раз); revoke — отозвать ключ; status — ключи и когда бот был на связи; invite — приглашения
+          (invite protocols, invite create --protocol ID --days N --expires-in 7d).
 
 В бэкап не входит .env.prod: ключ шифрования хранится отдельно от данных. Язык сообщений: PANEL_LANG=ru|en,
 иначе по локали системы, по умолчанию английский.
@@ -181,11 +191,16 @@ Usage: ./panel COMMAND [options]
           Backup, then git pull --ff-only, then rebuild and start (./install.sh) and wait until ready.
           --no-build - do not build, use the images brought by ./deploy/ship-images.sh.
   logs    [SERVICE...] [--tail N] [--no-follow]
-          Service logs (nginx api worker postgres redis migrate); the last 100 lines and follow by default.
+          Service logs (nginx api worker postgres redis migrate bot); the last 100 lines and follow by default.
 
   cert    [status | letsencrypt [--email EMAIL] [--accept-le-terms] | renew]
-          Certificate: status - expiry and issuer; letsencrypt - switch to a real Let's Encrypt certificate
+          Certificate: status - expiry, issuer and fingerprint; letsencrypt - switch to a real Let's Encrypt certificate
           (installs certbot, stops nginx for seconds, renews itself); renew - check the renewal.
+  bot     enable | disable | key [--remote] | revoke | status | invite ARGS...
+          Telegram bot: enable - turn it on here (the @BotFather token in TELEGRAM_BOT_TOKEN or hidden input);
+          disable - stop it; key - replace the bot key (--remote - issue a key for a bot on another server and show
+          it once); revoke - revoke a key; status - keys and when the bot was last seen; invite - invitations
+          (invite protocols, invite create --protocol ID --days N --expires-in 7d).
 
 .env.prod is not part of the backup: the encryption key is kept apart from the data. Message language:
 PANEL_LANG=ru|en, otherwise the system locale, English by default.
@@ -438,6 +453,7 @@ cert_status() {
     say "$(t cert_file "$CERT_FILE")"
     say "$(t cert_issuer "$issuer")"
     say "$(t cert_valid "$(openssl x509 -in "$CERT_FILE" -noout -enddate | cut -d= -f2)" "$days_left")"
+    say "$(t cert_fingerprint "$(openssl x509 -in "$CERT_FILE" -noout -fingerprint -sha256 | cut -d= -f2)")"
     if [ -n "$domain" ]; then
         covers=$(openssl x509 -in "$CERT_FILE" -noout -checkhost "$domain" 2> /dev/null || true)
         case $covers in
@@ -481,10 +497,45 @@ cert_renew() {
     say "$(t cert_renewed)"
 }
 
+cmd_bot() {
+    local sub=${1:-}
+    [ $# -eq 0 ] || shift
+    case $sub in
+        "" | -h | --help | help)
+            say "$(t bot_usage)"
+            return 0
+            ;;
+        enable | disable | key | revoke | status | invite) ;;
+        *) die "$(t bot_unknown_sub "$sub")" ;;
+    esac
+    preflight
+    # tty: терминал нужен скриптам, которые показывают секрет только человеку (invite create без --raw);
+    # без терминала compose run без -T отказался бы работать.
+    local tty=()
+    bot_terminal || tty=(-T)
+    case $sub in
+        enable)
+            bot_compose_ok || die "$(t bot_old_compose "${bot_compose_version:-?}")"
+            bot_enable || exit 1
+            ;;
+        disable) bot_disable ;;
+        key)
+            if [ "${1:-}" = --remote ]; then
+                bot_key_remote || exit 1
+            else
+                bot_rotate_key || exit 1
+            fi
+            ;;
+        revoke) bot_revoke || exit 1 ;;
+        status) "${compose[@]}" run --rm ${tty[@]+"${tty[@]}"} -e "PANEL_LANG=$lang" api python -m scripts.bot_key list ;;
+        invite) "${compose[@]}" run --rm ${tty[@]+"${tty[@]}"} -e "PANEL_LANG=$lang" api python -m scripts.bot_invite "$@" ;;
+    esac
+}
+
 main() {
     local command=${1:-}
     case $command in
-        backup | restore | update | logs | cert)
+        backup | restore | update | logs | cert | bot)
             shift
             "cmd_$command" "$@"
             ;;

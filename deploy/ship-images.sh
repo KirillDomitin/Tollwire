@@ -5,7 +5,7 @@
 #   ./deploy/ship-images.sh homelab            # homelab — имя из ~/.ssh/config или user@host
 #
 # Образы собираются из закоммиченного состояния (git HEAD), по SSH уходят на сервер и получают там имена
-# vpn-panel:latest и vpn-panel-web:latest. Дальше на сервере: ./panel update --no-pull --no-build
+# vpn-panel:latest и vpn-panel-web:latest (и vpn-panel-bot:latest, если в репозитории есть bot/). Дальше на сервере: ./panel update --no-pull --no-build
 # (или ./install.sh --no-build при первой установке). Базовые образы postgres и redis сервер тянет сам.
 
 set -euo pipefail
@@ -27,6 +27,7 @@ msg_ru() {
         shipping) printf '%s' "Отправляю образы на %s (сжатый поток по SSH)…" ;;
         ship_failed) printf '%s' "не удалось передать образы на %s: проверьте вход по SSH-ключу и место на диске." ;;
         done) printf '%s' "Готово: на %s теперь vpn-panel:latest и vpn-panel-web:latest (коммит %s)." ;;
+        done_bot) printf '%s' "Готово: на %s теперь vpn-panel:latest, vpn-panel-web:latest и vpn-panel-bot:latest (коммит %s)." ;;
         next) printf '%s' "Дальше на сервере: ./panel update --no-pull --no-build   (первая установка: ./install.sh --no-build)" ;;
     esac
 }
@@ -43,6 +44,7 @@ msg_en() {
         shipping) printf '%s' "Sending the images to %s (a compressed stream over SSH)..." ;;
         ship_failed) printf '%s' "could not transfer the images to %s: check the SSH key login and the free disk space." ;;
         done) printf '%s' "Done: %s now has vpn-panel:latest and vpn-panel-web:latest (commit %s)." ;;
+        done_bot) printf '%s' "Done: %s now has vpn-panel:latest, vpn-panel-web:latest and vpn-panel-bot:latest (commit %s)." ;;
         next) printf '%s' "Next, on the server: ./panel update --no-pull --no-build   (first install: ./install.sh --no-build)" ;;
     esac
 }
@@ -71,11 +73,20 @@ web="tollwire-ship/web:$rev"
 say "$(t building "$rev")"
 docker build -q -t "$app" "$work" > /dev/null || die "$(t build_failed app)"
 docker build -q -t "$web" "$work/frontend" > /dev/null || die "$(t build_failed web)"
+# Образ Telegram-бота — третий, если в репозитории есть bot/ (контекст сборки — сам каталог bot/).
+bot=""
+if [ -f "$work/bot/Dockerfile" ]; then
+    bot="tollwire-ship/bot:$rev"
+    docker build -q -t "$bot" "$work/bot" > /dev/null || die "$(t build_failed bot)"
+fi
 
 say "$(t shipping "$host")"
 # Образы собраны для архитектуры этой машины; на сервере должна быть та же (обычно x86-64).
-docker save "$app" "$web" | gzip -1 | ssh "$host" "gunzip | docker load > /dev/null && docker tag $app vpn-panel:latest && docker tag $web vpn-panel-web:latest" \
+remote_tags="docker tag $app vpn-panel:latest && docker tag $web vpn-panel-web:latest"
+[ -z "$bot" ] || remote_tags="$remote_tags && docker tag $bot vpn-panel-bot:latest"
+# shellcheck disable=SC2086  # $bot пуст или одно имя образа: без кавычек он просто исчезает из списка
+docker save "$app" "$web" $bot | gzip -1 | ssh "$host" "gunzip | docker load > /dev/null && $remote_tags" \
     || die "$(t ship_failed "$host")"
 
-say "$(t done "$host" "$rev")"
+if [ -n "$bot" ]; then say "$(t done_bot "$host" "$rev")"; else say "$(t done "$host" "$rev")"; fi
 say "$(t next)"

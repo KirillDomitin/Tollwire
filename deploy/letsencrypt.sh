@@ -73,6 +73,7 @@ lib_msg_en() {
         le_no_timer) printf '%s' "Warning: the certbot auto-renewal timer was not found. Run 'sudo certbot renew' on a schedule (cron)." ;;
     esac
 }
+lib_register le # сообщения библиотеки доступны через t() под именем le_msg_ru / le_msg_en
 
 # Настоящее доменное имя: есть точка, не IP, не служебная зона. Let's Encrypt не выдаёт сертификаты на IP и localhost.
 le_public_domain() {

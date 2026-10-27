@@ -42,6 +42,8 @@ trap cleanup EXIT
 source deploy/common.sh
 # shellcheck source=deploy/letsencrypt.sh
 source deploy/letsencrypt.sh
+# shellcheck source=deploy/bot.sh
+source deploy/bot.sh
 
 # Сообщения: ключ → строка для printf (подстановки %s — по порядку, одинаковому в обоих языках).
 msg_ru() {
@@ -203,7 +205,8 @@ msg_en() {
 usage() {
     if [ "$lang" = ru ]; then
         cat <<'EOF'
-Использование: ./install.sh [--domain ДОМЕН_ИЛИ_IP] [--cert ФАЙЛ --key ФАЙЛ] [--admin-email EMAIL] [--no-start] [--no-admin] [--no-build]
+Использование: ./install.sh [--domain ДОМЕН_ИЛИ_IP] [--cert ФАЙЛ --key ФАЙЛ] [--admin-email EMAIL] [--bot local|remote|none]
+                    [--no-start] [--no-admin] [--no-build]
                     [--letsencrypt [--le-email EMAIL] [--accept-le-terms]]
 
   --domain   адрес, по которому будет открываться панель (по умолчанию localhost);
@@ -216,6 +219,9 @@ usage() {
   --le-email     email для уведомлений Let's Encrypt (без него — без адреса);
   --accept-le-terms  согласие с условиями Let's Encrypt (без терминала обязательно, это решение человека);
   --admin-email  email первого администратора (иначе спросит в терминале);
+  --bot          Telegram-бот: local — на этом сервере (токен от @BotFather в TELEGRAM_BOT_TOKEN или скрытым вводом),
+                 remote — на другом сервере (выдам команду), none — не нужен. Без параметра в терминале при первой
+                 установке спросит; позже — ./panel bot enable;
   --no-start     только подготовить .env.prod и сертификат, панель не запускать;
   --no-admin     не предлагать создать администратора (так вызывает ./panel update);
   --no-build     не собирать образы, взять уже загруженные (для серверов, куда образы привозят
@@ -229,7 +235,8 @@ usage() {
 EOF
     else
         cat <<'EOF'
-Usage: ./install.sh [--domain DOMAIN_OR_IP] [--cert FILE --key FILE] [--admin-email EMAIL] [--no-start] [--no-admin] [--no-build]
+Usage: ./install.sh [--domain DOMAIN_OR_IP] [--cert FILE --key FILE] [--admin-email EMAIL] [--bot local|remote|none]
+                    [--no-start] [--no-admin] [--no-build]
                     [--letsencrypt [--le-email EMAIL] [--accept-le-terms]]
 
   --domain   address the panel will be opened at (default localhost);
@@ -242,6 +249,9 @@ Usage: ./install.sh [--domain DOMAIN_OR_IP] [--cert FILE --key FILE] [--admin-em
   --le-email     email for Let's Encrypt notices (none if omitted);
   --accept-le-terms  consent to the Let's Encrypt terms (required without a terminal - it is a human's decision);
   --admin-email  email of the first administrator (asked in a terminal otherwise);
+  --bot          Telegram bot: local - on this server (the @BotFather token in TELEGRAM_BOT_TOKEN or hidden input),
+                 remote - on another server (I print the command), none - not needed. Without it a terminal install
+                 asks on the first run; later: ./panel bot enable;
   --no-start     only prepare .env.prod and the certificate, do not start the panel;
   --no-admin     do not offer to create an administrator (./panel update uses this);
   --no-build     do not build the images, use the ones already loaded (for servers that get the
@@ -265,6 +275,7 @@ start=1
 ask_admin=1
 build=1
 want_le=0
+bot_given=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --domain)
@@ -286,6 +297,12 @@ while [ $# -gt 0 ]; do
         --admin-email)
             [ $# -ge 2 ] || die "$(t need_admin_email)"
             admin_email=$2
+            shift 2
+            ;;
+        --bot)
+            [ $# -ge 2 ] || die "$(t bot_choice_invalid "")"
+            bot_choice=$2
+            bot_given=1
             shift 2
             ;;
         --no-start)
@@ -323,6 +340,14 @@ while [ $# -gt 0 ]; do
             ;;
     esac
 done
+
+# Значение --bot проверяется сразу, до проверки окружения и записи чего-либо.
+if [ "$bot_given" -eq 1 ]; then
+    case $bot_choice in
+        local | remote | none) ;;
+        *) die "$(t bot_choice_invalid "$bot_choice")" ;;
+    esac
+fi
 
 valid_domain='^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$'
 ipv4='^[0-9]{1,3}(\.[0-9]{1,3}){3}$'
@@ -596,6 +621,10 @@ compose_text="docker compose --env-file $ENV_FILE -f $COMPOSE_FILE"
 if [ "$start" -eq 0 ]; then
     say ""
     say "$(t no_start "$compose_text")"
+    case $bot_choice in
+        local) say "$(t bot_no_start)" ;;
+        remote) say "$(t bot_remote_no_start)" ;;
+    esac
     exit 0
 fi
 
@@ -634,7 +663,10 @@ else
     # Без сборки образы панели должны уже лежать на машине (их привозит ship-images.sh): иначе compose полез бы за
     # ними в реестр, а не нашёл бы — лучше сказать об этом прямо.
     missing=""
-    for image in vpn-panel:latest vpn-panel-web:latest; do
+    images="vpn-panel:latest vpn-panel-web:latest"
+    # Бот включён (профиль bot в .env.prod) — compose запустит и его, образ бота тоже должен быть на машине.
+    ! bot_profile_has || images="$images $BOT_IMAGE"
+    for image in $images; do
         docker image inspect "$image" > /dev/null 2>&1 || missing="$missing $image"
     done
     [ -z "$missing" ] || die "$(t no_local_images "${missing# }")"
@@ -690,10 +722,34 @@ if [ "$ask_admin" -eq 1 ]; then
     fi
 fi
 
-# --- итог ----------------------------------------------------------------------------------------------------------
+# --- Telegram-бот --------------------------------------------------------------------------------------------------
+# Сбой бота установку панели не ломает: панель уже работает, бота можно донастроить командой ./panel bot.
 
 url="https://$domain"
 [ "$https_port" -eq 443 ] || url="$url:$https_port"
+
+bot_build=$build
+if [ "$bot_given" -eq 0 ]; then
+    bot_choice=""
+    # Спрашиваем только при первой установке и только человека в терминале: повторный запуск и ./panel update молчат.
+    if [ "$env_created" -eq 1 ] && bot_terminal; then
+        bot_ask_choice
+    fi
+fi
+case $bot_choice in
+    local) bot_enable || true ;;
+    remote)
+        # Отпечаток нужен боту на втором сервере для самоподписанной панели; у Let's Encrypt цепочка и так доверенная.
+        bot_fp=""
+        if [ "$cert_mode" != letsencrypt ]; then
+            bot_fp=$(openssl x509 -in "$CERT_FILE" -noout -fingerprint -sha256 | cut -d= -f2)
+        fi
+        bot_remote "$url" "$bot_fp" || true
+        ;;
+esac
+
+# --- итог ----------------------------------------------------------------------------------------------------------
+
 say ""
 say "$(t started "$url")"
 if [ "$cert_mode" = generate ]; then
