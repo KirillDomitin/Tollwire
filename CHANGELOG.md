@@ -23,8 +23,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   `GET /api/v1/bot-admin/registrations` and can be retried (`POST .../retry`). The audit log has a new "Bot"
   group; its entries contain no codes, keys, emails or Telegram ids.
 - Telegram bot. A person opens it by an invitation link, gives a name and an email and confirms; the panel registers
-  them and the bot says the access is ready (the administrator sends the config, there is no config link yet). `/status`
-  shows the access period and the protocol, `/help` lists the commands. The bot works in private chats only.
+  them and the bot says the access is ready and sends a link to the config page. `/status` shows the access period and
+  the protocol, `/config` gives a new link, `/help` lists the commands. The bot works in private chats only.
+- Config page. The bot's link (`…/c#…`) opens without signing in and shows the name, the end of access, the `vpn://` key
+  with a copy button, a QR series for another device, the `.conf` file and install steps. The link works while the access
+  does; `/config` gives a new link, and the old one stops working. Opening the page is not written to the audit log;
+  issuing a link is (`config_link_created`, group "Bot").
+- Settings `PUBLIC_URL` (the panel's public address in the links; if empty, `PANEL_DOMAIN` and `HTTPS_PORT` are used, and
+  with neither no links are issued) and `PUBLIC_CONFIG_IP_*` (limits for the page).
 - Installing the bot: `./install.sh --bot local|remote|none` (or the question in a terminal on the first run), `./panel bot`
   (`enable`, `disable`, `key`, `revoke`, `status`, `invite`), and `bot/install-bot.sh` for a bot on another server. The
   token is entered hidden; the settings are kept in owner-only files. A key for another server is shown once.
@@ -138,6 +144,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - Password-change attempts and events (`password_changed`, `password_change_failed`) appear in the audit log.
 - The panel needs Docker Compose 2.24 or newer. `install.sh` and `./panel` stop with a message on an older version.
+
+### Security
+
+- The config page is not indexed (`X-Robots-Tag`) and not cached. Only a hash of the link token is stored; the token is
+  masked in the panel and bot logs and never reaches the audit log. Failed attempts to open a link are limited per IP
+  address.
 
 ## [0.2.0] - 2026-10-10
 

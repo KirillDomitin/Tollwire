@@ -4,22 +4,22 @@
 
 | Файл | Что внутри |
 |---|---|
-| `config.py` | `Settings` (pydantic-settings) из ENV/`.env`; единственный экземпляр `settings`. |
+| `config.py` | `Settings` (pydantic-settings) из ENV/`.env`; единственный экземпляр `settings`, создаётся при импорте (поэтому неверный `PUBLIC_URL` не даёт запуститься). Адрес панели для ссылок: `public_url`, `panel_domain`, `https_port` → `public_base_url` (или None). |
 | `database/base.py` | `Base` (DeclarativeBase), миксины `UuidPkMixin`, `TimestampMixin` (tz-aware). |
 | `database/postgres.py` | `AsyncEngine`, `async_sessionmaker`, `get_session` (Depends). |
 | `redis.py` | `get_redis()` — один клиент `redis.asyncio` на процесс, `decode_responses=True`. |
 | `security.py` | Argon2id (`hash_password`/`verify_password`, `DUMMY_PASSWORD_HASH` против тайминг-атаки), JWT access (`create/decode_access_token`), `generate_token(nbytes)` / `hash_token` (refresh, ключ бота, код приглашения; `generate_refresh_token` и `hash_refresh_token` — алиасы), Fernet (`encrypt_secret`/`decrypt_secret`). |
-| `exceptions.py` | Доменные ошибки, база `AppError` (поле `job_result` для подробностей в Job.result). Коды HTTP для них — в `main.py` (`_STATUS_BY_ERROR`). |
+| `exceptions.py` | Доменные ошибки, база `AppError` (поле `job_result` для подробностей в Job.result). Коды HTTP для них — в `main.py` (`_STATUS_BY_ERROR`). `ReasonConflictError` — 409 с `reason` в теле; `RegistrationConflictError` — её потомок. |
 | `ssh_exception.py` | Ошибки выполнения на сервере: `SSHServerError` → `InstallError`, `CommandExecutionError`, `InvalidServerConfigurationError`, `DockerError`. |
 | `schemas.py` | `PatchModel` — база PATCH-схем: явный `null` в поле без `NULLABLE` → 422. |
-| `log.py` | Логи: `JsonFormatter`/`TextFormatter`, `bind(**поля)` на contextvars (request_id, job_id, server_id), `redact()` — страховка от секретов: ключ бота (`twb_…`), заголовок `X-Bot-Key`, поле `code`. |
+| `log.py` | Логи: `JsonFormatter`/`TextFormatter`, `bind(**поля)` на contextvars (request_id, job_id, server_id), `redact()` — страховка от секретов: ключ бота (`twb_…`), заголовок `X-Bot-Key`, поле `code`, поле `token` (страница конфига, от 8 символов). |
 | `middleware.py` | Чистый ASGI `RequestContextMiddleware`: `X-Request-ID` (берёт из nginx, если `[A-Za-z0-9-]{8,64}`). |
 | `rate_limit.py` | `Limit`, `RateLimiter` на Redis (fail-open при сбое Redis), `RateLimitExceeded` → 429 + `Retry-After`. |
 | `utils.py` | Сроки жизни токенов. |
 
 ## Ошибки → HTTP (main.py)
 
-`NotFoundError` 404 · `BotAuthError` 401 · `RegistrationConflictError` 409 (`reason` в теле) · `InvalidDataError` 422 · `AlreadyExistsError`, `CredentialNotFound`, `LiveCredentialExistsError`,
+`NotFoundError` 404 · `BotAuthError` 401 · `ReasonConflictError` 409 (`reason` в теле; `RegistrationConflictError` — тот же код) · `InvalidDataError` 422 · `AlreadyExistsError`, `CredentialNotFound`, `LiveCredentialExistsError`,
 `InactiveAccessError`, `AdminRuleError`, `SSHHostKeyNotPinnedError`, `JobAlreadyRunningError`, `CredentialChangedError`
 → 409 · `IntegrityError` (сработал уникальный индекс) → 409 без текста БД · `RequestValidationError` → 422 без
 чувствительных данных (без поля `input`). Новый класс ошибки, который должен дойти до клиента осмысленным кодом,
@@ -30,8 +30,11 @@
 - Обязательные без дефолта: `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET_KEY` (валидатор: ≥32 символа, не `change_me`),
   `ENCRYPTION_KEY` (Fernet), `JWT_ACCESS_EXPIRE`, `JWT_REFRESH_EXPIRE`, `SSH_CONNECT_TIMEOUT`, `SSH_COMMAND_TIMEOUT`.
 - `COOKIE_SECURE` (по умолчанию true; локально и в тестах false), `DOCS_ENABLED` (в проде false), `LOG_FORMAT`.
-- Группы: лимиты входа (`LOGIN_*`, `REFRESH_*`), лимиты бота (`BOT_*`), планировщик (`SCHEDULER_*`, `*_INTERVAL_SECONDS`), хранение
+- Группы: лимиты входа (`LOGIN_*`, `REFRESH_*`), лимиты бота (`BOT_*`), страница конфига (`PUBLIC_CONFIG_*`, адрес панели
+  `PUBLIC_URL`/`PANEL_DOMAIN`/`HTTPS_PORT`), планировщик (`SCHEDULER_*`, `*_INTERVAL_SECONDS`), хранение
   (`JOB_/AUDIT_RETENTION_DAYS`), мониторинг (`METRICS_*`).
+- `PUBLIC_URL` проверяет валидатор: `https://` (http только для `localhost`/`127.0.0.1`), без пути, query, фрагмента и
+  логина; слэш в конце убирается. Пусто — адрес берётся из `PANEL_DOMAIN` и `HTTPS_PORT`.
 - Новую настройку дописывать в `.env.example` и `.env.prod.example` с комментарием.
 
 ## Правила

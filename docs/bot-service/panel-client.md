@@ -23,16 +23,19 @@
 |---|---|---|
 | `heartbeat(bot_username, version)` | `POST /heartbeat` | ответ отбрасывается |
 | `check_invite(code)` | `POST /invites/check` | строка `status` |
-| `register(code, telegram_id, telegram_username, name, email)` | `POST /registrations` | `Registration(registration_id, status, config_url)` |
+| `register(code, telegram_id, telegram_username, name, email)` | `POST /registrations` | `Registration(registration_id, status)` |
 | `registration(registration_id)` | `GET /registrations/{id}` | `Registration` или `None` (404) |
-| `user_by_telegram(telegram_id)` | `GET /users/by-telegram/{id}` | `UserStatus(name, valid_until, protocol, config_url)` или `None` (404) |
+| `user_by_telegram(telegram_id)` | `GET /users/by-telegram/{id}` | `UserStatus(name, valid_until, protocol)` или `None` (404) |
+| `config_link(telegram_id)` | `POST /users/by-telegram/{id}/config-link` | `ConfigLink(config_url, valid_until)` или `None` (404) |
 
-Ответ, который не объект, не JSON, или без обязательного поля (`status`, `registration_id`, `name`), — `PanelUnexpected`.
+Ответ, который не объект, не JSON, или без обязательного поля (`status`, `registration_id`, `name`; у `config_link` —
+непустой `config_url`), — `PanelUnexpected`. `ConfigLink` в `repr` адрес не показывает: в нём токен.
 
 ## Повторы
 
 - Сбой сети (`httpx.TransportError`), 502, 503, 504 — пауза 0.5, 1, 2, 4 с и повтор. После последней паузы —
-  `PanelUnavailable`. Повтор безопасен для всех методов: `POST /registrations` идемпотентен на стороне панели.
+  `PanelUnavailable`. Повтор безопасен для `POST /registrations`: он идемпотентен на стороне панели. `config-link` при повторе выпускает новую
+  ссылку и гасит прежнюю; токен, который не дошёл до бота, мёртв и никуда не утёк.
 - 429: `Retry-After` в секундах. Если заголовка нет, он больше 10 с или это уже второй 429 в запросе — `RateLimited`
   (бот говорит «подождите минуту»). Иначе ждём и повторяем один раз.
 - Паузы — через `sleep`, подменяемый в тестах.
@@ -43,8 +46,8 @@
 |---|---|---|
 | 2xx | ответ | — |
 | 401 | `PanelAuthError` | без повтора; ERROR в лог один раз, пока панель не ответит иначе |
-| 404 | `None` (только у `registration` и `user_by_telegram`), иначе `PanelUnexpected` | |
-| 409 | `Conflict(reason)` | `reason` из списка `CONFLICT_REASONS`, незнакомый → `conflict` |
+| 404 | `None` (у `registration`, `user_by_telegram` и `config_link`), иначе `PanelUnexpected` | |
+| 409 | `Conflict(reason)` | `reason` из списка `CONFLICT_REASONS` (в нём и `config_unavailable`, `not_ready`, `no_access`, `not_configured`), незнакомый → `conflict` |
 | 422 | `Rejected(field)` | `field` — последний элемент `loc` из `detail[0]`; `detail` целиком не читается и не логируется |
 | 429 | `RateLimited` или повтор | см. выше |
 | 502, 503, 504 | повторы, затем `PanelUnavailable` | |

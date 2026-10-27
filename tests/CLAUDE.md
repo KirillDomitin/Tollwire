@@ -7,7 +7,7 @@
 
 - Переменные окружения задаются **до** импорта приложения: БД `vpn_panel_test` (пересоздаётся +
   `alembic upgrade head` на прогон), Redis db 15, свои `JWT_SECRET_KEY`/`ENCRYPTION_KEY`, `SCHEDULER_ENABLED=false`,
-  `COOKIE_SECURE=false`. Предохранители: имя БД с `_test`, Redis не db 0 — рабочие данные не трогаются.
+  `COOKIE_SECURE=false`, `PUBLIC_URL=https://panel.example.test` (адрес ссылок на страницу конфига). Предохранители: имя БД с `_test`, Redis не db 0 — рабочие данные не трогаются.
 - После каждого теста — TRUNCATE таблиц + FLUSHDB.
 - pytest-asyncio: `loop_scope="session"` и для тестов, и для фикстур (иначе ломается пул asyncpg).
 - Общие фикстуры — `tests/fixtures.py` (подключены через `pytest_plugins`).
@@ -53,6 +53,10 @@
 панели), `integration/test_bot_client_contract.py` (настоящий `PanelClient` против настоящего API: каждый метод,
 каждый `reason` 409, 401, 429), `integration/test_bot_key_cli.py`, `integration/test_bot_invite_cli.py`.
 
+Страница конфига: `unit/test_config_link_settings.py` (токен, адрес панели из `PUBLIC_URL`/`PANEL_DOMAIN`/`HTTPS_PORT`,
+маскировка `token`), `services/test_config_links.py` (выпуск, открытие, отказы), `integration/test_public_config.py`
+(HTTP, заголовки, одинаковый 404, лимиты по IP). Миграция `b4f1c8e27a69` — в `services/test_migrations.py`.
+
 ## Фейковый SSH (`fakes/fake_ssh.py`)
 
 - `FakeServer` отвечает ровно на команды провайдера (контейнер, `awg0.conf`, `awg show`, замер метрик через
@@ -74,5 +78,6 @@
 - Гонки проверять детерминированно (окно через monkeypatch), а не через `asyncio.gather` по ASGI.
 - Админ для интеграции — фикстура `admin` (superadmin), `make_admin`/`login_client` для других ролей.
 - `test_rbac.py`: `/api/v1/bot/*` вне общей матрицы — проверяется метка `bot_key_required` на каждом маршруте и
-  отсутствие прав админа; `/api/v1/bot-admin/*` — в матрице.
+  отсутствие прав админа; `/api/v1/bot-admin/*` — в матрице. `/api/v1/public/*` — отдельный список: ровно
+  `POST /api/v1/public/config`, без прав и без ключа бота.
 - Известный плавающий тест: `test_login_limited_by_ip` (окно лимита 60 с, Argon2 под нагрузкой).

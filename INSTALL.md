@@ -287,7 +287,7 @@ It asks for the email and offers a password: a **random** one (the default — s
 
 ### Telegram bot (optional)
 
-People get access by an invitation link: they open the bot through the link, give their name and email, and confirm. The panel registers them, and the bot tells them that the access is ready; the administrator sends the config (the bot does not send a config link yet). The bot is a separate container. It talks to the panel only through the Bot API with its own key and never gets the panel's secrets.
+People get access by an invitation link: they open the bot through the link, give their name and email, and confirm. The panel registers them, and the bot tells them that the access is ready and sends a link to a personal page with the config. The link works while the access lasts; `/config` in the bot gives a new link, and the old one stops working. The link needs the panel's public address (see *Settings* below): without it the bot sends no links. The bot is a separate container. It talks to the panel only through the Bot API with its own key and never gets the panel's secrets.
 
 **1. Create the bot.** Write to [@BotFather](https://t.me/BotFather), send `/newbot` and keep the token (`123456789:AAF…`). The token is never written to `.env.prod`.
 
@@ -392,12 +392,17 @@ The data (volumes `pg_data`, `redis_data`) stays. **`down -v` deletes the volume
 
 | Variable | Default | What it does |
 |---|---|---|
-| `HTTP_PORT`, `HTTPS_PORT` | 80, 443 | nginx ports on the host |
+| `HTTP_PORT`, `HTTPS_PORT` | 80, 443 | nginx ports on the host; `HTTPS_PORT` also goes into the links to the config page (see below) |
+| `PUBLIC_URL` | empty | public address of the panel in the links to the config page: `https://domain[:port]`, no path. Set it when the panel sits behind your own reverse proxy. A wrong value stops the API from starting |
+| `PANEL_DOMAIN` | the domain given to the installer | the address for the links when `PUBLIC_URL` is empty. The template's `localhost` counts as set: the links will point to `https://localhost/…` |
+| `PUBLIC_CONFIG_IP_*` | see the template | limits for failed attempts to open a config page, and for requests to it, per IP address |
 | `EDGE_SUBNET` | 172.30.240.0/24 | subnet of the external docker network — change it if it overlaps the host's networks |
 | `LOG_LEVEL` | info | `debug` — more detail |
 | `SCHEDULER_ENABLED` and `*_INTERVAL_SECONDS` | see the template | scheduler: checks, sync, access expiry, cleanup (0 turns a rule off) |
 | `JOB_RETENTION_DAYS`, `AUDIT_RETENTION_DAYS` | 90, 365 | how long to keep jobs and the audit log (0 — forever) |
 | `LOGIN_*`, `REFRESH_*` | see the template | login attempt limits |
+
+Without `PUBLIC_URL` and `PANEL_DOMAIN` the bot issues no config links: the API answers 409 `not_configured` and writes a warning to the log. The API reads `HTTPS_PORT` from `.env.prod`, but the installer does not write it there: for a non-standard port add `HTTPS_PORT=…` to `.env.prod` yourself, otherwise the links point to port 443.
 
 ---
 

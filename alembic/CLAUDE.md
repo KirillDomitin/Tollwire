@@ -82,6 +82,15 @@
 - Downgrade удаляет индекс, три таблицы и две колонки с UNIQUE. **Связка пользователей с Telegram и все данные
   бота (ключи, приглашения, регистрации) теряются**; пользователи, подписки и гранты остаются.
 
+## Страница конфига (`b4f1c8e27a69`)
+
+- Таблица `config_links`: `token_hash` VARCHAR(64) (UNIQUE `uq_config_links_token_hash`), `credential_id` (FK
+  `vpn_credentials`, CASCADE), `created_at`, `revoked_at`, `last_opened_at`.
+- Частичный уникальный индекс `uq_config_links_live_per_credential` по `credential_id` при `revoked_at IS NULL` —
+  одна живая ссылка на клиента.
+- Downgrade удаляет индекс и таблицу. **Все ссылки теряются**: людям нужно снова написать боту `/config`. Клиенты и
+  доступы не трогаются.
+
 ## Частичные уникальные индексы
 
 Бизнес-правила «одна живая запись» держит БД (`postgresql_where=...`): одна незавершённая подписка на

@@ -90,7 +90,7 @@ server). Фрагмент в логи не попадает, маска пути
 
 ## Шаги
 
-- [ ] 1. `core`: `config.py` (`public_url`, адрес из `panel_domain`/`https_port`, валидатор, лимиты `PUBLIC_CONFIG_*`;
+- [x] 1. `core`: `config.py` (`public_url`, адрес из `panel_domain`/`https_port`, валидатор, лимиты `PUBLIC_CONFIG_*`;
   `.env.example`, `.env.prod.example`, комментарий про `PANEL_DOMAIN`), `exceptions.py` (`ReasonConflictError`,
   `RegistrationConflictError` — потомок; `PublicUrlNotConfiguredError`), `main.py` (`reason` для базового класса),
   `log.py` (шаблон `token`).
@@ -104,7 +104,7 @@ server). Фрагмент в логи не попадает, маска пути
 - [x] 7. Фронтенд: `export_openapi` → `gen:api`; `AuthProvider` на маршруты; `api/public.ts`; `components/QrSeries.tsx`;
   `pages/public/PublicConfigPage`; словари; `AUDIT_ACTIONS`.
 - [x] 8. Бот: `panel.py`, `watcher.py`, `commands.py`, `texts.py`, `__main__.py`, `log.py`.
-- [ ] 9. Документация: `modules/bot/CLAUDE.md`, `docs/bot/api.md`, `docs/bot/config-page.md`, `docs/bot/tests.md`,
+- [x] 9. Документация: `modules/bot/CLAUDE.md`, `docs/bot/api.md`, `docs/bot/config-page.md`, `docs/bot/tests.md`,
   `access/CLAUDE.md`, `core/CLAUDE.md`, `alembic/CLAUDE.md`, `frontend/CLAUDE.md`, `docs/frontend/structure.md`,
   `bot/CLAUDE.md`, `docs/bot-service/*`, `tests/CLAUDE.md`, INSTALL (`PUBLIC_URL`), CHANGELOG. Issues `tech-debt`:
   `DISABLED` не гасит доступ; чистка отозванных ссылок.
@@ -141,3 +141,27 @@ server). Фрагмент в логи не попадает, маска пути
 - Живой прогон выдаёт клиента на реальном сервере — только с согласия пользователя (dev- и prod-панель на одном сервере).
 - Рассылка в следующем этапе: ссылку для рассылки выпускать в момент выдачи сообщения боту, а не при постановке в
   очередь (иначе токен лежал бы в БД открытым текстом).
+
+## Итог
+
+Отличия от плана:
+
+- Бот: отказы `/config` и слежения вынесены в `refusals.py` (`CONFIG_REFUSAL_TEXT`: причина 409 → ключ текста).
+- `ConfigLinkService.url_of(link, token)` собирает ответ бота (адрес и срок). В плане были только `issue_for_telegram` и `open`.
+- `QrSeries` общий и с паузой: кнопка «Пауза / Продолжить» (`aria-pressed`) теперь есть и в карточке пользователя
+  (`ConfigDialog`), где её раньше не было. При «уменьшить движение» кнопки нет.
+- `WithAuth` (`App.tsx`) ставит ключ на `Outlet`, а не на роутер: смена языка перемонтирует экран, `AuthProvider` остаётся.
+  `LocalizedRouter` в `main.tsx` убран.
+- Исправления тестов: `confdeltype::text` в проверке CASCADE (`test_migrations.py`); в тесте паузы QR
+  `vi.stubGlobal("jest", …)` — Testing Library продвигает фальшивые часы через `jest`.
+
+Отложено (замечания ревью, оформляются как issues `tech-debt`):
+
+- `aria-live` объявляет номер кода серии каждую секунду.
+- `PANEL_DOMAIN=localhost` считается заданным адресом: ссылки ведут на `https://localhost/…`.
+- Грант не перепроверяется после блокировки.
+- Лимит неудач по IPv6 — по полному адресу, не по `/64`.
+- Открытия страницы не пишутся в аудит.
+- Токен остаётся в адресной строке.
+- `DISABLED` не гасит доступ.
+- Чистка отозванных ссылок не сделана: строки `config_links` остаются.

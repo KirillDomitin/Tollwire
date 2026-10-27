@@ -49,11 +49,14 @@
   `GatewayAssignmentService.attach` (назначение выхода), `deprovision` после commit отзыва - `detach`; логика и ограничения -
   `modules/gateway/CLAUDE.md`. Нет исправных выходов - выдача проходит, клиент без выхода.
 - `deprovision` / `schedule_revoke` → `REVOKE_ACCESS`; повторный отзыв уже отозванного → 200 с credential.
-- `reveal_config` — единственное место расшифровки: `config` (.conf), `share_link` (`vpn://`), `share_qr`
-  (серия QR); имя сервера из панели → `description`. Ответ `Cache-Control: no-store`, аудит `config_viewed`,
-  право `config:reveal` (у viewer нет).
+- `render_config(credential, grant)` → `RenderedConfig` (`config` — .conf, `share_link` — `vpn://`, `share_qr` — серия QR;
+  имя сервера из панели → `description`) — единственное место расшифровки. Не проверяет доступ и не пишет аудит: это
+  дело вызывающего.
+- `reveal_config` — показ админу: аудит `config_viewed` фиксируется до расшифровки, затем `render_config`. Ответ
+  `Cache-Control: no-store`, право `config:reveal` (у viewer нет). Страница конфига по ссылке из бота тоже вызывает
+  `render_config`, но только после своей проверки ссылки и без аудита (`modules/bot/CLAUDE.md`).
 - У импортированного (`encrypted_config` NULL) `reveal_config` → `ConfigUnavailableError` (409) до записи
-  в аудит.
+  в аудит; `render_config` для такого клиента тоже отказывает.
 
 ## Импорт клиентов AmneziaVPN (`import_service.py`)
 
@@ -84,3 +87,5 @@ revoke_failed`, `config_viewed`, `credential_imported`, `clients_import_started/
 
 `credential_imported` — `access_grant_id`, `server_id`, `user_id`, `public_key`. Имя клиента и email в аудит
 не пишутся; `vpn_user_created` при импорте — `{source: import}`.
+
+Открытие страницы конфига по ссылке из бота аудит не пишет (`modules/bot/CLAUDE.md`).

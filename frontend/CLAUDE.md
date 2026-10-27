@@ -18,13 +18,15 @@ npm run typecheck && npm run lint && npm test && npm run build
 | `src/api/client.ts` | `api` (openapi-fetch), `unwrap()`, `Schemas`. `ApiError.detail` — английский текст для выбора сообщения, **показывать нельзя**. |
 | `src/api/schema.d.ts` | Генерируется (`export_openapi` → `npm run gen:api`), руками не править; CI сверяет. |
 | `src/api/session.ts` | Access-токен **только в памяти**; 401 → один общий refresh → повтор. |
-| `src/auth/` | `AuthContext` (`can(permission)`, `changePassword`), `RequireAuth` (с `must_change_password` — экран смены пароля). |
-| `src/App.tsx` | Маршруты `/login`, `/servers`, `/servers/:serverId`, `/users`, `/users/:userId`, `/audit`; разделы — ленивые чанки. |
+| `src/api/public.ts` | `fetchPublicConfig(token)` — страница `/c`: POST с токеном в теле, `credentials: "omit"`, без `authFetch` и refresh. Исходы — `PublicConfigError`: `invalid` (404 и 422), `tooMany` (429), `network`, `failed`. |
+| `src/auth/` | `AuthContext` (`can(permission)`, `changePassword`), `RequireAuth` (с `must_change_password` — экран смены пароля). `AuthProvider` поднимается в `App.tsx` (`WithAuth`) на `/login` и панели, не в корне: страница `/c` его не трогает. |
+| `src/App.tsx` | Маршруты: `/c` (страница конфига, вне `WithAuth`), `/login` и разделы `/servers`, `/servers/:serverId`, `/users`, `/users/:userId`, `/audit` внутри `WithAuth`; разделы — ленивые чанки. |
+| `src/pages/public/` | Страница конфига `/c` (`PublicConfigPage`): токен из `location.hash`; состояния — загрузка, ошибка, данные, «убрана с экрана» (`pagehide`, конфиг стирается). Стили — `PublicConfigPage.module.css`. |
 | `src/pages/server/` | Карточка сервера: чек-лист, обслуживание, мониторинг, журнал задач, найденная AmneziaVPN и перенос клиентов (`ImportClientsDialog`, `discovery.ts`). «Свой» протокол — только `amnezia_wg`; шлюз — отдельный протокол, в `protocol` не попадает. |
 | `src/pages/server/gateway/` | Раздел «Шлюз»: `ExitsPanel`, `AssignmentsPanel`, `RuPanel`, диалоги; данные `keys.gateway*`/`geoipKeys` (`useServer.ts`); фразы бэкенда переводит `geoipErrorText`. |
-| `src/pages/user/` | Карточка пользователя: подписка, доступы (`GrantRow`, `GrantAccessDialog`), конфиг. `email` может быть `null`; у `source: "imported"` конфига нет. |
+| `src/pages/user/` | Карточка пользователя: подписка, доступы (`GrantRow`, `GrantAccessDialog`), конфиг (QR — `components/QrSeries`). `email` может быть `null`; у `source: "imported"` конфига нет. |
 | `src/pages/AuditPage.tsx` | Журнал `/audit`: фильтры в URL, `useInfiniteQuery` по 100, курсор `before_created_at`/`before_id`. |
-| `src/components/` | Button, Dialog, ConfirmDialog (`NeedsConfirmation` → повтор с `again = true`), TextField, Notice, AppShell, TimeChart (uPlot) и др. |
+| `src/components/` | Button, Dialog, ConfirmDialog (`NeedsConfirmation` → повтор с `again = true`), TextField, Notice, AppShell, TimeChart (uPlot), QrSeries/QrCode (общие для карточки пользователя и `/c`) и др. |
 | `src/lib/` | `audit.ts` (`AUDIT_ACTIONS`, группы — в т.ч. `bot` (Telegram-бот), белый список подробностей), `access.ts`, `jobs.ts`, `time.ts`, `units.ts`, `theme.ts`. |
 | `src/styles/tokens.css` | Дизайн-токены (светлая и тёмная тема). |
 
@@ -47,6 +49,8 @@ npm run typecheck && npm run lint && npm test && npm run build
   В подробности выводятся только ключи из белого списка `DETAIL_LABELS` и `changes`.
 - Опрос задач: каждые 2 с, пока есть pending/running; по завершении — invalidate связанных запросов.
 - Конфиг: `useMutation` с `gcTime: 0`, сброс при закрытии диалога; QR и конфиги не скриншотить (в них ключ).
+- Страница `/c`: токен читается из `location.hash` и уходит только в теле POST; страница не вызывает `/auth/refresh`,
+  запросы идут с `cache: "no-store"`, конфиг стирается на `pagehide`. Адрес не меняется: токен остаётся в адресной строке.
 - uPlot рисует на canvas: цвета читать из CSS-переменных через `getComputedStyle`, перерисовка при смене темы;
   пропсы-массивы — константы или `useMemo` (иначе график пересоздаётся на каждой отрисовке).
 - В отрисовке не вызывать `Date.now()` (правило чистоты React) — брать `dataUpdatedAt` из запроса.
