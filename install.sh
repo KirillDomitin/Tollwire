@@ -374,6 +374,8 @@ docker info > /dev/null 2>&1 \
     || die "$(t docker_unreachable)"
 docker compose version > /dev/null 2>&1 \
     || die "$(t no_compose)"
+# compose-файл панели использует env_file с required (Compose 2.24+): на старом падает любая команда compose.
+if bot_compose_old; then die "$(t bot_old_compose "$bot_compose_version")"; fi
 command -v openssl > /dev/null 2>&1 || die "$(t no_openssl)"
 [ -f "$TEMPLATE" ] || die "$(t no_template "$TEMPLATE")"
 [ -f "$COMPOSE_FILE" ] || die "$(t no_compose_file "$COMPOSE_FILE")"
@@ -742,7 +744,7 @@ case $bot_choice in
         # Отпечаток нужен боту на втором сервере для самоподписанной панели; у Let's Encrypt цепочка и так доверенная.
         bot_fp=""
         if [ "$cert_mode" != letsencrypt ]; then
-            bot_fp=$(openssl x509 -in "$CERT_FILE" -noout -fingerprint -sha256 | cut -d= -f2)
+            bot_fp=$(openssl x509 -in "$CERT_FILE" -noout -fingerprint -sha256 | cut -d= -f2 || true)
         fi
         bot_remote "$url" "$bot_fp" || true
         ;;

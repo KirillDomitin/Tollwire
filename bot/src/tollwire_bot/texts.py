@@ -59,7 +59,10 @@ def format_date(value: str | None) -> str:
     """Срок доступа из ответа панели (ISO 8601, UTC) как ДД.ММ.ГГГГ; нет срока - прочерк."""
     if not value:
         return "-"
-    moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    try:
+        moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return "-"
     if moment.tzinfo is not None:
         moment = moment.astimezone(timezone.utc)
     return moment.strftime("%d.%m.%Y")

@@ -91,6 +91,9 @@ def _ssl_context(ca_file: str | None) -> ssl.SSLContext:
     context = ssl.create_default_context(cafile=certifi.where())
     if ca_file:  # свой сертификат панели - в дополнение к штатному хранилищу: Let's Encrypt продолжит работать
         context.load_verify_locations(ca_file)
+        # Сертификат закреплён по отпечатку (install-bot.sh), поэтому придирки Python 3.13+ к профилю X.509 (нет SKI/AKI
+        # у самоподписанного и т.п.) только отрезали бы бота от своей же панели.
+        context.verify_flags &= ~ssl.VERIFY_X509_STRICT
     return context
 
 
@@ -125,7 +128,10 @@ class PanelClient:
 
     async def check_invite(self, code: str) -> str:
         response = await self._request("POST", "/invites/check", {"code": code})
-        return str(response.json()["status"])
+        status = _json(response).get("status")
+        if not isinstance(status, str):
+            raise PanelUnexpected("no status in the answer")
+        return status
 
     async def register(
         self, *, code: str, telegram_id: int, telegram_username: str | None, name: str, email: str
@@ -147,7 +153,9 @@ class PanelClient:
         response = await self._request("GET", f"/users/by-telegram/{telegram_id}", allow_missing=True)
         if response.status_code == 404:
             return None
-        data = response.json()
+        data = _json(response)
+        if not isinstance(data.get("name"), str):
+            raise PanelUnexpected("no name in the answer")
         return UserStatus(
             name=data["name"],
             valid_until=data.get("valid_until"),
@@ -201,10 +209,23 @@ class PanelClient:
             raise PanelUnexpected(f"HTTP {status}")
 
 
+def _json(response: httpx.Response) -> dict[str, Any]:
+    """Тело ответа как объект. Прокси или сбой панели могут вернуть 2xx с чем угодно: это PanelUnexpected, а не крах."""
+    try:
+        data = response.json()
+    except ValueError:
+        raise PanelUnexpected("the answer is not JSON") from None
+    if not isinstance(data, dict):
+        raise PanelUnexpected("unexpected answer")
+    return data
+
+
 def _registration(response: httpx.Response) -> Registration:
-    data = response.json()
+    data = _json(response)
+    if not isinstance(data.get("registration_id"), str) or not isinstance(data.get("status"), str):
+        raise PanelUnexpected("unexpected registration answer")
     return Registration(
-        registration_id=str(data["registration_id"]), status=str(data["status"]), config_url=data.get("config_url")
+        registration_id=data["registration_id"], status=data["status"], config_url=data.get("config_url")
     )
 
 

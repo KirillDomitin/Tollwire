@@ -10,6 +10,7 @@ from pathlib import Path
 from aiogram import Bot
 from aiogram.exceptions import TelegramUnauthorizedError
 from aiogram.types import BotCommand
+from pydantic import ValidationError
 
 from tollwire_bot import __version__
 from tollwire_bot.app import build_dispatcher
@@ -34,6 +35,15 @@ async def keep_alive_file(heartbeat: Heartbeat) -> None:
         await asyncio.sleep(10)
 
 
+PURGE_INTERVAL = 3600  # раз в час просроченные записи уходят с диска, даже если в бота никто не пишет
+
+
+async def purge_loop(storage: SqliteStorage) -> None:
+    while True:
+        await asyncio.sleep(PURGE_INTERVAL)
+        await storage.purge()
+
+
 async def run(settings: Settings) -> int:
     panel = PanelClient(settings.panel_url, settings.bot_api_key.get_secret_value(), ca_file=settings.panel_ca_file)
     storage = SqliteStorage(settings.state_file)
@@ -53,7 +63,11 @@ async def run(settings: Settings) -> int:
                 BotCommand(command="help", description=t("cmd_help")),
             ]
         )
-        background = [asyncio.create_task(heartbeat.run()), asyncio.create_task(keep_alive_file(heartbeat))]
+        background = [
+            asyncio.create_task(heartbeat.run()),
+            asyncio.create_task(keep_alive_file(heartbeat)),
+            asyncio.create_task(purge_loop(storage)),
+        ]
         logger.info("the bot %s started", __version__)
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())  # SIGTERM/SIGINT останавливают
         return 0
@@ -69,9 +83,20 @@ async def run(settings: Settings) -> int:
 
 
 def main() -> None:
-    settings = Settings()  # type: ignore[call-arg]  # поля читаются из окружения
+    try:
+        settings = Settings()  # type: ignore[call-arg]  # поля читаются из окружения
+    except ValidationError as error:
+        # Только имена полей: в сообщении pydantic бывают введённые значения (токен, ключ).
+        names = ", ".join(sorted({str(item["loc"][0]).upper() for item in error.errors() if item["loc"]}))
+        sys.exit(f"invalid or missing settings: {names}")
     configure_logging(settings)
-    sys.exit(asyncio.run(run(settings)))
+    try:
+        code = asyncio.run(run(settings))
+    except Exception:
+        # Через логгер, а не через sys.excepthook: так трассировка проходит маскировку секретов.
+        logger.exception("the bot stopped with an error")
+        code = 1
+    sys.exit(code)
 
 
 if __name__ == "__main__":

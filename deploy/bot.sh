@@ -23,7 +23,7 @@ lib_msg_ru() {
         bot_menu_none) printf '%s' "  3) не нужен (по умолчанию; добавить позже: ./panel bot enable)" ;;
         bot_menu_choice) printf '%s' "Выбор [3]: " ;;
         bot_menu_again) printf '%s' "Введите 1, 2 или 3." ;;
-        bot_old_compose) printf '%s' "для бота нужен Docker Compose 2.24 или новее (сейчас %s)." ;;
+        bot_old_compose) printf '%s' "нужен Docker Compose 2.24 или новее (сейчас %s): в compose-файле панели используется env_file с required. Обновите docker-compose-plugin." ;;
         bot_no_token) printf '%s' "нужен токен бота от @BotFather: задайте переменную TELEGRAM_BOT_TOKEN или запустите в терминале." ;;
         bot_bad_token) printf '%s' "это не похоже на токен бота (ожидается вид 123456789:AAF… от @BotFather)." ;;
         bot_token_prompt) printf '%s' "Токен бота от @BotFather (ввод скрыт): " ;;
@@ -68,7 +68,7 @@ lib_msg_en() {
         bot_menu_none) printf '%s' "  3) not needed (default; add it later: ./panel bot enable)" ;;
         bot_menu_choice) printf '%s' "Choice [3]: " ;;
         bot_menu_again) printf '%s' "Enter 1, 2 or 3." ;;
-        bot_old_compose) printf '%s' "the bot needs Docker Compose 2.24 or newer (this one is %s)." ;;
+        bot_old_compose) printf '%s' "Docker Compose 2.24 or newer is needed (this one is %s): the panel compose file uses env_file with required. Update docker-compose-plugin." ;;
         bot_no_token) printf '%s' "the bot token from @BotFather is needed: set the TELEGRAM_BOT_TOKEN variable or run in a terminal." ;;
         bot_bad_token) printf '%s' "this does not look like a bot token (expected 123456789:AAF... from @BotFather)." ;;
         bot_token_prompt) printf '%s' "Bot token from @BotFather (input hidden): " ;;
@@ -140,6 +140,13 @@ bot_compose_ok() {
     [ "$major" -gt 2 ] || { [ "$major" -eq 2 ] && [ "$minor" -ge 24 ]; }
 }
 
+# Compose ЗАВЕДОМО старше 2.24 (версия прочитана и меньше): compose-файл панели содержит `env_file: {required: false}`,
+# и на старом Compose падает любая команда, а не только про бота. Нечитаемую версию (сборка dev) не считаем старой.
+bot_compose_old() {
+    bot_compose_ok && return 1
+    [[ $bot_compose_version =~ ^[0-9]+\.[0-9]+ ]]
+}
+
 # Сколько ждать бота: INSTALL_WAIT_SECONDS (как и для панели), но не дольше двух минут — бот поднимается быстро.
 bot_wait_seconds() {
     local seconds=${INSTALL_WAIT_SECONDS:-120}
@@ -165,7 +172,8 @@ bot_read_secret() {
 # Проверка токена: getMe. Печатает имя бота. Неверный токен и недоступная сеть — одинаково «нет».
 bot_get_me() {
     local answer
-    answer=$(printf 'url = "https://api.telegram.org/bot%s/getMe"\n' "$1" | curl -fsS --max-time 15 -K - 2> /dev/null) || return 1
+    # curl -q первым аргументом: ~/.curlrc (insecure, proxy, cacert) не должен менять проверку сертификата.
+    answer=$(printf 'url = "https://api.telegram.org/bot%s/getMe"\n' "$1" | curl -q -fsS --max-time 15 -K - 2> /dev/null) || return 1
     case $answer in
         *'"ok":true'*) ;;
         *) return 1 ;;
@@ -307,7 +315,7 @@ bot_rotate_key() {
 
 # Адрес репозитория для `git clone` на втором сервере: https, без учётных данных. TOLLWIRE_REPO_URL важнее origin.
 bot_repo_url() {
-    local url=${TOLLWIRE_REPO_URL:-} rest
+    local url=${TOLLWIRE_REPO_URL:-} rest host
     if [ -z "$url" ] && command -v git > /dev/null 2>&1; then
         url=$(git remote get-url origin 2> /dev/null || true)
     fi
@@ -317,13 +325,22 @@ bot_repo_url() {
             rest=${url#git@}
             url="https://${rest%%:*}/${rest#*:}"
             ;;
-        ssh://* | http://* | https://*)
+        ssh://*)
+            rest=${url#*://}
+            case ${rest%%/*} in *@*) rest=${rest#*@} ;; esac # логин — вон
+            # Порт здесь ssh, а не https: host:2222/p -> host/p
+            host=${rest%%/*}
+            url="https://${host%%:*}/${rest#*/}"
+            ;;
+        http://* | https://*)
             rest=${url#*://}
             case ${rest%%/*} in *@*) rest=${rest#*@} ;; esac # userinfo (логин:пароль@) — вон
             url="https://$rest"
             ;;
         *) return 1 ;;
     esac
+    # Адрес печатается в команду, которую человек копирует в терминал: никаких метасимволов оболочки.
+    [[ $url =~ ^https://[A-Za-z0-9._~/:@%+-]+$ ]] || return 1
     printf '%s' "$url"
 }
 

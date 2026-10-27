@@ -4,6 +4,7 @@
 parse_mode не задан, поэтому имя и почта в сообщениях остаются обычным текстом."""
 
 import contextlib
+import logging
 
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramBadRequest
@@ -16,6 +17,8 @@ from tollwire_bot.panel import Conflict, PanelClient, PanelError, RateLimited, R
 from tollwire_bot.texts import t
 from tollwire_bot.validation import clean_email, clean_name, valid_code
 from tollwire_bot.watcher import Watcher
+
+logger = logging.getLogger(__name__)
 
 YES, EDIT = "reg:yes", "reg:edit"
 
@@ -146,19 +149,40 @@ def register(router: Router) -> None:
                 name=data["name"],
                 email=data["email"],
             )
+            await watcher.add(bot, registration.registration_id, message.chat.id, callback.from_user.id)
         except Conflict as conflict:
             await refused(message, state, conflict.reason)
         except Rejected as rejected:
             await rejected_field(message, state, rejected.field)
         except PanelError as error:
             # Панель лежит или просит подождать: остаёмся в «подтверждении», «Да» можно нажать ещё раз.
-            await state.set_state(Registration.confirm)
-            await set_buttons(message, confirm_keyboard())
-            await message.answer(problem_text(error))
+            await back_to_confirm(message, state, problem_text(error))
+        except Exception:
+            # Неожиданный сбой (хранилище, разбор ответа): человек не должен застрять в submitting. Регистрация на
+            # панели могла создаться - «Да» повторит тот же запрос, панель вернёт ту же регистрацию.
+            logger.exception("registration request failed unexpectedly")
+            await back_to_confirm(message, state, t("panel_unavailable"))
         else:
-            await watcher.add(bot, registration.registration_id, message.chat.id, callback.from_user.id)
             await state.clear()
             await message.answer(t("preparing"))
+
+    @router.message(Registration.submitting)
+    async def stale_submitting(message: Message, state: FSMContext) -> None:
+        # События одного человека идут по очереди: сообщение в состоянии submitting значит, что запрос давно не идёт
+        # (бота перезапускали посреди отправки). Возвращаем подтверждение: «Да» безопасно повторить.
+        data = await state.get_data()
+        if not all(key in data for key in ("code", "name", "email")):
+            await state.clear()
+            await message.answer(t("unknown_input"))
+            return
+        await state.set_state(Registration.confirm)
+        await message.answer(t("confirm", name=data["name"], email=data["email"]), reply_markup=confirm_keyboard())
+
+
+async def back_to_confirm(message: Message, state: FSMContext, text: str) -> None:
+    await state.set_state(Registration.confirm)
+    await set_buttons(message, confirm_keyboard())
+    await message.answer(text)
 
 
 async def refused(message: Message, state: FSMContext, reason: str) -> None:

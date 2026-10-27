@@ -66,6 +66,15 @@ class SqliteStorage(BaseStorage):
 
     # --- файл --------------------------------------------------------------------------------------------------------
 
+    def _purge(self, connection: sqlite3.Connection) -> None:
+        """Просроченное уходит с диска, а не только прячется от чтения: имя и почта не живут дольше ttl."""
+        now = self._clock()
+        connection.execute("DELETE FROM fsm WHERE expires_at <= ?", (now,))
+        connection.execute("DELETE FROM watches WHERE expires_at <= ?", (now,))
+
+    async def purge(self) -> None:
+        await self._run(self._purge)
+
     def _connect(self) -> sqlite3.Connection:
         if self._connection is None:
             self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -74,9 +83,7 @@ class SqliteStorage(BaseStorage):
             connection = sqlite3.connect(self._path, check_same_thread=False)
             connection.execute("PRAGMA secure_delete = ON")
             connection.executescript(_SCHEMA)
-            now = self._clock()
-            connection.execute("DELETE FROM fsm WHERE expires_at <= ?", (now,))
-            connection.execute("DELETE FROM watches WHERE expires_at <= ?", (now,))
+            self._purge(connection)
             connection.commit()
             self._connection = connection
         return self._connection
@@ -108,7 +115,7 @@ class SqliteStorage(BaseStorage):
 
     def _write(self, connection: sqlite3.Connection, key: StorageKey, column: str, value: str | None) -> None:
         now, name = self._clock(), _key(key)
-        connection.execute("DELETE FROM fsm WHERE key = ? AND expires_at <= ?", (name, now))  # просроченное не оживает
+        self._purge(connection)  # просроченное не оживает и не копится
         connection.execute(
             f"INSERT INTO fsm (key, state, data, expires_at) VALUES (?, ?, ?, ?) "  # noqa: S608 - column из кода
             f"ON CONFLICT(key) DO UPDATE SET {column} = excluded.{column}, expires_at = excluded.expires_at",
@@ -144,13 +151,15 @@ class SqliteStorage(BaseStorage):
     # --- ожидающие регистрации ---------------------------------------------------------------------------------------
 
     async def add_watch(self, registration_id: str, chat_id: int, telegram_id: int, started_at: float) -> None:
-        await self._run(
-            lambda connection: connection.execute(
+        def add(connection: sqlite3.Connection) -> None:
+            self._purge(connection)
+            connection.execute(
                 "INSERT OR IGNORE INTO watches (registration_id, chat_id, telegram_id, started_at, expires_at) "
                 "VALUES (?, ?, ?, ?, ?)",
                 (registration_id, chat_id, telegram_id, started_at, self._clock() + self._ttl),
             )
-        )
+
+        await self._run(add)
 
     async def remove_watch(self, registration_id: str) -> None:
         await self._run(

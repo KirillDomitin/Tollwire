@@ -9,6 +9,12 @@ skills-lock.json
 htmlcov/
 .pytest_cache/
 .env.prod
+# Секреты Telegram-бота (токен, ключ) и временные файлы установщиков (.env.bot.XXXXXX, .env.prod.XXXXXX)
+.env.bot
+.env.bot.*
+.env.prod.*
+bot/.env.*
+!bot/.env.example
 certs/
 *.stackdump
 backups/

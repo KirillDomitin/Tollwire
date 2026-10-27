@@ -169,7 +169,7 @@ usage() {
   cert    [status | letsencrypt [--email EMAIL] [--accept-le-terms] | renew]
           Сертификат: status — срок, издатель и отпечаток; letsencrypt — перейти на настоящий сертификат Let's Encrypt
           (ставит certbot, на секунды останавливает nginx, обновляется само); renew — проверить обновление.
-  bot     enable | disable | key [--remote] | revoke | status | invite ARGS…
+  bot     enable [--no-build] | disable | key [--remote] | revoke | status | invite ARGS…
           Telegram-бот: enable — включить на этом сервере (токен от @BotFather в TELEGRAM_BOT_TOKEN или скрытым вводом);
           disable — остановить; key — заменить ключ бота (--remote — выпустить ключ для бота на другом сервере и
           показать его один раз); revoke — отозвать ключ; status — ключи и когда бот был на связи; invite — приглашения
@@ -196,7 +196,7 @@ Usage: ./panel COMMAND [options]
   cert    [status | letsencrypt [--email EMAIL] [--accept-le-terms] | renew]
           Certificate: status - expiry, issuer and fingerprint; letsencrypt - switch to a real Let's Encrypt certificate
           (installs certbot, stops nginx for seconds, renews itself); renew - check the renewal.
-  bot     enable | disable | key [--remote] | revoke | status | invite ARGS...
+  bot     enable [--no-build] | disable | key [--remote] | revoke | status | invite ARGS...
           Telegram bot: enable - turn it on here (the @BotFather token in TELEGRAM_BOT_TOKEN or hidden input);
           disable - stop it; key - replace the bot key (--remote - issue a key for a bot on another server and show
           it once); revoke - revoke a key; status - keys and when the bot was last seen; invite - invitations
@@ -214,6 +214,7 @@ preflight() {
     command -v docker > /dev/null 2>&1 || die "$(t no_docker)"
     docker info > /dev/null 2>&1 || die "$(t docker_unreachable)"
     docker compose version > /dev/null 2>&1 || die "$(t no_compose)"
+    if bot_compose_old; then die "$(t bot_old_compose "$bot_compose_version")"; fi
     [ -f "$ENV_FILE" ] || die "$(t no_env "$ENV_FILE")"
     [ -f "$COMPOSE_FILE" ] || die "$(t no_compose_file "$COMPOSE_FILE")"
 }
@@ -515,6 +516,8 @@ cmd_bot() {
     bot_terminal || tty=(-T)
     case $sub in
         enable)
+            # --no-build: образ бота уже привезён ./deploy/ship-images.sh, собирать его не нужно.
+            [ "${1:-}" != --no-build ] || bot_build=0
             bot_compose_ok || die "$(t bot_old_compose "${bot_compose_version:-?}")"
             bot_enable || exit 1
             ;;

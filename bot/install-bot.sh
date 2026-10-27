@@ -69,6 +69,7 @@ msg_ru() {
         running) printf '%s' "Бот @%s запущен и на связи с панелью." ;;
         no_install) printf '%s' "бот ещё не установлен (нет bot/.env): запустите установку без --reconfigure." ;;
         url_differs) printf '%s' "адрес панели в bot/.env (%s) отличается от --panel-url: для смены адреса запустите установку без --reconfigure." ;;
+        cert_changed) printf '%s' "сертификат панели %s больше не совпадает с сохранённым (bot/certs/panel-ca.pem). Если панель сменила сертификат, запустите установку заново без --reconfigure." ;;
         reconfigured) printf '%s' "Ключ бота заменён. Старый ключ отзовите на сервере панели: ./panel bot revoke" ;;
         none) printf '%s' "нет" ;;
     esac
@@ -107,6 +108,7 @@ msg_en() {
         running) printf '%s' "The bot @%s is running and talks to the panel." ;;
         no_install) printf '%s' "the bot is not installed yet (no bot/.env): run the installation without --reconfigure." ;;
         url_differs) printf '%s' "the panel address in bot/.env (%s) differs from --panel-url: to change the address run the installation without --reconfigure." ;;
+        cert_changed) printf '%s' "the certificate of the panel %s no longer matches the saved one (bot/certs/panel-ca.pem). If the panel changed its certificate, run the installation again without --reconfigure." ;;
         reconfigured) printf '%s' "The bot key is replaced. Revoke the old key on the panel server: ./panel bot revoke" ;;
         none) printf '%s' "none" ;;
     esac
@@ -237,7 +239,7 @@ panel_heartbeat() {
         printf 'header = "X-Bot-Key: %s"\n' "$api_key"
         printf 'header = "Content-Type: application/json"\n'
         printf 'data = "{\\"bot_username\\":\\"%s\\",\\"version\\":\\"install\\"}"\n' "$username"
-    } | curl -fsS --max-time 15 ${args[@]+"${args[@]}"} -K - > /dev/null 2>&1
+    } | curl -q -fsS --max-time 15 ${args[@]+"${args[@]}"} -K - > /dev/null 2>&1
 }
 
 normalize_fingerprint() { printf '%s' "$1" | tr -d ': \t\r\n' | tr 'a-f' 'A-F'; }
@@ -291,7 +293,7 @@ check_panel() {
         0) return 0 ;;
         35 | 51 | 58 | 60 | 77 | 83)
             # Не доверяем сертификату панели: без сверки отпечатка ключ дальше не отправляется.
-            [ -z "$cacert" ] || die "$(t cert_fetch_failed "$panel_url")"
+            [ -z "$cacert" ] || die "$(t cert_changed "$panel_url")"
             trust_panel_certificate
             rc=0
             panel_heartbeat || rc=$?
@@ -308,8 +310,13 @@ check_panel
 
 # --- запись настроек и запуск ----------------------------------------------------------------------------------------
 
+mkdir -p "$CA_DIR" # каталог создаём сами: иначе Docker создал бы его от root (bind-mount), и сюда нельзя было бы писать
 if [ "$reconfigure" -eq 1 ]; then
     (ENV_FILE=$BOT_ENV && env_set BOT_API_KEY "$api_key")
+    # Панель стала самоподписанной уже после установки: бот должен узнать про свежесохранённый сертификат.
+    if [ -n "$cacert" ] && [ -z "$(bot_env_get "$BOT_ENV" PANEL_CA_FILE)" ]; then
+        (ENV_FILE=$BOT_ENV && env_set PANEL_CA_FILE "$CA_IN_CONTAINER")
+    fi
 else
     tmp=$(umask 077 && mktemp "$BOT_ENV.XXXXXX")
     {

@@ -36,7 +36,8 @@ def configure_logging(settings: Settings, *, stream: TextIO | None = None) -> No
     for old in list(root.handlers):
         root.removeHandler(old)
     root.addHandler(handler)
-    root.setLevel(settings.log_level.upper())
+    level = logging.getLevelName(settings.log_level.upper())
+    root.setLevel(level if isinstance(level, int) else logging.INFO)  # непонятный LOG_LEVEL не должен ронять бота
     # На INFO httpx пишет «HTTP Request: GET https://…/by-telegram/<id>»: адреса и telegram_id в журнале не нужны.
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
