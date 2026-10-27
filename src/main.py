@@ -31,6 +31,7 @@ from core.exceptions import (
     JobAlreadyRunningError,
     LiveCredentialExistsError,
     NotFoundError,
+    ReasonConflictError,
     RegistrationConflictError,
     SSHHostKeyNotPinnedError,
     StateConflictError,
@@ -81,6 +82,7 @@ app.add_middleware(RequestContextMiddleware)
 _STATUS_BY_ERROR: dict[type[AppError], int] = {
     NotFoundError: 404,
     BotAuthError: 401,  # ключ бота не передан / неверный / отозван
+    ReasonConflictError: 409,  # действие невозможно, причина в теле (reason)
     RegistrationConflictError: 409,  # приглашение занято, почта или Telegram заняты (reason в теле)
     InvalidDataError: 422,
     AlreadyExistsError: 409,
@@ -101,7 +103,7 @@ _STATUS_BY_ERROR: dict[type[AppError], int] = {
 async def domain_error(request: Request, exc: Exception) -> JSONResponse:
     status = next((code for cls, code in _STATUS_BY_ERROR.items() if isinstance(exc, cls)), 409)
     content = {"detail": str(exc) or type(exc).__name__}
-    if isinstance(exc, RegistrationConflictError):
+    if isinstance(exc, ReasonConflictError):
         content["reason"] = exc.reason
     return JSONResponse(status_code=status, content=content)
 

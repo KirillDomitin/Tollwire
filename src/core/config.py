@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import field_validator
 from pydantic.types import SecretStr
@@ -47,6 +48,19 @@ class Settings(BaseSettings):
     bot_registrations_max: int = 10
     bot_registrations_window_seconds: int = 60
 
+    # Публичный адрес панели - в ссылках на страницу конфига (этап 25.3), которые выдаёт бот. Явный PUBLIC_URL важнее;
+    # иначе адрес собирается из PANEL_DOMAIN и HTTPS_PORT (их пишет install.sh в .env.prod). За внешним reverse proxy
+    # задавайте PUBLIC_URL. Пусто и то и другое - ссылки не выдаются (409 not_configured).
+    public_url: str = ""
+    panel_domain: str = ""
+    https_port: int = 443
+    # Страница конфига открыта без входа: перебор токенов по IP ограничен (считаются неудачи, чтобы не запирать
+    # людей за общим адресом оператора) и общим числом запросов.
+    public_config_ip_max_failures: int = 20
+    public_config_ip_failure_window_seconds: int = 600
+    public_config_ip_max_requests: int = 60
+    public_config_ip_request_window_seconds: int = 60
+
     # Периодический планировщик внутри воркера. Интервалы в секундах; 0 — правило выключено.
     scheduler_enabled: bool = True
     scheduler_tick_seconds: int = 15
@@ -86,6 +100,31 @@ class Settings(BaseSettings):
     metrics_concurrency: int = 5  # сколько серверов опрашивать одновременно
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    @field_validator("public_url")
+    @classmethod
+    def _public_url_is_a_bare_address(cls, value: str) -> str:
+        """https://домен[:порт] без пути, query, фрагмента и логина (http - только localhost); слэш убирается."""
+        value = value.strip()
+        if not value:
+            return ""
+        parts = urlsplit(value)
+        local = parts.hostname in ("localhost", "127.0.0.1")
+        scheme_ok = parts.scheme == "https" or (parts.scheme == "http" and local)
+        bare = parts.path in ("", "/") and not (parts.query or parts.fragment or parts.username or parts.password)
+        if not (scheme_ok and parts.hostname and bare):
+            raise ValueError("PUBLIC_URL must look like https://panel.example.com[:port] (http only for localhost)")
+        return f"{parts.scheme}://{parts.netloc}"
+
+    @property
+    def public_base_url(self) -> str | None:
+        """Публичный адрес панели для ссылок или None, если он не задан."""
+        if self.public_url:
+            return self.public_url
+        if self.panel_domain:
+            port = "" if self.https_port == 443 else f":{self.https_port}"
+            return f"https://{self.panel_domain}{port}"
+        return None
 
     @field_validator("geoip_source_url")
     @classmethod

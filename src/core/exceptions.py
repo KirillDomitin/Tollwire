@@ -118,12 +118,16 @@ class BotAuthError(AppError):
     """Нет ключа бота, он неверный или отозван - 401; по ответу не видно, что именно из этого."""
 
 
-class RegistrationConflictError(AppError):
-    """Регистрацию через бота принять нельзя - 409; reason (invite_used, email_taken, ...) нужен боту для ответа."""
+class ReasonConflictError(AppError):
+    """Действие невозможно - 409 с машинным `reason` в теле: по нему бот объясняет человеку, что не так."""
 
     def __init__(self, reason: str):
         super().__init__(reason)
         self.reason = reason
+
+
+class RegistrationConflictError(ReasonConflictError):
+    """Регистрацию через бота принять нельзя (invite_used, email_taken, ...)."""
 
 
 class ProtocolError(AppError): ...
