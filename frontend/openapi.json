@@ -5747,8 +5747,7 @@
         "properties": {
           "bot_username": {
             "type": "string",
-            "maxLength": 64,
-            "minLength": 1,
+            "pattern": "^@?[A-Za-z0-9_]{1,32}$",
             "title": "Bot Username"
           },
           "version": {
