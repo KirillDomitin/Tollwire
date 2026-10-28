@@ -48,6 +48,18 @@ class Settings(BaseSettings):
     bot_registrations_max: int = 10
     bot_registrations_window_seconds: int = 60
 
+    # Страница «Бот» и рассылки (этап 25.4). Лимиты админа: рассылки и отправки ссылки в Telegram выпускают реальные
+    # сообщения людям и новые ссылки на конфиг, поэтому ограничены по админу.
+    bot_broadcasts_per_admin_max: int = 10
+    bot_broadcasts_per_admin_window_seconds: int = 3600
+    bot_config_sends_per_admin_max: int = 60
+    bot_config_sends_per_admin_window_seconds: int = 600
+    bot_broadcast_max_recipients: int = 5000  # больше - 422: одна постановка - один INSERT ... SELECT в запросе API
+    bot_outbox_lease_seconds: int = 60  # на сколько бот «арендует» выданную пачку; потом строки выдаются снова
+    bot_outbox_max_attempts: int = 5
+    bot_outbox_retention_days: int = 30  # завершённые строки очереди старше удаляются; итоги рассылок остаются
+    bot_stale_after_seconds: int = 120  # дольше без heartbeat - на странице «Бот» предупреждение
+
     # Публичный адрес панели - в ссылках на страницу конфига (этап 25.3), которые выдаёт бот. Явный PUBLIC_URL важнее;
     # иначе адрес собирается из PANEL_DOMAIN и HTTPS_PORT (их пишет install.sh в .env.prod). За внешним reverse proxy
     # задавайте PUBLIC_URL. Пусто и то и другое - ссылки не выдаются (409 not_configured).
