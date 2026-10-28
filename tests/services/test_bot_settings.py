@@ -68,7 +68,8 @@ async def set_defaults(world: World, protocol_id: UUID | None, *, days: int = 14
 
 
 async def test_the_first_read_creates_the_single_row_with_the_agreed_defaults(world: World) -> None:
-    assert await stored_settings() == []  # таблица очищена после предыдущего теста
+    await sql("DELETE FROM bot_settings")  # первый тест прогона видит строку, вставленную миграцией
+    assert await stored_settings() == []
 
     current = await settings_service(world.session).get()
 

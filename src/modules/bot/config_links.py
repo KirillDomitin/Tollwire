@@ -8,7 +8,9 @@
 
 import logging
 import re
+from collections.abc import Mapping
 from datetime import datetime, timezone
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
@@ -25,7 +27,7 @@ from modules.audit.actor import AuditActor
 from modules.audit.models.audit_log import AuditAction, AuditEntity
 from modules.audit.service import AuditService
 from modules.bot.models.config_link import ConfigLink
-from modules.bot.repository import ConfigLinkRepository
+from modules.bot.repository import ConfigLinkRepository, OutboxRepository
 from modules.bot.schemas import ConfigLinkRead, PublicConfigRead
 from modules.jobs.models.job import JobType
 from modules.jobs.repository import JobRepository
@@ -63,9 +65,8 @@ class ConfigLinkService:
 
     async def issue_for_telegram(self, telegram_id: int) -> tuple[ConfigLink, str]:
         """Новая ссылка на конфиг человека; прежняя живая ссылка того же клиента отзывается. Токен - только здесь."""
-        if settings.public_base_url is None:
-            logger.warning("config links are not issued: set PUBLIC_URL (or PANEL_DOMAIN) in the panel settings")
-            raise ReasonConflictError(NOT_CONFIGURED)
+        if await OutboxRepository(self.session).unmark_blocked(telegram_id):
+            await self.session.commit()  # человек сам написал боту: пометка «заблокировал» снимается и при отказе
         try:
             return await self._issue(telegram_id)
         except IntegrityError:
@@ -81,12 +82,44 @@ class ConfigLinkService:
         user = await self.users.get_by_telegram_id(telegram_id)
         if user is None:
             raise NotFoundError("User not found")
-        credential = await self._choose_credential(user.id, telegram_id)
+        try:
+            result = await self.stage_issue(user.id, source="bot")
+        except ReasonConflictError:
+            await self.session.rollback()
+            raise
+        await self.session.commit()
+        return result
+
+    async def ensure_issuable(self, user_id: UUID, grant_id: UUID | None = None) -> None:
+        """Можно ли выпустить ссылку человеку сейчас - без выпуска. Отказ - ReasonConflictError с причиной."""
+        if settings.public_base_url is None:
+            raise ReasonConflictError(NOT_CONFIGURED)
+        user = await self.users.get_by_id(user_id)
+        if user is None:
+            raise NotFoundError("User not found")
+        await self._choose_credential(user.id, user.telegram_id, grant_id)
+
+    async def stage_issue(
+        self,
+        user_id: UUID,
+        grant_id: UUID | None = None,
+        *,
+        source: str,
+        meta: Mapping[str, Any] | None = None,
+    ) -> tuple[ConfigLink, str]:
+        """Выпуск ссылки человеку БЕЗ commit: ссылка, отзыв прежней и запись в аудит живут в транзакции вызывающего.
+        grant_id - выпустить на клиента этого доступа (рассылка «по протоколу»); иначе клиент - как для бота."""
+        if settings.public_base_url is None:
+            logger.warning("config links are not issued: set PUBLIC_URL (or PANEL_DOMAIN) in the panel settings")
+            raise ReasonConflictError(NOT_CONFIGURED)
+        user = await self.users.get_by_id(user_id)
+        if user is None:
+            raise NotFoundError("User not found")
+        credential = await self._choose_credential(user.id, user.telegram_id, grant_id)
 
         # Клиент блокируется до конца транзакции: два одновременных выпуска идут по очереди, и живая ссылка одна.
         locked = await self.links.lock_credential(credential.id)
         if locked is None or locked.revoked_at is not None:
-            await self.session.rollback()
             raise ReasonConflictError(NO_ACCESS)
         replaced = False
         for old in await self.links.live_links(credential.id):
@@ -100,18 +133,26 @@ class ConfigLinkService:
             AuditAction.CONFIG_LINK_CREATED,
             AuditEntity.CONFIG_LINK,
             link.id,
-            {"credential_id": credential.id, "user_id": user.id, "source": "bot", "replaced": replaced},
+            {
+                "credential_id": credential.id,
+                "user_id": user.id,
+                "source": source,
+                **{key: value for key, value in (meta or {}).items() if value is not None},
+                "replaced": replaced,
+            },
         )
-        await self.session.commit()
         return link, token
 
-    async def _choose_credential(self, user_id: UUID, telegram_id: int) -> VPNCredential:
-        """Клиент, на которого выпускается ссылка: выданный панелью (с конфигом) и с живым доступом."""
+    async def _choose_credential(
+        self, user_id: UUID, telegram_id: int | None, grant_id: UUID | None = None
+    ) -> VPNCredential:
+        """Клиент, на которого выпускается ссылка: выданный панелью (с конфигом) и с живым доступом. С grant_id -
+        только клиент этого доступа."""
         now = datetime.now(timezone.utc)
         live: list[tuple[VPNCredential, AccessGrant]] = [
             (credential, grant)
             for credential, grant, subscription in await self.links.credentials_of_user(user_id)
-            if inactive_reason(grant, subscription, now) is None
+            if inactive_reason(grant, subscription, now) is None and (grant_id is None or grant.id == grant_id)
         ]
         issued = [
             (credential, grant)
@@ -119,22 +160,24 @@ class ConfigLinkService:
             if credential.source == CredentialSource.ISSUED and credential.encrypted_config is not None
         ]
         if issued:
-            registered = await self.links.registered_grant_id(telegram_id)
+            registered = await self.links.registered_grant_id(telegram_id) if telegram_id is not None else None
             for credential, grant in issued:
                 if grant.id == registered:  # клиент, выданный по регистрации через бота, важнее более нового
                     return credential
             return max(issued, key=lambda pair: pair[0].created_at)[0]
         if live:
             raise ReasonConflictError(CONFIG_UNAVAILABLE)  # только подхваченные из AmneziaVPN
-        if await self._being_issued(user_id, now):
+        if await self._being_issued(user_id, now, grant_id):
             raise ReasonConflictError(NOT_READY)
         raise ReasonConflictError(NO_ACCESS)
 
-    async def _being_issued(self, user_id: UUID, now: datetime) -> bool:
+    async def _being_issued(self, user_id: UUID, now: datetime, grant_id: UUID | None = None) -> bool:
         """Есть живой доступ, клиента по которому выдаёт воркер (CREATE_USER в очереди или в работе)."""
         jobs = JobRepository(self.session)
         for grant, subscription in await self.links.grants_of_user(user_id):
             if is_terminal(grant.status) or inactive_reason(grant, subscription, now) is not None:
+                continue
+            if grant_id is not None and grant.id != grant_id:
                 continue
             if await jobs.has_unfinished_for_grant(JobType.CREATE_USER, grant.id):
                 return True

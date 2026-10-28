@@ -1,20 +1,28 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
-from collections.abc import Sequence
-from datetime import datetime
+from collections.abc import Iterable, Sequence
+from datetime import datetime, timedelta
+from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import Select, and_, delete, func, literal, not_, or_, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.engine import CursorResult, Result
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from modules.access.models import CredentialSource
+from modules.access.models import AccessGrantStatus, CredentialSource
 from modules.access.models.access_grant import AccessGrant
 from modules.access.models.subscription import Subscription
 from modules.access.models.vpn_credential import VPNCredential
+from modules.bot.models.broadcast import BotBroadcast
 from modules.bot.models.config_link import ConfigLink
 from modules.bot.models.invite import BotInvite
 from modules.bot.models.key import BotKey
+from modules.bot.models.outbox import OPEN_STATUSES as OUTBOX_OPEN_STATUSES
+from modules.bot.models.outbox import BotOutbox, OutboxStatus
 from modules.bot.models.registration import OPEN_STATUSES, BotRegistration, RegistrationStatus
+from modules.bot.models.settings import BotSettings
+from modules.bot.schemas import BroadcastCreate
 from modules.servers.models.server import VPNServer
 from modules.vpn_users.models.user import VPNUser
 
@@ -221,3 +229,262 @@ class ConfigLinkRepository:
             return None
         link, credential, grant, subscription, username, server_name = row
         return link, credential, grant, subscription, username, server_name
+
+
+def _rowcount(result: Result[Any]) -> int:
+    return int(cast("CursorResult[Any]", result).rowcount or 0)
+
+
+_DEAD_ACCESS = (AccessGrantStatus.EXPIRED, AccessGrantStatus.REVOKED)
+_OPEN = [status.value for status in OUTBOX_OPEN_STATUSES]
+
+
+class BotSettingsRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def get_or_create(self) -> BotSettings:
+        """Строка настроек (id = 1). Миграция её вставляет; здесь - на случай, когда её нет (чистая тестовая БД)."""
+        await self.session.execute(pg_insert(BotSettings).values(id=1).on_conflict_do_nothing())
+        row = (
+            await self.session.execute(
+                select(BotSettings).where(BotSettings.id == 1).execution_options(populate_existing=True)
+            )
+        ).scalar_one()
+        return row
+
+
+class OutboxRepository:
+    """Исходящая очередь бота и рассылки. Счётчики рассылки меняются в той же транзакции, что и статусы строк."""
+
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    # --- люди ------------------------------------------------------------------------------------------------------
+
+    async def unmark_blocked(self, telegram_id: int) -> bool:
+        """Человек сам написал боту: пометка «заблокировал бота» снимается. Идемпотентно; True - сняли. Без commit."""
+        result = await self.session.execute(
+            update(VPNUser)
+            .where(VPNUser.telegram_id == telegram_id, VPNUser.bot_blocked_at.is_not(None))
+            .values(bot_blocked_at=None)
+        )
+        return _rowcount(result) > 0
+
+    async def fresh_user(self, user_id: UUID) -> VPNUser | None:
+        """Человек со свежими данными из БД (пометка «заблокировал» могла смениться в другой транзакции)."""
+        query = select(VPNUser).where(VPNUser.id == user_id).execution_options(populate_existing=True)
+        return (await self.session.execute(query)).scalar_one_or_none()
+
+    def _targets(self, data: BroadcastCreate, now: datetime) -> Select[Any]:
+        """Кому адресована рассылка: (user_id, grant_id, telegram_id, bot_blocked_at) - без фильтра по Telegram."""
+        if data.target == "protocol":
+            return (
+                select(
+                    VPNUser.id.label("user_id"),
+                    AccessGrant.id.label("grant_id"),
+                    VPNUser.telegram_id,
+                    VPNUser.bot_blocked_at,
+                )
+                .join(Subscription, Subscription.user_id == VPNUser.id)
+                .join(AccessGrant, AccessGrant.subscription_id == Subscription.id)
+                .where(
+                    AccessGrant.protocol_id == data.protocol_id,
+                    AccessGrant.status.not_in(_DEAD_ACCESS),
+                    Subscription.status.not_in(_DEAD_ACCESS),
+                    Subscription.valid_from <= now,
+                    Subscription.valid_until > now,
+                )
+                .distinct(VPNUser.id)
+                .order_by(VPNUser.id, AccessGrant.created_at)
+            )
+        query: Select[Any] = select(
+            VPNUser.id.label("user_id"),
+            literal(None, type_=AccessGrant.id.type).label("grant_id"),
+            VPNUser.telegram_id,
+            VPNUser.bot_blocked_at,
+        )
+        if data.target == "selected":
+            query = query.where(VPNUser.id.in_(data.user_ids or []))
+        return query
+
+    async def audience(self, data: BroadcastCreate, now: datetime) -> tuple[int, int, int]:
+        """(получателей, без Telegram, заблокировавших бота) среди адресатов рассылки."""
+        targets = self._targets(data, now).subquery()
+        query = select(
+            func.count().filter(and_(targets.c.telegram_id.is_not(None), targets.c.bot_blocked_at.is_(None))),
+            func.count().filter(targets.c.telegram_id.is_(None)),
+            func.count().filter(and_(targets.c.telegram_id.is_not(None), targets.c.bot_blocked_at.is_not(None))),
+        )
+        recipients, without_telegram, blocked = (await self.session.execute(query)).one()
+        return int(recipients), int(without_telegram), int(blocked)
+
+    async def get_broadcast_by_request(self, request_id: UUID) -> BotBroadcast | None:
+        query = select(BotBroadcast).where(BotBroadcast.request_id == request_id)
+        return (await self.session.execute(query)).scalar_one_or_none()
+
+    async def get_broadcast(self, broadcast_id: UUID, *, lock: bool = False) -> BotBroadcast | None:
+        return await self.session.get(BotBroadcast, broadcast_id, with_for_update=lock, populate_existing=lock)
+
+    async def broadcasts(self, ids: Iterable[UUID]) -> dict[UUID, BotBroadcast]:
+        found = (
+            await self.session.execute(
+                select(BotBroadcast).where(BotBroadcast.id.in_(list(ids))).execution_options(populate_existing=True)
+            )
+        ).scalars()
+        return {broadcast.id: broadcast for broadcast in found}
+
+    async def create_broadcast(self, broadcast: BotBroadcast) -> BotBroadcast:
+        self.session.add(broadcast)
+        await self.session.flush()
+        return broadcast
+
+    async def queue_broadcast(self, broadcast: BotBroadcast, data: BroadcastCreate, now: datetime) -> int:
+        """Строки очереди одним INSERT ... SELECT; кому уже есть открытая отправка ссылки, тому вторая не ставится
+        (частичный уникальный индекс). Возвращает число поставленных строк."""
+        targets = (
+            self._targets(data, now)
+            .where(VPNUser.telegram_id.is_not(None), VPNUser.bot_blocked_at.is_(None))
+            .subquery()
+        )
+        priority = 10
+        pick = select(
+            func.gen_random_uuid(),
+            literal(broadcast.kind),
+            literal(broadcast.id),
+            targets.c.user_id,
+            targets.c.grant_id,
+            literal(OutboxStatus.PENDING.value),
+            literal(priority),
+            literal(0),
+            func.now(),
+            func.now(),
+        )
+        statement = (
+            pg_insert(BotOutbox)
+            .from_select(
+                [
+                    "id",
+                    "kind",
+                    "broadcast_id",
+                    "user_id",
+                    "access_grant_id",
+                    "status",
+                    "priority",
+                    "attempts",
+                    "created_at",
+                    "updated_at",
+                ],
+                pick,
+            )
+            .on_conflict_do_nothing()
+        )
+        result = await self.session.execute(statement)
+        return _rowcount(result)
+
+    async def count_targets(self, data: BroadcastCreate, now: datetime) -> int:
+        recipients, _, _ = await self.audience(data, now)
+        return recipients
+
+    # --- строки очереди --------------------------------------------------------------------------------------------
+
+    async def get_row(self, outbox_id: UUID) -> BotOutbox | None:
+        return await self.session.get(BotOutbox, outbox_id, populate_existing=True)
+
+    async def open_config_row(self, user_id: UUID) -> BotOutbox | None:
+        query = (
+            select(BotOutbox)
+            .where(BotOutbox.user_id == user_id, BotOutbox.kind == "config", BotOutbox.status.in_(_OPEN))
+            .execution_options(populate_existing=True)
+        )
+        return (await self.session.execute(query)).scalars().first()
+
+    async def add_row(self, row: BotOutbox) -> BotOutbox:
+        self.session.add(row)
+        await self.session.flush()
+        return row
+
+    async def lease_candidates(self, now: datetime, limit: int) -> list[BotOutbox]:
+        """Строки, которые можно выдать: готовые к отправке, и выданные, у которых аренда вышла. Строки, занятые другой
+        выдачей, пропускаются (SKIP LOCKED): две выдачи одновременно получают разные строки."""
+        ready = and_(
+            BotOutbox.status == OutboxStatus.PENDING.value,
+            or_(BotOutbox.not_before.is_(None), BotOutbox.not_before <= now),
+        )
+        expired = and_(BotOutbox.status == OutboxStatus.CLAIMED.value, BotOutbox.claimed_until < now)
+        query = (
+            select(BotOutbox)
+            .where(or_(ready, expired))
+            .order_by(BotOutbox.priority, BotOutbox.created_at, BotOutbox.id)
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+            .execution_options(populate_existing=True)
+        )
+        return list((await self.session.execute(query)).scalars())
+
+    async def users_by_ids(self, ids: Iterable[UUID]) -> dict[UUID, VPNUser]:
+        found = (
+            await self.session.execute(
+                select(VPNUser).where(VPNUser.id.in_(list(ids))).execution_options(populate_existing=True)
+            )
+        ).scalars()
+        return {user.id: user for user in found}
+
+    async def leased_rows(self, lease_id: UUID, ids: Iterable[UUID]) -> dict[UUID, BotOutbox]:
+        """Выданные по этой аренде строки из списка, под блокировкой (порядок по id: параллельные ack не зацепятся)."""
+        query = (
+            select(BotOutbox)
+            .where(
+                BotOutbox.id.in_(list(ids)),
+                BotOutbox.lease_id == lease_id,
+                BotOutbox.status == OutboxStatus.CLAIMED.value,
+            )
+            .order_by(BotOutbox.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return {row.id: row for row in (await self.session.execute(query)).scalars()}
+
+    async def cancel_waiting(self, broadcast_id: UUID, now: datetime) -> int:
+        """Ждущие строки рассылки закрываются; выданные доходят (у выданных с истёкшей арендой выдача ещё раз не
+        будет: claim отменяет и их)."""
+        result = await self.session.execute(
+            update(BotOutbox)
+            .where(
+                BotOutbox.broadcast_id == broadcast_id,
+                or_(
+                    BotOutbox.status == OutboxStatus.PENDING.value,
+                    and_(BotOutbox.status == OutboxStatus.CLAIMED.value, BotOutbox.claimed_until < now),
+                ),
+            )
+            .values(status=OutboxStatus.CANCELLED.value, lease_id=None, claimed_until=None)
+        )
+        return _rowcount(result)
+
+    async def add_counts(self, broadcast_id: UUID, **deltas: int) -> None:
+        """Счётчики рассылки одним UPDATE: sent=sent+n и т.д."""
+        values = {name: getattr(BotBroadcast, name) + delta for name, delta in deltas.items() if delta}
+        if values:
+            await self.session.execute(update(BotBroadcast).where(BotBroadcast.id == broadcast_id).values(**values))
+
+    async def finish_if_done(self, broadcast_ids: Iterable[UUID], now: datetime) -> None:
+        """Рассылка завершена, когда у неё не осталось открытых строк."""
+        ids = list(broadcast_ids)
+        if not ids:
+            return
+        still_open = (
+            select(BotOutbox.id).where(BotOutbox.broadcast_id == BotBroadcast.id, BotOutbox.status.in_(_OPEN)).exists()
+        )
+        await self.session.execute(
+            update(BotBroadcast)
+            .where(BotBroadcast.id.in_(ids), BotBroadcast.finished_at.is_(None), not_(still_open))
+            .values(finished_at=now)
+        )
+
+    async def purge_finished(self, older_than_days: int, now: datetime) -> int:
+        """Завершённые строки старше срока удаляются; открытые остаются, итоги рассылок - тоже."""
+        border = now - timedelta(days=older_than_days)
+        result = await self.session.execute(
+            delete(BotOutbox).where(BotOutbox.status.not_in(_OPEN), BotOutbox.updated_at < border)
+        )
+        return _rowcount(result)

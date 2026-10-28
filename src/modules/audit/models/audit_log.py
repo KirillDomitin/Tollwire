@@ -115,6 +115,12 @@ class AuditAction(enum.Enum):
     BOT_REGISTRATION_RETRIED = "bot_registration_retried"
     # Ссылка на страницу конфига (25.3): выпуск без токена и хеша; открытия в аудит не пишутся.
     CONFIG_LINK_CREATED = "config_link_created"
+    # Страница «Бот» (25.4): рассылки, ссылка одному человеку в Telegram, настройки. В meta нет текста, telegram_id,
+    # почты, токена и списков людей.
+    BOT_BROADCAST_CREATED = "bot_broadcast_created"
+    BOT_BROADCAST_CANCELLED = "bot_broadcast_cancelled"
+    BOT_CONFIG_LINK_QUEUED = "bot_config_link_queued"
+    BOT_SETTINGS_UPDATED = "bot_settings_updated"
 
 
 class AuditEntity:
@@ -131,6 +137,8 @@ class AuditEntity:
     BOT_INVITE = "bot_invite"
     BOT_REGISTRATION = "bot_registration"
     CONFIG_LINK = "config_link"
+    BOT_BROADCAST = "bot_broadcast"
+    BOT_SETTINGS = "bot_settings"
 
 
 class AuditLog(UuidPkMixin, Base):

@@ -335,7 +335,7 @@ text}}`, заголовок `Cache-Control: no-store`.
 - [x] 3. Модели (`models/{settings,broadcast,outbox}.py`, поля `vpn_users`, `bot_keys`), миграция, импорт в
   `alembic/env.py`. Коммит.
 - [x] 4. `telegram_html.py` и схемы; набор примеров. Коммит.
-- [ ] 5. Сервисы: `BotSettingsService`, значения по умолчанию в `BotInviteService.create`;
+- [x] 5. Сервисы: `BotSettingsService`, значения по умолчанию в `BotInviteService.create`;
   `ConfigLinkService.stage_issue`; `OutboxService` (`claim`, `ack`, постановка, `audience`, `cancel`,
   индивидуальная отправка); снятие `bot_blocked_at` (Р8-A); репозитории. Коммит.
 - [ ] 6. Роутеры: Bot API `outbox/*`, админский API, `VPNUserRead`; `AuditAction`/`AuditEntity`; правило

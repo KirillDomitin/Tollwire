@@ -2,24 +2,25 @@
 # -*- coding: utf-8 -*-
 import enum
 from collections.abc import Sequence
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions import InvalidDataError, NotFoundError
+from core.exceptions import InvalidDataError, NotFoundError, ReasonConflictError
 from core.security import generate_token, hash_token
 from modules.audit.actor import AuditActor
 from modules.audit.models.audit_log import AuditAction, AuditEntity
 from modules.audit.service import AuditService
 from modules.bot.models.invite import BotInvite
-from modules.bot.repository import BotInviteRepository, BotKeyRepository
+from modules.bot.repository import BotInviteRepository, BotKeyRepository, BotSettingsRepository
 from modules.bot.schemas import InviteCreate
 from modules.protocols.repository import ProtocolRepository
 
 # 18 байт = 24 символа из A-Za-z0-9_-: укладывается в параметр start ссылки Telegram (до 64 символов).
 CODE_BYTES = 18
+NO_DEFAULT_PROTOCOL = "no_default_protocol"  # причина 409: нет протокола ни в запросе, ни в настройках
 
 
 class InviteStatus(enum.Enum):
@@ -58,17 +59,28 @@ class BotInviteService:
         """Новое приглашение и его открытый код: показывается один раз, в БД остаётся только хеш.
 
         source - откуда выпущено (cli - консоль на сервере панели); попадает в аудит."""
-        if not await self.protocols.get_by_id(data.protocol_id):
-            raise NotFoundError(f"Protocol '{data.protocol_id}' not found")
-        if data.expires_at <= datetime.now(timezone.utc):
+        now = datetime.now(timezone.utc)
+        defaults = None
+        if data.protocol_id is None or data.days is None or data.expires_at is None:
+            defaults = await BotSettingsRepository(self.session).get_or_create()  # недостающее - из настроек
+        protocol_id = data.protocol_id if data.protocol_id is not None else defaults.default_protocol_id  # type: ignore[union-attr]
+        if protocol_id is None:
+            raise ReasonConflictError(NO_DEFAULT_PROTOCOL)
+        days = data.days if data.days is not None else defaults.default_days  # type: ignore[union-attr]
+        expires_at = (
+            data.expires_at if data.expires_at is not None else now + timedelta(days=defaults.invite_valid_days)  # type: ignore[union-attr]
+        )
+        if not await self.protocols.get_by_id(protocol_id):
+            raise NotFoundError(f"Protocol '{protocol_id}' not found")
+        if expires_at <= now:
             raise InvalidDataError("Invite deadline must be in the future")
         code = generate_code()
         invite = await self.invites.create(
             BotInvite(
                 code_hash=hash_token(code),
-                protocol_id=data.protocol_id,
-                days=data.days,
-                expires_at=data.expires_at,
+                protocol_id=protocol_id,
+                days=days,
+                expires_at=expires_at,
                 note=data.note,
                 created_by=self.actor.admin_id,
             )

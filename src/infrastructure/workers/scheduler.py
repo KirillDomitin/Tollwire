@@ -4,6 +4,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from uuid import UUID
 
 from core.config import Settings
@@ -16,6 +17,7 @@ from modules.audit.actor import SYSTEM_ACTOR
 from modules.audit.service import AuditService
 from modules.auth.service import AuthService
 from modules.bot.registrations import BotRegistrationService
+from modules.bot.repository import OutboxRepository
 from modules.gateway.failover import GatewayFailoverService
 from modules.geoip.service import GeoipService
 from modules.jobs.service import JobService
@@ -201,12 +203,18 @@ async def requeue_lost_jobs(max_age_seconds: int) -> str:
     return f"requeued {requeued} lost pending jobs"
 
 
-async def apply_retention(job_days: int, audit_days: int) -> str:
+async def apply_retention(job_days: int, audit_days: int, outbox_days: int | None = None) -> str:
     async with session_factory() as session:
         jobs = await JobService(session, SYSTEM_ACTOR).purge_finished(job_days)
     async with session_factory() as session:
         logs = await AuditService(session, SYSTEM_ACTOR).purge(audit_days)
-    return f"deleted {jobs} finished jobs, {logs} audit records"
+    message = f"deleted {jobs} finished jobs, {logs} audit records"
+    if outbox_days:
+        async with session_factory() as session:
+            outbox = await OutboxRepository(session).purge_finished(outbox_days, datetime.now(timezone.utc))
+            await session.commit()
+        message += f", {outbox} finished bot messages"
+    return message
 
 
 def build_rules(settings: Settings) -> list[Rule]:
@@ -228,7 +236,9 @@ def build_rules(settings: Settings) -> list[Rule]:
         Rule(
             "retention",
             settings.retention_interval_seconds,
-            lambda: apply_retention(settings.job_retention_days, settings.audit_retention_days),
+            lambda: apply_retention(
+                settings.job_retention_days, settings.audit_retention_days, settings.bot_outbox_retention_days
+            ),
         ),
         # Мониторинг: замер серверов (только чтение по SSH) и свёртка истории по часам.
         Rule("geoip", settings.geoip_update_interval_seconds, schedule_geoip_update),

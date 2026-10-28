@@ -20,7 +20,7 @@ from modules.audit.service import AuditService
 from modules.bot.invites import InviteStatus, invite_status
 from modules.bot.models.registration import BotRegistration, RegistrationStatus
 from modules.bot.payment import InviteFree, PaymentPolicy, PaymentStatus
-from modules.bot.repository import BotInviteRepository, BotRegistrationRepository
+from modules.bot.repository import BotInviteRepository, BotRegistrationRepository, OutboxRepository
 from modules.bot.schemas import RegistrationCreate, UserStatusRead
 from modules.jobs.models.job import Job, JobStatus, JobType
 from modules.jobs.repository import JobRepository
@@ -174,6 +174,9 @@ class BotRegistrationService:
         user = await self.users.get_by_telegram_id(telegram_id)
         if user is None:
             raise NotFoundError("User not found")
+        if user.bot_blocked_at is not None:  # человек сам написал боту: пометка «заблокировал» снимается
+            await OutboxRepository(self.session).unmark_blocked(telegram_id)
+            await self.session.commit()
         subscription = await SubscriptionRepository(self.session).get_latest_by_user_id(user.id)
         protocol = None
         if subscription is not None:

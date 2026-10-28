@@ -614,11 +614,11 @@ async def sql_rows(statement: str, **params: Any) -> list[tuple[Any, ...]]:
 
 async def tables_dump(*tables: str) -> str:
     """Все строки таблиц одной строкой: для проверки «токена и адреса ссылки нет ни в одной колонке»."""
+    parts: list[str] = []
     async with session_factory() as session:
-        return "\n".join(
-            str((await session.execute(text(f"SELECT * FROM {table}"))).all())  # noqa: S608 - имена из тестов
-            for table in tables
-        )
+        for table in tables:
+            parts.append(str((await session.execute(text(f"SELECT * FROM {table}"))).all()))  # noqa: S608
+    return "\n".join(parts)
 
 
 def broadcast_data(
