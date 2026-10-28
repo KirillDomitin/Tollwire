@@ -1,8 +1,9 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 import enum
+from datetime import datetime
 
-from sqlalchemy import BigInteger, String, UniqueConstraint, text
+from sqlalchemy import BigInteger, DateTime, String, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.database.base import Base, TimestampMixin, UuidPkMixin
@@ -22,5 +23,7 @@ class VPNUser(UuidPkMixin, TimestampMixin, Base):
     # Заполнены у пользователей, пришедших через Telegram-бота; у созданных админом или импортом — NULL.
     telegram_id: Mapped[int | None] = mapped_column(BigInteger, default=None)
     telegram_username: Mapped[str | None] = mapped_column(String(64), default=None)  # для показа, может меняться
+    # Telegram ответил, что человек заблокировал бота: рассылки его пропускают, пока он сам не напишет боту.
+    bot_blocked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     description: Mapped[str | None] = mapped_column(String(300))
     status: Mapped[VPNUserStatus] = mapped_column(default=VPNUserStatus.DISABLED, server_default=text("'DISABLED'"))

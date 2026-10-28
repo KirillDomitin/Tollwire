@@ -24,3 +24,5 @@ class BotKey(UuidPkMixin, Base):
     last_seen_version: Mapped[str | None] = mapped_column(String(32), default=None)
     bot_username: Mapped[str | None] = mapped_column(String(64), default=None)  # сообщает бот в heartbeat
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    # Когда бот последний раз забирал очередь сообщений: пусто или давно при непустой очереди - бот старой версии.
+    last_claim_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
