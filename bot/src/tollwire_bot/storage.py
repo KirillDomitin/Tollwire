@@ -33,7 +33,26 @@ CREATE TABLE IF NOT EXISTS watches (
     started_at      REAL NOT NULL,
     expires_at      REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS outbox_journal (
+    id       TEXT PRIMARY KEY,
+    lease_id TEXT NOT NULL,
+    kind     TEXT NOT NULL,
+    status   TEXT NOT NULL,
+    error    TEXT,
+    at       REAL NOT NULL
+);
 """
+
+
+@dataclass(frozen=True)
+class JournalRow:
+    """Итог отправки, который Telegram уже принял, а панель ещё нет. Ни текста, ни адреса, ни chat id здесь нет."""
+
+    id: str
+    lease_id: str
+    kind: str
+    status: str
+    error: str | None
 
 
 @dataclass(frozen=True)
@@ -71,6 +90,7 @@ class SqliteStorage(BaseStorage):
         now = self._clock()
         connection.execute("DELETE FROM fsm WHERE expires_at <= ?", (now,))
         connection.execute("DELETE FROM watches WHERE expires_at <= ?", (now,))
+        connection.execute("DELETE FROM outbox_journal WHERE at <= ?", (now - DAY,))
 
     async def purge(self) -> None:
         await self._run(self._purge)
@@ -174,3 +194,44 @@ class SqliteStorage(BaseStorage):
             ).fetchall()
         )
         return [Watch(*row) for row in rows]
+
+    # --- журнал отправленного (очередь сообщений) -------------------------------------------------------------------
+
+    async def journal_put(self, row: JournalRow, at: float) -> None:
+        """Записать итог после ответа Telegram. Строка с тем же id заменяется: новая выдача - новая аренда."""
+        await self._run(
+            lambda connection: connection.execute(
+                "INSERT OR REPLACE INTO outbox_journal (id, lease_id, kind, status, error, at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (row.id, row.lease_id, row.kind, row.status, row.error, at),
+            )
+        )
+
+    async def journal_all(self) -> list[JournalRow]:
+        rows = await self._run(
+            lambda connection: connection.execute(
+                "SELECT id, lease_id, kind, status, error FROM outbox_journal ORDER BY at"
+            ).fetchall()
+        )
+        return [JournalRow(*row) for row in rows]
+
+    async def journal_by_ids(self, ids: list[str]) -> dict[str, JournalRow]:
+        if not ids:
+            return {}
+
+        def find(connection: sqlite3.Connection) -> list[tuple[Any, ...]]:
+            marks = ", ".join("?" for _ in ids)
+            return connection.execute(
+                f"SELECT id, lease_id, kind, status, error FROM outbox_journal WHERE id IN ({marks})",  # noqa: S608
+                ids,
+            ).fetchall()
+
+        return {row[0]: JournalRow(*row) for row in await self._run(find)}
+
+    async def journal_remove(self, ids: list[str]) -> None:
+        if ids:
+            await self._run(
+                lambda connection: connection.executemany(
+                    "DELETE FROM outbox_journal WHERE id = ?", [(i,) for i in ids]
+                )
+            )

@@ -22,6 +22,16 @@ PUBLIC_CONFIG_REQUESTS_BY_IP = Limit(
     settings.public_config_ip_max_requests,
     settings.public_config_ip_request_window_seconds,
 )
+# Страница «Бот»: рассылки и отправки ссылки выпускают реальные сообщения людям и новые ссылки на конфиг, поэтому
+# ограничены по админу (по числу запросов: отказ тоже считается).
+BOT_BROADCASTS_BY_ADMIN = Limit(
+    "bot_admin_broadcasts", settings.bot_broadcasts_per_admin_max, settings.bot_broadcasts_per_admin_window_seconds
+)
+BOT_CONFIG_SENDS_BY_ADMIN = Limit(
+    "bot_admin_config_sends",
+    settings.bot_config_sends_per_admin_max,
+    settings.bot_config_sends_per_admin_window_seconds,
+)
 # Регистрации - свой, более строгий лимит: каждая создаёт пользователя и задачу на реальном сервере.
 BOT_REGISTRATIONS_BY_KEY = Limit(
     "bot_key_registrations", settings.bot_registrations_max, settings.bot_registrations_window_seconds

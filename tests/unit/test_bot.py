@@ -162,12 +162,11 @@ def test_invite_days_outside_one_to_3650_are_refused(days: int) -> None:
 
 
 @pytest.mark.parametrize("missing", ["protocol_id", "days"])
-def test_invite_needs_protocol_and_days(missing: str) -> None:
-    """bot_settings появятся позже (25.4): в 25.1 протокол и срок обязательны."""
+def test_invite_may_leave_protocol_and_days_to_the_settings(missing: str) -> None:
+    """С 25.4 протокол и срок необязательны: недостающее берётся из настроек бота (тесты - в test_bot_settings)."""
     fields = invite_fields()
     del fields[missing]
-    with pytest.raises(ValidationError):
-        InviteCreate(**fields)
+    assert getattr(InviteCreate(**fields), missing) is None
 
 
 # --- код приглашения -----------------------------------------------------------------------------------------------

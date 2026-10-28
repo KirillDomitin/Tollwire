@@ -520,7 +520,7 @@ async def test_claim_gives_a_working_link_for_a_config_message(
     claim = await scene.client.claim(50)
 
     (item,) = claim.items
-    assert item.kind == "config" and item.telegram_id == TELEGRAM_ID and item.broadcast_id is not None
+    assert item.kind == "config" and item.telegram_id == TELEGRAM_ID and item.broadcast_id is None  # у config нет поля
     assert item.config_url.startswith(f"{PUBLIC_BASE}/c#") and len(token_of(item.config_url)) == 43
     until = datetime.fromisoformat(str(item.valid_until).replace("Z", "+00:00"))
     assert abs((until - (datetime.now(timezone.utc) + timedelta(days=30))).total_seconds()) < 300

@@ -240,7 +240,7 @@ async def test_changing_settings_is_audited_with_was_and_became(scene: Scene) ->
     logs = (await scene.api.get("/api/v1/audit-logs", params={"action": "bot_settings_updated"})).json()
 
     assert len(logs) == 1 and logs[0]["entity_type"] == "bot_settings"
-    assert logs[0]["meta"] == {"changes": {"default_days": [30, 60]}}
+    assert logs[0]["metadata"] == {"changes": {"default_days": [30, 60]}}
 
 
 async def test_an_invite_without_details_uses_the_settings_over_http(scene: Scene) -> None:
@@ -574,7 +574,7 @@ async def test_cancelling_a_broadcast_is_200_and_a_repeat_changes_nothing(scene:
     assert first.json()["state"] == "cancelled" and first.json()["cancelled"] == 3 and first.json()["cancelled_at"]
     assert second.json()["cancelled"] == 3
     events = (await scene.api.get("/api/v1/audit-logs", params={"action": "bot_broadcast_cancelled"})).json()
-    assert len(events) == 1 and events[0]["meta"] == {"cancelled": 3}
+    assert len(events) == 1 and events[0]["metadata"] == {"cancelled": 3}
 
 
 async def test_creating_a_broadcast_is_audited_without_the_text_the_people_or_their_telegram_ids(
@@ -586,7 +586,7 @@ async def test_creating_a_broadcast_is_audited_without_the_text_the_people_or_th
     events = (await scene.api.get("/api/v1/audit-logs", params={"action": "bot_broadcast_created"})).json()
 
     assert len(events) == 1 and events[0]["entity_type"] == "bot_broadcast" and events[0]["entity_id"] == created["id"]
-    assert events[0]["meta"]["recipients"] == 2 and events[0]["meta"]["kind"] == "news"
+    assert events[0]["metadata"]["recipients"] == 2 and events[0]["metadata"]["kind"] == "news"
     dump = await audit_dump()
     assert NEWS_MARKER not in dump
     assert all(str(person.telegram_id) not in dump and str(person.id) not in dump for person in people)
@@ -736,7 +736,7 @@ async def test_queueing_a_link_is_audited_with_the_row_id_only(scene: Scene) -> 
     events = (await scene.api.get("/api/v1/audit-logs", params={"action": "bot_config_link_queued"})).json()
 
     assert len(events) == 1 and events[0]["entity_type"] == "vpn_user" and events[0]["entity_id"] == user_id
-    assert events[0]["meta"] == {"outbox_id": queued["outbox_id"]}
+    assert events[0]["metadata"] == {"outbox_id": queued["outbox_id"]}
     assert str(TELEGRAM_ID) not in await audit_dump()
 
 

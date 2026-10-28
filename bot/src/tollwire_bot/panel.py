@@ -6,7 +6,8 @@ import asyncio
 import logging
 import ssl
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -94,6 +95,44 @@ class ConfigLink:
 
     def __repr__(self) -> str:  # токен в адресе открывает конфиг любому: даже случайный repr в лог его не понесёт
         return "ConfigLink(...)"
+
+
+@dataclass(frozen=True)
+class OutboxItem:
+    """Сообщение из очереди панели. Адрес ссылки (токен в нём) в repr не попадает."""
+
+    id: str
+    kind: str  # news / config
+    telegram_id: int = field(repr=False)
+    broadcast_id: str | None = None
+    config_url: str | None = field(default=None, repr=False)
+    valid_until: str | None = None
+
+
+@dataclass(frozen=True)
+class Claim:
+    """Пачка сообщений в аренде: подтверждать её нужно под тем же lease_id и до lease_until."""
+
+    lease_id: str
+    lease_until: datetime
+    items: list[OutboxItem]
+    texts: dict[str, str] = field(repr=False)  # текст новости один на рассылку
+
+
+@dataclass(frozen=True)
+class OutboxResult:
+    """Итог одной отправки. error - код из перечня панели, текста Telegram здесь нет."""
+
+    id: str
+    status: str  # sent / blocked / failed / retry
+    error: str | None = None
+    retry_after: int | None = None
+
+
+@dataclass(frozen=True)
+class AckOutcome:
+    applied: list[str]
+    ignored: list[str]
 
 
 def _check_url(url: str) -> str:
@@ -194,6 +233,65 @@ class PanelClient:
             raise PanelUnexpected("no link in the answer")
         valid_until = data.get("valid_until")
         return ConfigLink(config_url=url, valid_until=valid_until if isinstance(valid_until, str) else None)
+
+    async def claim(self, limit: int) -> Claim:
+        """Взять пачку исходящих сообщений в аренду (для ссылок на конфиг панель выпускает адрес прямо сейчас)."""
+        data = _json(await self._request("POST", "/outbox/claim", {"limit": limit}))
+        lease_id, until = data.get("lease_id"), data.get("lease_until")
+        raw_items, raw_texts = data.get("items"), data.get("texts")
+        if not isinstance(lease_id, str) or not isinstance(until, str):
+            raise PanelUnexpected("no lease in the answer")
+        if not isinstance(raw_items, list) or not isinstance(raw_texts, dict):
+            raise PanelUnexpected("unexpected claim answer")
+        try:
+            lease_until = datetime.fromisoformat(until.replace("Z", "+00:00"))
+        except ValueError:
+            raise PanelUnexpected("bad lease_until") from None
+        items: list[OutboxItem] = []
+        for raw in raw_items:
+            if not (
+                isinstance(raw, dict)
+                and isinstance(raw.get("id"), str)
+                and isinstance(raw.get("kind"), str)
+                and isinstance(raw.get("telegram_id"), int)
+            ):
+                raise PanelUnexpected("unexpected claim item")
+            items.append(
+                OutboxItem(
+                    id=raw["id"],
+                    kind=raw["kind"],
+                    telegram_id=raw["telegram_id"],
+                    broadcast_id=raw.get("broadcast_id") if isinstance(raw.get("broadcast_id"), str) else None,
+                    config_url=raw.get("config_url") if isinstance(raw.get("config_url"), str) else None,
+                    valid_until=raw.get("valid_until") if isinstance(raw.get("valid_until"), str) else None,
+                )
+            )
+        texts = {str(key): value for key, value in raw_texts.items() if isinstance(value, str)}
+        return Claim(lease_id=lease_id, lease_until=lease_until, items=items, texts=texts)
+
+    async def ack(self, lease_id: str, results: list[OutboxResult]) -> AckOutcome:
+        """Итоги отправки пачки. Что панель не приняла (аренда ушла другому), приходит в ignored."""
+        body = {
+            "lease_id": lease_id,
+            "results": [
+                {
+                    key: value
+                    for key, value in (
+                        ("id", result.id),
+                        ("status", result.status),
+                        ("error", result.error),
+                        ("retry_after", result.retry_after),
+                    )
+                    if value is not None
+                }
+                for result in results
+            ],
+        }
+        data = _json(await self._request("POST", "/outbox/ack", body))
+        applied, ignored = data.get("applied"), data.get("ignored")
+        if not isinstance(applied, list) or not isinstance(ignored, list):
+            raise PanelUnexpected("unexpected ack answer")
+        return AckOutcome(applied=[str(item) for item in applied], ignored=[str(item) for item in ignored])
 
     # --- запрос ------------------------------------------------------------------------------------------------------
 

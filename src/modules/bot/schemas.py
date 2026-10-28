@@ -77,6 +77,8 @@ class InviteRead(BaseModel):
     used_at: datetime | None
     revoked_at: datetime | None
     status: str  # valid / used / expired / revoked
+    used_by_user_id: UUID | None = None  # кто занял приглашение (в списке; пользователя могли удалить)
+    used_by_name: str | None = None
 
 
 class InviteCreated(InviteRead):
@@ -188,26 +190,35 @@ def _telegram_html(value: str) -> str:
     return value
 
 
-class BroadcastCreate(BaseModel):
-    """Новая рассылка. kind: news (текст в Telegram HTML) или config (каждому новая ссылка на его конфиг)."""
+class AudienceRequest(BaseModel):
+    """Кому адресована рассылка: вид и получатели. Так же задаётся отбор для подсчёта «сколько людей получит»."""
 
-    request_id: UUID  # повторный POST с тем же id возвращает ту же рассылку
     kind: Literal["news", "config"]
-    text: Annotated[str, AfterValidator(_telegram_html)] | None = None
     target: Literal["all", "selected", "protocol"]
     protocol_id: UUID | None = None
     user_ids: Annotated[list[UUID], Field(min_length=1, max_length=MAX_SELECTED_USERS)] | None = None
 
     @model_validator(mode="after")
-    def _consistent(self) -> Self:
-        if self.kind == "news" and self.text is None:
-            raise ValueError("A news broadcast needs a text")
+    def _target_is_consistent(self) -> Self:
         if self.kind == "config" and self.target == "all":
             raise ValueError("Config links go to selected people or to a protocol, not to everybody")
         if self.target == "protocol" and self.protocol_id is None:
             raise ValueError("The protocol target needs protocol_id")
         if self.target == "selected" and not self.user_ids:
             raise ValueError("The selected target needs user_ids")
+        return self
+
+
+class BroadcastCreate(AudienceRequest):
+    """Новая рассылка. kind: news (текст в Telegram HTML) или config (каждому новая ссылка на его конфиг)."""
+
+    request_id: UUID  # повторный POST с тем же id возвращает ту же рассылку
+    text: Annotated[str, AfterValidator(_telegram_html)] | None = None
+
+    @model_validator(mode="after")
+    def _news_has_text(self) -> Self:
+        if self.kind == "news" and self.text is None:
+            raise ValueError("A news broadcast needs a text")
         return self
 
 
@@ -222,3 +233,118 @@ class OutboxAckItem(BaseModel):
     status: Literal["sent", "blocked", "failed", "retry"]
     error: OutboxErrorCode | None = None
     retry_after: Annotated[int, Field(ge=0, le=86400)] | None = None
+
+
+class AudienceRead(BaseModel):
+    recipients: int  # получат
+    without_telegram: int  # адресаты без привязанного Telegram
+    blocked: int  # заблокировали бота: пропускаются
+
+
+class BroadcastRead(BaseModel):
+    id: UUID
+    kind: str
+    text: str | None
+    target: str
+    protocol_id: UUID | None
+    created_at: datetime
+    cancelled_at: datetime | None
+    finished_at: datetime | None
+    total: int
+    sent: int
+    blocked: int
+    failed: int
+    skipped: int
+    cancelled: int
+    state: Literal["running", "cancelled", "finished"]
+
+
+class OutboxCounts(BaseModel):
+    pending: int
+    claimed: int
+
+
+class BotStatusRead(BaseModel):
+    """Состояние бота для страницы «Бот»: по последнему замеченному действующему ключу."""
+
+    has_keys: bool  # есть хотя бы один ключ, в том числе отозванный: история остаётся доступной
+    active_keys: int
+    bot_username: str | None
+    last_seen_at: datetime | None
+    last_seen_version: str | None
+    stale: bool  # бот давно не выходил на связь (или ещё ни разу)
+    last_claim_at: datetime | None  # когда бот последний раз забирал очередь сообщений
+    outbox: OutboxCounts
+
+
+class BotSettingsRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    default_protocol_id: UUID | None
+    default_days: int
+    invite_valid_days: int
+    panel_down_after_seconds: int  # использует 25.5; интерфейс его пока не показывает
+    updated_at: datetime
+
+
+class BotProtocolRead(BaseModel):
+    id: UUID
+    server_id: UUID
+    server_name: str
+    type: str
+
+
+class RecipientRead(BaseModel):
+    """Человек для выбора получателей рассылки. telegram_id наружу не отдаётся."""
+
+    id: UUID
+    username: str
+    telegram_username: str | None
+    bot_blocked_at: datetime | None
+
+
+class OutboxRowRead(BaseModel):
+    """Состояние одного сообщения очереди: адреса и telegram_id здесь нет."""
+
+    id: UUID
+    status: str
+    error: str | None
+
+
+class ConfigLinkQueued(BaseModel):
+    outbox_id: UUID
+    status: str
+
+
+# --- очередь: Bot API ----------------------------------------------------------------------------------------------
+
+
+class OutboxClaimRequest(BaseModel):
+    limit: Annotated[int, Field(ge=1, le=100)] = 50
+
+
+class OutboxClaimItem(BaseModel):
+    """news: id, kind, telegram_id, broadcast_id; config: id, kind, telegram_id, config_url, valid_until."""
+
+    id: UUID
+    kind: str
+    telegram_id: int
+    broadcast_id: UUID | None = None
+    config_url: str | None = Field(default=None, repr=False)  # токен в адресе: в логи не попадает
+    valid_until: datetime | None = None
+
+
+class OutboxClaimResponse(BaseModel):
+    lease_id: UUID
+    lease_until: datetime
+    items: list[OutboxClaimItem]
+    texts: dict[UUID, str]  # текст новости один на рассылку
+
+
+class OutboxAckRequest(BaseModel):
+    lease_id: UUID
+    results: Annotated[list[OutboxAckItem], Field(max_length=100)]
+
+
+class OutboxAckResponse(BaseModel):
+    applied: list[UUID]
+    ignored: list[UUID]

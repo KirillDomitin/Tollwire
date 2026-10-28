@@ -3979,6 +3979,100 @@
         }
       }
     },
+    "/api/v1/bot/outbox/claim": {
+      "post": {
+        "tags": [
+          "bot"
+        ],
+        "summary": "Outbox Claim",
+        "description": "Бот забирает пачку исходящих сообщений в аренду. Для ссылок на конфиг адрес выпускается прямо сейчас и есть\nтолько в этом ответе (no-store); темп отправки держит бот, лимит Telegram - на нём.",
+        "operationId": "outbox_claim_api_v1_bot_outbox_claim_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OutboxClaimRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutboxClaimResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/api/v1/bot/outbox/ack": {
+      "post": {
+        "tags": [
+          "bot"
+        ],
+        "summary": "Outbox Ack",
+        "description": "Итоги отправки: sent / blocked / failed / retry. Принимаются только строки этой аренды, остальное - в ignored;\nповтор ничего не меняет.",
+        "operationId": "outbox_ack_api_v1_bot_outbox_ack_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OutboxAckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutboxAckResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
     "/api/v1/bot-admin/keys": {
       "get": {
         "tags": [
@@ -4109,28 +4203,87 @@
           "bot-admin"
         ],
         "summary": "List Invites",
+        "description": "Приглашения, новые первыми; у занятых - кто занял. Код приглашения в списке не показывается.",
         "operationId": "list_invites_api_v1_bot_admin_invites_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "before_created_at",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before Created At"
+            }
+          },
+          {
+            "name": "before_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
+                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/InviteRead"
                   },
-                  "type": "array",
                   "title": "Response List Invites Api V1 Bot Admin Invites Get"
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
           }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
+        }
       },
       "post": {
         "tags": [
@@ -4139,15 +4292,20 @@
         "summary": "Create Invite",
         "description": "Создать одноразовое приглашение. Код и ссылка показываются только в этом ответе.",
         "operationId": "create_invite_api_v1_bot_admin_invites_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/InviteCreate"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "201": {
@@ -4170,12 +4328,7 @@
               }
             }
           }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
+        }
       }
     },
     "/api/v1/bot-admin/invites/{invite_id}/revoke": {
@@ -4253,6 +4406,52 @@
                 }
               ],
               "title": "Status"
+            }
+          },
+          {
+            "name": "before_created_at",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before Created At"
+            }
+          },
+          {
+            "name": "before_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
             }
           }
         ],
@@ -4364,6 +4563,581 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RegistrationRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bot-admin/status": {
+      "get": {
+        "tags": [
+          "bot-admin"
+        ],
+        "summary": "Bot Status",
+        "description": "Бот: имя, версия, когда выходил на связь и забирал очередь; число сообщений в очереди.",
+        "operationId": "bot_status_api_v1_bot_admin_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotStatusRead"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/bot-admin/settings": {
+      "get": {
+        "tags": [
+          "bot-admin"
+        ],
+        "summary": "Get Settings",
+        "operationId": "get_settings_api_v1_bot_admin_settings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotSettingsRead"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "bot-admin"
+        ],
+        "summary": "Update Settings",
+        "operationId": "update_settings_api_v1_bot_admin_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BotSettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BotSettingsRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/bot-admin/protocols": {
+      "get": {
+        "tags": [
+          "bot-admin"
+        ],
+        "summary": "List Protocols",
+        "description": "Протоколы, на которые можно пригласить и которым можно сделать рассылку.",
+        "operationId": "list_protocols_api_v1_bot_admin_protocols_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BotProtocolRead"
+                  },
+                  "type": "array",
+                  "title": "Response List Protocols Api V1 Bot Admin Protocols Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/bot-admin/recipients": {
+      "get": {
+        "tags": [
+          "bot-admin"
+        ],
+        "summary": "List Recipients",
+        "description": "Люди с привязанным Telegram для выбора получателей: поиск по имени и по имени в Telegram.",
+        "operationId": "list_recipients_api_v1_bot_admin_recipients_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RecipientRead"
+                  },
+                  "title": "Response List Recipients Api V1 Bot Admin Recipients Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bot-admin/broadcasts": {
+      "get": {
+        "tags": [
+          "bot-admin"
+        ],
+        "summary": "List Broadcasts",
+        "operationId": "list_broadcasts_api_v1_bot_admin_broadcasts_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "before_created_at",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before Created At"
+            }
+          },
+          {
+            "name": "before_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BroadcastRead"
+                  },
+                  "title": "Response List Broadcasts Api V1 Bot Admin Broadcasts Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "bot-admin"
+        ],
+        "summary": "Create Broadcast",
+        "description": "Поставить рассылку в очередь бота. Повтор с тем же request_id возвращает ту же рассылку.\n422 с кодом telegram_html_*: текст не годится для Telegram; 409 not_configured: адрес панели не задан.",
+        "operationId": "create_broadcast_api_v1_bot_admin_broadcasts_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BroadcastCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BroadcastRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bot-admin/broadcasts/audience": {
+      "post": {
+        "tags": [
+          "bot-admin"
+        ],
+        "summary": "Broadcast Audience",
+        "description": "Сколько людей получит рассылка с таким отбором, не создавая её.",
+        "operationId": "broadcast_audience_api_v1_bot_admin_broadcasts_audience_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AudienceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudienceRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/bot-admin/broadcasts/{broadcast_id}": {
+      "get": {
+        "tags": [
+          "bot-admin"
+        ],
+        "summary": "Get Broadcast",
+        "operationId": "get_broadcast_api_v1_bot_admin_broadcasts__broadcast_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "broadcast_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Broadcast Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BroadcastRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bot-admin/broadcasts/{broadcast_id}/cancel": {
+      "post": {
+        "tags": [
+          "bot-admin"
+        ],
+        "summary": "Cancel Broadcast",
+        "description": "Ждущие сообщения закрываются, уже выданные боту доходят. Повтор ничего не меняет.",
+        "operationId": "cancel_broadcast_api_v1_bot_admin_broadcasts__broadcast_id__cancel_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "broadcast_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Broadcast Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BroadcastRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bot-admin/users/{user_id}/config-link": {
+      "post": {
+        "tags": [
+          "bot-admin"
+        ],
+        "summary": "Send Config Link",
+        "description": "«Отправить ссылку в Telegram»: новая ссылка выпускается, когда бот заберёт сообщение. Если открытая отправка\nуже есть - возвращается она. 409 с reason: no_telegram / bot_blocked / not_configured / no_access /\nconfig_unavailable.",
+        "operationId": "send_config_link_api_v1_bot_admin_users__user_id__config_link_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigLinkQueued"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bot-admin/outbox/{outbox_id}": {
+      "get": {
+        "tags": [
+          "bot-admin"
+        ],
+        "summary": "Get Outbox Row",
+        "description": "Состояние одного сообщения очереди: pending / claimed / sent / blocked / failed / skipped / cancelled.",
+        "operationId": "get_outbox_row_api_v1_bot_admin_outbox__outbox_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "outbox_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Outbox Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutboxRowRead"
                 }
               }
             }
@@ -4704,6 +5478,86 @@
         ],
         "title": "AssignReason"
       },
+      "AudienceRead": {
+        "properties": {
+          "recipients": {
+            "type": "integer",
+            "title": "Recipients"
+          },
+          "without_telegram": {
+            "type": "integer",
+            "title": "Without Telegram"
+          },
+          "blocked": {
+            "type": "integer",
+            "title": "Blocked"
+          }
+        },
+        "type": "object",
+        "required": [
+          "recipients",
+          "without_telegram",
+          "blocked"
+        ],
+        "title": "AudienceRead"
+      },
+      "AudienceRequest": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "news",
+              "config"
+            ],
+            "title": "Kind"
+          },
+          "target": {
+            "type": "string",
+            "enum": [
+              "all",
+              "selected",
+              "protocol"
+            ],
+            "title": "Target"
+          },
+          "protocol_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol Id"
+          },
+          "user_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "type": "array",
+                "maxItems": 1000,
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "target"
+        ],
+        "title": "AudienceRequest",
+        "description": "Кому адресована рассылка: вид и получатели. Так же задаётся отбор для подсчёта «сколько людей получит»."
+      },
       "AuditAction": {
         "type": "string",
         "enum": [
@@ -4792,7 +5646,11 @@
           "bot_registration_activated",
           "bot_registration_failed",
           "bot_registration_retried",
-          "config_link_created"
+          "config_link_created",
+          "bot_broadcast_created",
+          "bot_broadcast_cancelled",
+          "bot_config_link_queued",
+          "bot_settings_updated"
         ],
         "title": "AuditAction"
       },
@@ -5101,6 +5959,36 @@
         "title": "BotKeyRead",
         "description": "Ключ без секрета: открытое значение показывается один раз, при создании."
       },
+      "BotProtocolRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "server_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Server Id"
+          },
+          "server_name": {
+            "type": "string",
+            "title": "Server Name"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "server_id",
+          "server_name",
+          "type"
+        ],
+        "title": "BotProtocolRead"
+      },
       "BotRegistrationRead": {
         "properties": {
           "registration_id": {
@@ -5119,6 +6007,357 @@
         ],
         "title": "BotRegistrationRead",
         "description": "Ответ боту: статус регистрации. Ссылку на конфиг бот просит отдельно (`config-link`)."
+      },
+      "BotSettingsRead": {
+        "properties": {
+          "default_protocol_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Protocol Id"
+          },
+          "default_days": {
+            "type": "integer",
+            "title": "Default Days"
+          },
+          "invite_valid_days": {
+            "type": "integer",
+            "title": "Invite Valid Days"
+          },
+          "panel_down_after_seconds": {
+            "type": "integer",
+            "title": "Panel Down After Seconds"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "default_protocol_id",
+          "default_days",
+          "invite_valid_days",
+          "panel_down_after_seconds",
+          "updated_at"
+        ],
+        "title": "BotSettingsRead"
+      },
+      "BotSettingsUpdate": {
+        "properties": {
+          "default_protocol_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Protocol Id"
+          },
+          "default_days": {
+            "type": "integer",
+            "maximum": 3650.0,
+            "minimum": 1.0,
+            "title": "Default Days"
+          },
+          "invite_valid_days": {
+            "type": "integer",
+            "maximum": 365.0,
+            "minimum": 1.0,
+            "title": "Invite Valid Days"
+          }
+        },
+        "type": "object",
+        "required": [
+          "default_protocol_id",
+          "default_days",
+          "invite_valid_days"
+        ],
+        "title": "BotSettingsUpdate",
+        "description": "Настройки, которые админ меняет из интерфейса. Порог «панель недоступна» появится в UI вместе с 25.5."
+      },
+      "BotStatusRead": {
+        "properties": {
+          "has_keys": {
+            "type": "boolean",
+            "title": "Has Keys"
+          },
+          "active_keys": {
+            "type": "integer",
+            "title": "Active Keys"
+          },
+          "bot_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bot Username"
+          },
+          "last_seen_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen At"
+          },
+          "last_seen_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen Version"
+          },
+          "stale": {
+            "type": "boolean",
+            "title": "Stale"
+          },
+          "last_claim_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Claim At"
+          },
+          "outbox": {
+            "$ref": "#/components/schemas/OutboxCounts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "has_keys",
+          "active_keys",
+          "bot_username",
+          "last_seen_at",
+          "last_seen_version",
+          "stale",
+          "last_claim_at",
+          "outbox"
+        ],
+        "title": "BotStatusRead",
+        "description": "Состояние бота для страницы «Бот»: по последнему замеченному действующему ключу."
+      },
+      "BroadcastCreate": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "news",
+              "config"
+            ],
+            "title": "Kind"
+          },
+          "target": {
+            "type": "string",
+            "enum": [
+              "all",
+              "selected",
+              "protocol"
+            ],
+            "title": "Target"
+          },
+          "protocol_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol Id"
+          },
+          "user_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "type": "array",
+                "maxItems": 1000,
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Ids"
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "target",
+          "request_id"
+        ],
+        "title": "BroadcastCreate",
+        "description": "Новая рассылка. kind: news (текст в Telegram HTML) или config (каждому новая ссылка на его конфиг)."
+      },
+      "BroadcastRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "target": {
+            "type": "string",
+            "title": "Target"
+          },
+          "protocol_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "cancelled_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "sent": {
+            "type": "integer",
+            "title": "Sent"
+          },
+          "blocked": {
+            "type": "integer",
+            "title": "Blocked"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          },
+          "skipped": {
+            "type": "integer",
+            "title": "Skipped"
+          },
+          "cancelled": {
+            "type": "integer",
+            "title": "Cancelled"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "running",
+              "cancelled",
+              "finished"
+            ],
+            "title": "State"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "text",
+          "target",
+          "protocol_id",
+          "created_at",
+          "cancelled_at",
+          "finished_at",
+          "total",
+          "sent",
+          "blocked",
+          "failed",
+          "skipped",
+          "cancelled",
+          "state"
+        ],
+        "title": "BroadcastRead"
       },
       "ChangePasswordRequest": {
         "properties": {
@@ -5169,6 +6408,25 @@
         ],
         "title": "ClientImportCreate",
         "description": "Тело POST /servers/{id}/import."
+      },
+      "ConfigLinkQueued": {
+        "properties": {
+          "outbox_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Outbox Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "outbox_id",
+          "status"
+        ],
+        "title": "ConfigLinkQueued"
       },
       "ConfigLinkRead": {
         "properties": {
@@ -6001,19 +7259,40 @@
       "InviteCreate": {
         "properties": {
           "protocol_id": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Protocol Id"
           },
           "days": {
-            "type": "integer",
-            "maximum": 3650.0,
-            "minimum": 1.0,
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 3650.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Days"
           },
           "expires_at": {
-            "type": "string",
-            "format": "date-time",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Expires At"
           },
           "note": {
@@ -6030,11 +7309,6 @@
           }
         },
         "type": "object",
-        "required": [
-          "protocol_id",
-          "days",
-          "expires_at"
-        ],
         "title": "InviteCreate"
       },
       "InviteCreated": {
@@ -6108,6 +7382,29 @@
           "status": {
             "type": "string",
             "title": "Status"
+          },
+          "used_by_user_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Used By User Id"
+          },
+          "used_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Used By Name"
           },
           "code": {
             "type": "string",
@@ -6212,6 +7509,29 @@
           "status": {
             "type": "string",
             "title": "Status"
+          },
+          "used_by_user_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Used By User Id"
+          },
+          "used_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Used By Name"
           }
         },
         "type": "object",
@@ -6751,6 +8071,275 @@
         ],
         "title": "MetricsSeries"
       },
+      "OutboxAckItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "sent",
+              "blocked",
+              "failed",
+              "retry"
+            ],
+            "title": "Status"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "blocked",
+                  "chat_not_found",
+                  "bad_request",
+                  "network",
+                  "telegram_5xx",
+                  "flood",
+                  "too_many_attempts"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "retry_after": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 86400.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry After"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status"
+        ],
+        "title": "OutboxAckItem"
+      },
+      "OutboxAckRequest": {
+        "properties": {
+          "lease_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Lease Id"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/OutboxAckItem"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Results"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lease_id",
+          "results"
+        ],
+        "title": "OutboxAckRequest"
+      },
+      "OutboxAckResponse": {
+        "properties": {
+          "applied": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Applied"
+          },
+          "ignored": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Ignored"
+          }
+        },
+        "type": "object",
+        "required": [
+          "applied",
+          "ignored"
+        ],
+        "title": "OutboxAckResponse"
+      },
+      "OutboxClaimItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "telegram_id": {
+            "type": "integer",
+            "title": "Telegram Id"
+          },
+          "broadcast_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Broadcast Id"
+          },
+          "config_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Url"
+          },
+          "valid_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid Until"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "telegram_id"
+        ],
+        "title": "OutboxClaimItem",
+        "description": "news: id, kind, telegram_id, broadcast_id; config: id, kind, telegram_id, config_url, valid_until."
+      },
+      "OutboxClaimRequest": {
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "default": 50
+          }
+        },
+        "type": "object",
+        "title": "OutboxClaimRequest"
+      },
+      "OutboxClaimResponse": {
+        "properties": {
+          "lease_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Lease Id"
+          },
+          "lease_until": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Lease Until"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OutboxClaimItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "texts": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "format": "uuid"
+            },
+            "type": "object",
+            "title": "Texts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lease_id",
+          "lease_until",
+          "items",
+          "texts"
+        ],
+        "title": "OutboxClaimResponse"
+      },
+      "OutboxCounts": {
+        "properties": {
+          "pending": {
+            "type": "integer",
+            "title": "Pending"
+          },
+          "claimed": {
+            "type": "integer",
+            "title": "Claimed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pending",
+          "claimed"
+        ],
+        "title": "OutboxCounts"
+      },
+      "OutboxRowRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "error"
+        ],
+        "title": "OutboxRowRead",
+        "description": "Состояние одного сообщения очереди: адреса и telegram_id здесь нет."
+      },
       "OverrideAction": {
         "type": "string",
         "enum": [
@@ -6968,6 +8557,51 @@
           "token"
         ],
         "title": "PublicConfigRequest"
+      },
+      "RecipientRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "telegram_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telegram Username"
+          },
+          "bot_blocked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bot Blocked At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "username",
+          "telegram_username",
+          "bot_blocked_at"
+        ],
+        "title": "RecipientRead",
+        "description": "Человек для выбора получателей рассылки. telegram_id наружу не отдаётся."
       },
       "RegistrationCreate": {
         "properties": {
@@ -7724,6 +9358,40 @@
             "format": "date-time",
             "title": "Created At"
           },
+          "telegram_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telegram Id"
+          },
+          "telegram_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telegram Username"
+          },
+          "bot_blocked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bot Blocked At"
+          },
           "access": {
             "anyOf": [
               {
@@ -7785,6 +9453,40 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "telegram_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telegram Id"
+          },
+          "telegram_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telegram Username"
+          },
+          "bot_blocked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bot Blocked At"
           }
         },
         "type": "object",

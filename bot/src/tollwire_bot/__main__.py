@@ -18,6 +18,7 @@ from tollwire_bot.app import build_dispatcher
 from tollwire_bot.config import Settings
 from tollwire_bot.heartbeat import Heartbeat
 from tollwire_bot.log import configure_logging
+from tollwire_bot.outbox import OutboxSender
 from tollwire_bot.panel import PanelClient
 from tollwire_bot.storage import SqliteStorage
 from tollwire_bot.texts import t
@@ -72,6 +73,16 @@ async def run(settings: Settings) -> int:
             asyncio.create_task(heartbeat.run()),
             asyncio.create_task(keep_alive_file(heartbeat)),
             asyncio.create_task(purge_loop(storage)),
+            # Рассылки: тот же бот, что у диалога, - лимит Telegram один на токен.
+            asyncio.create_task(
+                OutboxSender(
+                    bot,
+                    panel,
+                    storage,
+                    rate_per_second=settings.outbox_rate_per_second,
+                    batch=settings.outbox_batch,
+                ).run()
+            ),
         ]
         logger.info("the bot %s started", __version__)
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())  # SIGTERM/SIGINT останавливают

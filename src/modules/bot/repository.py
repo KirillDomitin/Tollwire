@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import Select, and_, delete, func, literal, not_, or_, select, update
+from sqlalchemy import Select, and_, delete, func, literal, not_, or_, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import CursorResult, Result
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,7 +22,8 @@ from modules.bot.models.outbox import OPEN_STATUSES as OUTBOX_OPEN_STATUSES
 from modules.bot.models.outbox import BotOutbox, OutboxStatus
 from modules.bot.models.registration import OPEN_STATUSES, BotRegistration, RegistrationStatus
 from modules.bot.models.settings import BotSettings
-from modules.bot.schemas import BroadcastCreate
+from modules.bot.schemas import AudienceRequest, BroadcastCreate
+from modules.protocols.models.protocol import VPNProtocol
 from modules.servers.models.server import VPNServer
 from modules.vpn_users.models.user import VPNUser
 
@@ -276,7 +277,7 @@ class OutboxRepository:
         query = select(VPNUser).where(VPNUser.id == user_id).execution_options(populate_existing=True)
         return (await self.session.execute(query)).scalar_one_or_none()
 
-    def _targets(self, data: BroadcastCreate, now: datetime) -> Select[Any]:
+    def _targets(self, data: AudienceRequest, now: datetime) -> Select[Any]:
         """Кому адресована рассылка: (user_id, grant_id, telegram_id, bot_blocked_at) - без фильтра по Telegram."""
         if data.target == "protocol":
             return (
@@ -308,7 +309,7 @@ class OutboxRepository:
             query = query.where(VPNUser.id.in_(data.user_ids or []))
         return query
 
-    async def audience(self, data: BroadcastCreate, now: datetime) -> tuple[int, int, int]:
+    async def audience(self, data: AudienceRequest, now: datetime) -> tuple[int, int, int]:
         """(получателей, без Telegram, заблокировавших бота) среди адресатов рассылки."""
         targets = self._targets(data, now).subquery()
         query = select(
@@ -488,3 +489,79 @@ class OutboxRepository:
             delete(BotOutbox).where(BotOutbox.status.not_in(_OPEN), BotOutbox.updated_at < border)
         )
         return _rowcount(result)
+
+
+class BotPageRepository:
+    """Запросы страницы «Бот»: состояние, получатели, протоколы, списки с курсором (новые первыми)."""
+
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def keys(self) -> Sequence[BotKey]:
+        return (await self.session.execute(select(BotKey))).scalars().all()
+
+    async def outbox_counts(self) -> tuple[int, int]:
+        query = select(
+            func.count().filter(BotOutbox.status == OutboxStatus.PENDING.value),
+            func.count().filter(BotOutbox.status == OutboxStatus.CLAIMED.value),
+        )
+        pending, claimed = (await self.session.execute(query)).one()
+        return int(pending), int(claimed)
+
+    async def recipients(self, search: str | None, limit: int) -> Sequence[VPNUser]:
+        query = select(VPNUser).where(VPNUser.telegram_id.is_not(None))
+        if search:
+            # autoescape: «%» и «_» в поиске - обычные символы, а не шаблон
+            query = query.where(
+                or_(
+                    VPNUser.username.icontains(search, autoescape=True),
+                    VPNUser.telegram_username.icontains(search, autoescape=True),
+                )
+            )
+        return (await self.session.execute(query.order_by(VPNUser.username, VPNUser.id).limit(limit))).scalars().all()
+
+    async def protocols(self) -> Sequence[tuple[VPNProtocol, str]]:
+        query = (
+            select(VPNProtocol, VPNServer.name)
+            .join(VPNServer, VPNProtocol.server_id == VPNServer.id)
+            .order_by(VPNServer.name, VPNProtocol.type)
+        )
+        return [(protocol, name) for protocol, name in (await self.session.execute(query)).all()]
+
+    async def invites(
+        self, limit: int, before: tuple[datetime, UUID] | None
+    ) -> Sequence[tuple[BotInvite, UUID | None, str | None]]:
+        """Приглашения вместе с тем, кто их занял (регистрация, а по ней человек)."""
+        query = (
+            select(BotInvite, BotRegistration.user_id, VPNUser.username)
+            .outerjoin(BotRegistration, BotRegistration.invite_id == BotInvite.id)
+            .outerjoin(VPNUser, VPNUser.id == BotRegistration.user_id)
+        )
+        if before:
+            query = query.where(
+                tuple_(BotInvite.created_at, BotInvite.id) < tuple_(literal(before[0]), literal(before[1]))
+            )
+        query = query.order_by(BotInvite.created_at.desc(), BotInvite.id.desc()).limit(limit)
+        return [(invite, user_id, name) for invite, user_id, name in (await self.session.execute(query)).all()]
+
+    async def registrations(
+        self, status: RegistrationStatus | None, limit: int, before: tuple[datetime, UUID] | None
+    ) -> Sequence[BotRegistration]:
+        query = select(BotRegistration)
+        if status is not None:
+            query = query.where(BotRegistration.status == status)
+        if before:
+            query = query.where(
+                tuple_(BotRegistration.created_at, BotRegistration.id) < tuple_(literal(before[0]), literal(before[1]))
+            )
+        query = query.order_by(BotRegistration.created_at.desc(), BotRegistration.id.desc()).limit(limit)
+        return (await self.session.execute(query)).scalars().all()
+
+    async def broadcasts(self, limit: int, before: tuple[datetime, UUID] | None) -> Sequence[BotBroadcast]:
+        query = select(BotBroadcast)
+        if before:
+            query = query.where(
+                tuple_(BotBroadcast.created_at, BotBroadcast.id) < tuple_(literal(before[0]), literal(before[1]))
+            )
+        query = query.order_by(BotBroadcast.created_at.desc(), BotBroadcast.id.desc()).limit(limit)
+        return (await self.session.execute(query)).scalars().all()

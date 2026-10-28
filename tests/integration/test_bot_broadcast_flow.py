@@ -132,7 +132,7 @@ async def activate(scene: Scene, count: int) -> list[str]:
             scene.protocol_id,
             scene.worker,
             telegram_id=telegram_id,
-            email=f"person{number}@example.org",
+            email=f"active{number}@example.org",
             name=f"Person {number}",
         )
         ids.append(str((await sql_rows("SELECT id FROM vpn_users WHERE telegram_id = :t", t=telegram_id))[0][0]))

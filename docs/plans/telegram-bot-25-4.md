@@ -338,9 +338,9 @@ text}}`, заголовок `Cache-Control: no-store`.
 - [x] 5. Сервисы: `BotSettingsService`, значения по умолчанию в `BotInviteService.create`;
   `ConfigLinkService.stage_issue`; `OutboxService` (`claim`, `ack`, постановка, `audience`, `cancel`,
   индивидуальная отправка); снятие `bot_blocked_at` (Р8-A); репозитории. Коммит.
-- [ ] 6. Роутеры: Bot API `outbox/*`, админский API, `VPNUserRead`; `AuditAction`/`AuditEntity`; правило
+- [x] 6. Роутеры: Bot API `outbox/*`, админский API, `VPNUserRead`; `AuditAction`/`AuditEntity`; правило
   `retention`. Коммит.
-- [ ] 7. Бот: `panel.py`, `outbox.py`, `storage.py` (журнал), `texts.py`, `config.py`, `__main__.py`, версия; тесты.
+- [x] 7. Бот: `panel.py`, `outbox.py`, `storage.py` (журнал), `texts.py`, `config.py`, `__main__.py`, версия; тесты.
   Коммит.
 - [ ] 8. Фронтенд: `export_openapi` → `gen:api`, меню, `pages/bot/*`, карточка пользователя, словари,
   `AUDIT_ACTIONS`, тесты. Коммит.

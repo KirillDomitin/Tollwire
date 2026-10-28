@@ -6,12 +6,15 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Path
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 
 from modules.bot.config_links import ConfigLinkService
 from modules.bot.dependencies import BotKeyContext
 from modules.bot.invites import BotInviteService
 from modules.bot.keys import BotKeyService
 from modules.bot.models.registration import BotRegistration
+from modules.bot.outbox import OutboxService
 from modules.bot.registrations import BotRegistrationService
 from modules.bot.schemas import (
     BotRegistrationRead,
@@ -19,6 +22,10 @@ from modules.bot.schemas import (
     HeartbeatRequest,
     InviteCheckRequest,
     InviteCheckResponse,
+    OutboxAckRequest,
+    OutboxAckResponse,
+    OutboxClaimRequest,
+    OutboxClaimResponse,
     RegistrationCreate,
     UserStatusRead,
 )
@@ -73,3 +80,36 @@ async def config_link(telegram_id: Annotated[int, Path(ge=1, le=2**63 - 1)], con
     service = ConfigLinkService(context.session, context.actor)
     link, token = await service.issue_for_telegram(telegram_id)
     return await service.url_of(link, token)
+
+
+@router.post("/outbox/claim", response_model=OutboxClaimResponse)
+async def outbox_claim(data: OutboxClaimRequest, context: BotKeyContext) -> JSONResponse:
+    """Бот забирает пачку исходящих сообщений в аренду. Для ссылок на конфиг адрес выпускается прямо сейчас и есть
+    только в этом ответе (no-store); темп отправки держит бот, лимит Telegram - на нём."""
+    result = await OutboxService(context.session, context.actor).claim(context.key_id, data.limit)
+    items = []
+    for item in result.items:
+        if item.kind == "config":
+            items.append(
+                {
+                    "id": item.id,
+                    "kind": item.kind,
+                    "telegram_id": item.telegram_id,
+                    "config_url": item.config_url,
+                    "valid_until": item.valid_until,
+                }
+            )
+        else:
+            items.append(
+                {"id": item.id, "kind": item.kind, "telegram_id": item.telegram_id, "broadcast_id": item.broadcast_id}
+            )
+    body = {"lease_id": result.lease_id, "lease_until": result.lease_until, "items": items, "texts": result.texts}
+    return JSONResponse(content=jsonable_encoder(body), headers={"Cache-Control": "no-store"})
+
+
+@router.post("/outbox/ack", response_model=OutboxAckResponse)
+async def outbox_ack(data: OutboxAckRequest, context: BotKeyContext) -> OutboxAckResponse:
+    """Итоги отправки: sent / blocked / failed / retry. Принимаются только строки этой аренды, остальное - в ignored;
+    повтор ничего не меняет."""
+    result = await OutboxService(context.session, context.actor).ack(data.lease_id, data.results)
+    return OutboxAckResponse(applied=result.applied, ignored=result.ignored)

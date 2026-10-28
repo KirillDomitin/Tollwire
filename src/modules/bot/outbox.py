@@ -24,7 +24,7 @@ from modules.bot.config_links import CONFIG_UNAVAILABLE, NO_ACCESS, NOT_CONFIGUR
 from modules.bot.models.broadcast import BotBroadcast
 from modules.bot.models.outbox import PRIORITY_INDIVIDUAL, BotOutbox, OutboxKind, OutboxStatus
 from modules.bot.repository import OutboxRepository
-from modules.bot.schemas import BroadcastCreate, OutboxAckItem
+from modules.bot.schemas import AudienceRequest, BroadcastCreate, OutboxAckItem
 from modules.vpn_users.repository import VPNUserRepository
 
 logger = logging.getLogger("bot")
@@ -97,7 +97,7 @@ class OutboxService:
 
     # --- рассылки --------------------------------------------------------------------------------------------------
 
-    async def audience(self, data: BroadcastCreate) -> Audience:
+    async def audience(self, data: AudienceRequest) -> Audience:
         recipients, without_telegram, blocked = await self.outbox.audience(data, _now())
         return Audience(recipients, without_telegram, blocked)
 
@@ -177,6 +177,12 @@ class OutboxService:
                 raise
         existing = await self.outbox.open_config_row(user.id)
         if existing is not None:
+            if existing.broadcast_id is not None:
+                # Ссылка уже ждёт в рассылке: просьба админа попадает в аудит, строка остаётся прежней.
+                self.audit.record(
+                    AuditAction.BOT_CONFIG_LINK_QUEUED, AuditEntity.VPN_USER, user.id, {"outbox_id": existing.id}
+                )
+                await self.session.commit()
             return existing
         try:
             row = await self.outbox.add_row(

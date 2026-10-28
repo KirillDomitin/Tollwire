@@ -468,11 +468,17 @@ async def test_invalid_invite_is_422(api: httpx.AsyncClient, scene: Scene, overr
     assert (await api.post(INVITES_URL, json=body)).status_code == 422
 
 
-async def test_invite_without_protocol_or_days_is_422(api: httpx.AsyncClient, scene: Scene) -> None:
+async def test_invite_without_protocol_or_days_takes_them_from_the_settings(
+    api: httpx.AsyncClient, scene: Scene
+) -> None:
+    """С 25.4 протокол, дни и срок необязательны: недостающее берётся из настроек бота (по умолчанию 30 и 7 дней);
+    протокола нет ни в запросе, ни в настройках - 409 no_default_protocol."""
     deadline = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
-    assert (await api.post(INVITES_URL, json={"days": 30, "expires_at": deadline})).status_code == 422
+    no_protocol = await api.post(INVITES_URL, json={"days": 30, "expires_at": deadline})
+    assert no_protocol.status_code == 409 and no_protocol.json()["reason"] == "no_default_protocol"
     body = {"protocol_id": str(scene.protocol_id), "expires_at": deadline}
-    assert (await api.post(INVITES_URL, json=body)).status_code == 422
+    created = await api.post(INVITES_URL, json=body)
+    assert created.status_code == 201 and created.json()["days"] == 30
 
 
 async def test_invite_that_expired_already_is_422(api: httpx.AsyncClient, scene: Scene) -> None:

@@ -38,6 +38,10 @@ class VPNUserRead(BaseModel):
     status: VPNUserStatus
     description: str | None = None
     created_at: datetime
+    # Заполнены у пришедших через Telegram-бота (и привязанных вручную); bot_blocked_at - человек заблокировал бота.
+    telegram_id: int | None = None
+    telegram_username: str | None = None
+    bot_blocked_at: datetime | None = None
 
 
 class AccessSummary(BaseModel):

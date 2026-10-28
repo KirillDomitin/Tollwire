@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     panel_ca_file: str | None = None  # свой сертификат панели (самоподписанный), в дополнение к штатным
     state_dir: Path = Path("/data")  # том с состоянием диалогов
     log_level: str = "INFO"
+    # Рассылки: сообщений в секунду (лимит Telegram - 30 на токен; запас остаётся на ответы людям в диалогах) и
+    # сколько сообщений бот берёт у панели за раз.
+    outbox_rate_per_second: int = Field(default=20, ge=1, le=28)
+    outbox_batch: int = Field(default=50, ge=1, le=100)
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

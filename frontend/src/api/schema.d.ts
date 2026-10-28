@@ -1092,6 +1092,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/bot/outbox/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Outbox Claim
+         * @description Бот забирает пачку исходящих сообщений в аренду. Для ссылок на конфиг адрес выпускается прямо сейчас и есть
+         *     только в этом ответе (no-store); темп отправки держит бот, лимит Telegram - на нём.
+         */
+        post: operations["outbox_claim_api_v1_bot_outbox_claim_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot/outbox/ack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Outbox Ack
+         * @description Итоги отправки: sent / blocked / failed / retry. Принимаются только строки этой аренды, остальное - в ignored;
+         *     повтор ничего не меняет.
+         */
+        post: operations["outbox_ack_api_v1_bot_outbox_ack_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/bot-admin/keys": {
         parameters: {
             query?: never;
@@ -1140,7 +1182,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Invites */
+        /**
+         * List Invites
+         * @description Приглашения, новые первыми; у занятых - кто занял. Код приглашения в списке не показывается.
+         */
         get: operations["list_invites_api_v1_bot_admin_invites_get"];
         put?: never;
         /**
@@ -1219,6 +1264,205 @@ export interface paths {
          * @description Повторить выдачу упавшей регистрации (только из `failed`): тот же пользователь и доступ, новая задача.
          */
         post: operations["retry_registration_api_v1_bot_admin_registrations__registration_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot-admin/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Bot Status
+         * @description Бот: имя, версия, когда выходил на связь и забирал очередь; число сообщений в очереди.
+         */
+        get: operations["bot_status_api_v1_bot_admin_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot-admin/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Settings */
+        get: operations["get_settings_api_v1_bot_admin_settings_get"];
+        /** Update Settings */
+        put: operations["update_settings_api_v1_bot_admin_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot-admin/protocols": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Protocols
+         * @description Протоколы, на которые можно пригласить и которым можно сделать рассылку.
+         */
+        get: operations["list_protocols_api_v1_bot_admin_protocols_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot-admin/recipients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Recipients
+         * @description Люди с привязанным Telegram для выбора получателей: поиск по имени и по имени в Telegram.
+         */
+        get: operations["list_recipients_api_v1_bot_admin_recipients_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot-admin/broadcasts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Broadcasts */
+        get: operations["list_broadcasts_api_v1_bot_admin_broadcasts_get"];
+        put?: never;
+        /**
+         * Create Broadcast
+         * @description Поставить рассылку в очередь бота. Повтор с тем же request_id возвращает ту же рассылку.
+         *     422 с кодом telegram_html_*: текст не годится для Telegram; 409 not_configured: адрес панели не задан.
+         */
+        post: operations["create_broadcast_api_v1_bot_admin_broadcasts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot-admin/broadcasts/audience": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Broadcast Audience
+         * @description Сколько людей получит рассылка с таким отбором, не создавая её.
+         */
+        post: operations["broadcast_audience_api_v1_bot_admin_broadcasts_audience_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot-admin/broadcasts/{broadcast_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Broadcast */
+        get: operations["get_broadcast_api_v1_bot_admin_broadcasts__broadcast_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot-admin/broadcasts/{broadcast_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Broadcast
+         * @description Ждущие сообщения закрываются, уже выданные боту доходят. Повтор ничего не меняет.
+         */
+        post: operations["cancel_broadcast_api_v1_bot_admin_broadcasts__broadcast_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot-admin/users/{user_id}/config-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send Config Link
+         * @description «Отправить ссылку в Telegram»: новая ссылка выпускается, когда бот заберёт сообщение. Если открытая отправка
+         *     уже есть - возвращается она. 409 с reason: no_telegram / bot_blocked / not_configured / no_access /
+         *     config_unavailable.
+         */
+        post: operations["send_config_link_api_v1_bot_admin_users__user_id__config_link_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot-admin/outbox/{outbox_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Outbox Row
+         * @description Состояние одного сообщения очереди: pending / claimed / sent / blocked / failed / skipped / cancelled.
+         */
+        get: operations["get_outbox_row_api_v1_bot_admin_outbox__outbox_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1398,11 +1642,40 @@ export interface components {
          * @enum {string}
          */
         AssignReason: "issue" | "drain" | "failover" | "failover_return" | "manual" | "sync";
+        /** AudienceRead */
+        AudienceRead: {
+            /** Recipients */
+            recipients: number;
+            /** Without Telegram */
+            without_telegram: number;
+            /** Blocked */
+            blocked: number;
+        };
+        /**
+         * AudienceRequest
+         * @description Кому адресована рассылка: вид и получатели. Так же задаётся отбор для подсчёта «сколько людей получит».
+         */
+        AudienceRequest: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "news" | "config";
+            /**
+             * Target
+             * @enum {string}
+             */
+            target: "all" | "selected" | "protocol";
+            /** Protocol Id */
+            protocol_id?: string | null;
+            /** User Ids */
+            user_ids?: string[] | null;
+        };
         /**
          * AuditAction
          * @enum {string}
          */
-        AuditAction: "login" | "login_failed" | "login_locked" | "logout" | "password_changed" | "password_change_failed" | "admin_created" | "admin_updated" | "server_created" | "server_updated" | "server_deleted" | "server_credentials_set" | "server_credentials_deleted" | "server_host_key_pinned" | "server_host_key_reset" | "server_host_key_mismatch" | "server_install_started" | "server_install_completed" | "server_install_failed" | "server_sync_started" | "server_sync_completed" | "server_sync_failed" | "server_discover_started" | "server_discover_completed" | "server_discover_failed" | "server_ssh_key_install_started" | "server_ssh_key_install_completed" | "server_ssh_key_install_failed" | "protocol_install_started" | "protocol_install_completed" | "protocol_install_failed" | "protocol_remove_started" | "protocol_remove_completed" | "protocol_remove_failed" | "vpn_user_created" | "vpn_user_updated" | "vpn_user_deleted" | "subscription_created" | "subscription_updated" | "subscription_activated" | "subscription_revoked" | "subscription_expired" | "subscription_deleted" | "access_granted" | "access_updated" | "access_revoked" | "access_expired" | "access_deleted" | "credential_issued" | "credential_imported" | "credential_issue_failed" | "credential_revoked" | "credential_revoke_failed" | "config_viewed" | "clients_import_started" | "clients_import_completed" | "clients_import_failed" | "gateway_exit_add_started" | "gateway_exit_add_completed" | "gateway_exit_add_failed" | "gateway_exit_remove_started" | "gateway_exit_remove_completed" | "gateway_exit_remove_failed" | "gateway_exit_updated" | "gateway_client_assigned" | "gateway_client_unassigned" | "geoip_list_updated" | "geoip_list_activated" | "geoip_override_added" | "geoip_override_removed" | "gateway_ru_applied" | "gateway_ru_apply_failed" | "gateway_client_moved" | "gateway_failover" | "gateway_all_exits_down" | "gateway_exit_recovered" | "gateway_container_recreated" | "bot_key_created" | "bot_key_revoked" | "bot_invite_created" | "bot_invite_revoked" | "bot_registration_created" | "bot_registration_activated" | "bot_registration_failed" | "bot_registration_retried" | "config_link_created";
+        AuditAction: "login" | "login_failed" | "login_locked" | "logout" | "password_changed" | "password_change_failed" | "admin_created" | "admin_updated" | "server_created" | "server_updated" | "server_deleted" | "server_credentials_set" | "server_credentials_deleted" | "server_host_key_pinned" | "server_host_key_reset" | "server_host_key_mismatch" | "server_install_started" | "server_install_completed" | "server_install_failed" | "server_sync_started" | "server_sync_completed" | "server_sync_failed" | "server_discover_started" | "server_discover_completed" | "server_discover_failed" | "server_ssh_key_install_started" | "server_ssh_key_install_completed" | "server_ssh_key_install_failed" | "protocol_install_started" | "protocol_install_completed" | "protocol_install_failed" | "protocol_remove_started" | "protocol_remove_completed" | "protocol_remove_failed" | "vpn_user_created" | "vpn_user_updated" | "vpn_user_deleted" | "subscription_created" | "subscription_updated" | "subscription_activated" | "subscription_revoked" | "subscription_expired" | "subscription_deleted" | "access_granted" | "access_updated" | "access_revoked" | "access_expired" | "access_deleted" | "credential_issued" | "credential_imported" | "credential_issue_failed" | "credential_revoked" | "credential_revoke_failed" | "config_viewed" | "clients_import_started" | "clients_import_completed" | "clients_import_failed" | "gateway_exit_add_started" | "gateway_exit_add_completed" | "gateway_exit_add_failed" | "gateway_exit_remove_started" | "gateway_exit_remove_completed" | "gateway_exit_remove_failed" | "gateway_exit_updated" | "gateway_client_assigned" | "gateway_client_unassigned" | "geoip_list_updated" | "geoip_list_activated" | "geoip_override_added" | "geoip_override_removed" | "gateway_ru_applied" | "gateway_ru_apply_failed" | "gateway_client_moved" | "gateway_failover" | "gateway_all_exits_down" | "gateway_exit_recovered" | "gateway_container_recreated" | "bot_key_created" | "bot_key_revoked" | "bot_invite_created" | "bot_invite_revoked" | "bot_registration_created" | "bot_registration_activated" | "bot_registration_failed" | "bot_registration_retried" | "config_link_created" | "bot_broadcast_created" | "bot_broadcast_cancelled" | "bot_config_link_queued" | "bot_settings_updated";
         /** AuditActorRead */
         AuditActorRead: {
             /**
@@ -1506,6 +1779,23 @@ export interface components {
             /** Revoked At */
             revoked_at: string | null;
         };
+        /** BotProtocolRead */
+        BotProtocolRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Server Id
+             * Format: uuid
+             */
+            server_id: string;
+            /** Server Name */
+            server_name: string;
+            /** Type */
+            type: string;
+        };
         /**
          * BotRegistrationRead
          * @description Ответ боту: статус регистрации. Ссылку на конфиг бот просит отдельно (`config-link`).
@@ -1517,6 +1807,124 @@ export interface components {
              */
             registration_id: string;
             status: components["schemas"]["RegistrationStatus"];
+        };
+        /** BotSettingsRead */
+        BotSettingsRead: {
+            /** Default Protocol Id */
+            default_protocol_id: string | null;
+            /** Default Days */
+            default_days: number;
+            /** Invite Valid Days */
+            invite_valid_days: number;
+            /** Panel Down After Seconds */
+            panel_down_after_seconds: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * BotSettingsUpdate
+         * @description Настройки, которые админ меняет из интерфейса. Порог «панель недоступна» появится в UI вместе с 25.5.
+         */
+        BotSettingsUpdate: {
+            /** Default Protocol Id */
+            default_protocol_id: string | null;
+            /** Default Days */
+            default_days: number;
+            /** Invite Valid Days */
+            invite_valid_days: number;
+        };
+        /**
+         * BotStatusRead
+         * @description Состояние бота для страницы «Бот»: по последнему замеченному действующему ключу.
+         */
+        BotStatusRead: {
+            /** Has Keys */
+            has_keys: boolean;
+            /** Active Keys */
+            active_keys: number;
+            /** Bot Username */
+            bot_username: string | null;
+            /** Last Seen At */
+            last_seen_at: string | null;
+            /** Last Seen Version */
+            last_seen_version: string | null;
+            /** Stale */
+            stale: boolean;
+            /** Last Claim At */
+            last_claim_at: string | null;
+            outbox: components["schemas"]["OutboxCounts"];
+        };
+        /**
+         * BroadcastCreate
+         * @description Новая рассылка. kind: news (текст в Telegram HTML) или config (каждому новая ссылка на его конфиг).
+         */
+        BroadcastCreate: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "news" | "config";
+            /**
+             * Target
+             * @enum {string}
+             */
+            target: "all" | "selected" | "protocol";
+            /** Protocol Id */
+            protocol_id?: string | null;
+            /** User Ids */
+            user_ids?: string[] | null;
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+            /** Text */
+            text?: string | null;
+        };
+        /** BroadcastRead */
+        BroadcastRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Text */
+            text: string | null;
+            /** Target */
+            target: string;
+            /** Protocol Id */
+            protocol_id: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Cancelled At */
+            cancelled_at: string | null;
+            /** Finished At */
+            finished_at: string | null;
+            /** Total */
+            total: number;
+            /** Sent */
+            sent: number;
+            /** Blocked */
+            blocked: number;
+            /** Failed */
+            failed: number;
+            /** Skipped */
+            skipped: number;
+            /** Cancelled */
+            cancelled: number;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "running" | "cancelled" | "finished";
         };
         /** ChangePasswordRequest */
         ChangePasswordRequest: {
@@ -1538,6 +1946,16 @@ export interface components {
             valid_until: string;
             /** Clients */
             clients: components["schemas"]["ImportClient"][];
+        };
+        /** ConfigLinkQueued */
+        ConfigLinkQueued: {
+            /**
+             * Outbox Id
+             * Format: uuid
+             */
+            outbox_id: string;
+            /** Status */
+            status: string;
         };
         /**
          * ConfigLinkRead
@@ -1870,18 +2288,12 @@ export interface components {
         };
         /** InviteCreate */
         InviteCreate: {
-            /**
-             * Protocol Id
-             * Format: uuid
-             */
-            protocol_id: string;
+            /** Protocol Id */
+            protocol_id?: string | null;
             /** Days */
-            days: number;
-            /**
-             * Expires At
-             * Format: date-time
-             */
-            expires_at: string;
+            days?: number | null;
+            /** Expires At */
+            expires_at?: string | null;
             /** Note */
             note?: string | null;
         };
@@ -1914,6 +2326,10 @@ export interface components {
             revoked_at: string | null;
             /** Status */
             status: string;
+            /** Used By User Id */
+            used_by_user_id?: string | null;
+            /** Used By Name */
+            used_by_name?: string | null;
             /** Code */
             code: string;
             /** Link */
@@ -1948,6 +2364,10 @@ export interface components {
             revoked_at: string | null;
             /** Status */
             status: string;
+            /** Used By User Id */
+            used_by_user_id?: string | null;
+            /** Used By Name */
+            used_by_name?: string | null;
         };
         /** JobRead */
         JobRead: {
@@ -2095,6 +2515,110 @@ export interface components {
             /** Points */
             points: components["schemas"]["MetricPoint"][];
         };
+        /** OutboxAckItem */
+        OutboxAckItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "sent" | "blocked" | "failed" | "retry";
+            /** Error */
+            error?: ("blocked" | "chat_not_found" | "bad_request" | "network" | "telegram_5xx" | "flood" | "too_many_attempts") | null;
+            /** Retry After */
+            retry_after?: number | null;
+        };
+        /** OutboxAckRequest */
+        OutboxAckRequest: {
+            /**
+             * Lease Id
+             * Format: uuid
+             */
+            lease_id: string;
+            /** Results */
+            results: components["schemas"]["OutboxAckItem"][];
+        };
+        /** OutboxAckResponse */
+        OutboxAckResponse: {
+            /** Applied */
+            applied: string[];
+            /** Ignored */
+            ignored: string[];
+        };
+        /**
+         * OutboxClaimItem
+         * @description news: id, kind, telegram_id, broadcast_id; config: id, kind, telegram_id, config_url, valid_until.
+         */
+        OutboxClaimItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Telegram Id */
+            telegram_id: number;
+            /** Broadcast Id */
+            broadcast_id?: string | null;
+            /** Config Url */
+            config_url?: string | null;
+            /** Valid Until */
+            valid_until?: string | null;
+        };
+        /** OutboxClaimRequest */
+        OutboxClaimRequest: {
+            /**
+             * Limit
+             * @default 50
+             */
+            limit: number;
+        };
+        /** OutboxClaimResponse */
+        OutboxClaimResponse: {
+            /**
+             * Lease Id
+             * Format: uuid
+             */
+            lease_id: string;
+            /**
+             * Lease Until
+             * Format: date-time
+             */
+            lease_until: string;
+            /** Items */
+            items: components["schemas"]["OutboxClaimItem"][];
+            /** Texts */
+            texts: {
+                [key: string]: string;
+            };
+        };
+        /** OutboxCounts */
+        OutboxCounts: {
+            /** Pending */
+            pending: number;
+            /** Claimed */
+            claimed: number;
+        };
+        /**
+         * OutboxRowRead
+         * @description Состояние одного сообщения очереди: адреса и telegram_id здесь нет.
+         */
+        OutboxRowRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Status */
+            status: string;
+            /** Error */
+            error: string | null;
+        };
         /**
          * OverrideAction
          * @enum {string}
@@ -2187,6 +2711,23 @@ export interface components {
         PublicConfigRequest: {
             /** Token */
             token: string;
+        };
+        /**
+         * RecipientRead
+         * @description Человек для выбора получателей рассылки. telegram_id наружу не отдаётся.
+         */
+        RecipientRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Username */
+            username: string;
+            /** Telegram Username */
+            telegram_username: string | null;
+            /** Bot Blocked At */
+            bot_blocked_at: string | null;
         };
         /** RegistrationCreate */
         RegistrationCreate: {
@@ -2471,6 +3012,12 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Telegram Id */
+            telegram_id?: number | null;
+            /** Telegram Username */
+            telegram_username?: string | null;
+            /** Bot Blocked At */
+            bot_blocked_at?: string | null;
             access?: components["schemas"]["AccessSummary"] | null;
         };
         /** VPNUserRead */
@@ -2492,6 +3039,12 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Telegram Id */
+            telegram_id?: number | null;
+            /** Telegram Username */
+            telegram_username?: string | null;
+            /** Bot Blocked At */
+            bot_blocked_at?: string | null;
         };
         /**
          * VPNUserStatus
@@ -4939,6 +5492,72 @@ export interface operations {
             };
         };
     };
+    outbox_claim_api_v1_bot_outbox_claim_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OutboxClaimRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutboxClaimResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    outbox_ack_api_v1_bot_outbox_ack_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OutboxAckRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutboxAckResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_keys_api_v1_bot_admin_keys_get: {
         parameters: {
             query?: never;
@@ -5025,7 +5644,11 @@ export interface operations {
     };
     list_invites_api_v1_bot_admin_invites_get: {
         parameters: {
-            query?: never;
+            query?: {
+                before_created_at?: string | null;
+                before_id?: string | null;
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5039,6 +5662,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InviteRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -5111,6 +5743,9 @@ export interface operations {
         parameters: {
             query?: {
                 status?: components["schemas"]["RegistrationStatus"] | null;
+                before_created_at?: string | null;
+                before_id?: string | null;
+                limit?: number;
             };
             header?: never;
             path?: never;
@@ -5187,6 +5822,354 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RegistrationRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bot_status_api_v1_bot_admin_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotStatusRead"];
+                };
+            };
+        };
+    };
+    get_settings_api_v1_bot_admin_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotSettingsRead"];
+                };
+            };
+        };
+    };
+    update_settings_api_v1_bot_admin_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BotSettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotSettingsRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_protocols_api_v1_bot_admin_protocols_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BotProtocolRead"][];
+                };
+            };
+        };
+    };
+    list_recipients_api_v1_bot_admin_recipients_get: {
+        parameters: {
+            query?: {
+                search?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecipientRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_broadcasts_api_v1_bot_admin_broadcasts_get: {
+        parameters: {
+            query?: {
+                before_created_at?: string | null;
+                before_id?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BroadcastRead"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_broadcast_api_v1_bot_admin_broadcasts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BroadcastCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BroadcastRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    broadcast_audience_api_v1_bot_admin_broadcasts_audience_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AudienceRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudienceRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_broadcast_api_v1_bot_admin_broadcasts__broadcast_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                broadcast_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BroadcastRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_broadcast_api_v1_bot_admin_broadcasts__broadcast_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                broadcast_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BroadcastRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_config_link_api_v1_bot_admin_users__user_id__config_link_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigLinkQueued"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_outbox_row_api_v1_bot_admin_outbox__outbox_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                outbox_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutboxRowRead"];
                 };
             };
             /** @description Validation Error */
