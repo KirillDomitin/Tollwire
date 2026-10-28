@@ -28,6 +28,20 @@
   тестах ищется по адресу (`Person.links()`), поэтому его ключ в `K` не нужен.
 - Ключи текстов (`K`): если у реализации они называются иначе - правится только `K` ниже. Тест
   `test_texts.py::test_every_key_the_tests_rely_on_exists` покажет, каких ключей нет.
+- Этап 25.4 (очередь сообщений). `PanelClient.claim(limit) -> Claim` (атрибуты `lease_id`, `lease_until`, `items`,
+  `texts`; у элемента `id`, `kind`, `telegram_id`, `broadcast_id`, `config_url`, `valid_until`; в `repr` адреса нет),
+  `PanelClient.ack(lease_id, results) -> объект с applied и ignored`; итог одной отправки -
+  `OutboxResult(id, status, error=None, retry_after=None)`; все три имени - в `tollwire_bot.panel`.
+  `tollwire_bot.outbox.OutboxSender(bot, panel, storage, *, rate_per_second=20, batch=50, sleep=, clock=)`: `run()` -
+  бесконечный цикл; `clock` - секунды с эпохи (`FakeClock.wall`), по нему сверяется `lease_until` панели; отмена
+  задачи `run()` (так бот останавливается по SIGTERM) досылает накопленные подтверждения. Настройки: `Settings.
+  outbox_rate_per_second` (`OUTBOX_RATE_PER_SECOND`, 1..28, по умолчанию 20), `Settings.outbox_batch` (`OUTBOX_BATCH`,
+  1..100, по умолчанию 50). Журнал - таблица `outbox_journal (id, lease_id, kind, status, error, at)` в файле
+  состояния, `at` - «настенные» секунды; строка уходит из журнала, когда панель приняла (`applied`) подтверждение;
+  если панель ответила `ignored` (аренда ушла другому), строка остаётся, чтобы повторная выдача `news` не
+  отправлялась заново; `SqliteStorage.purge()` убирает записи старше 24 часов. `__main__.run` создаёт `OutboxSender`
+  с настройками бота и запускает `run()` фоновой задачей. Текст ссылки на конфиг - ключ `broadcast_config` с
+  подстановками `{url}` и `{until}`; `parse_mode` HTML только у `news`.
 
 Модули бота подключаются внутри функций: файл тестов шага плана видит только модули своего шага (панель - шаг 2,
 диалог - шаг 3), а не падает на импорте того, чего ещё нет.
@@ -39,19 +53,22 @@ import asyncio
 import contextlib
 import logging
 import re
+import sqlite3
 from collections.abc import AsyncIterator, Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.base import StorageKey
 
-from fakes import BOT_TOKEN, FakeClock, FakePanel, FakeTelegram, Updates
+from fakes import BOT_TOKEN, FakeClock, FakePanel, FakeTelegram, TelegramLimits, Updates
 
 if TYPE_CHECKING:
     from tollwire_bot.config import Settings
     from tollwire_bot.heartbeat import Heartbeat
+    from tollwire_bot.outbox import OutboxSender
     from tollwire_bot.panel import PanelClient
     from tollwire_bot.storage import SqliteStorage
 
@@ -103,6 +120,7 @@ class K:
     config_not_ready = "config_not_ready"  # клиент ещё выдаётся
     config_not_configured = "config_not_configured"  # у панели не задан публичный адрес
     cmd_config = "cmd_config"  # описание команды /config в меню бота
+    broadcast_config = "broadcast_config"  # {url}, {until}: новая ссылка по рассылке админа, прежняя больше не работает
     not_registered = "not_registered"
     help = "help"
     unknown_input = "unknown_input"
@@ -141,7 +159,9 @@ FAKE_UNTIL = date_of("2026-11-25T12:00:00Z")
 # --- фабрики ---------------------------------------------------------------------------------------------------------
 
 
-def make_settings(tmp_path: Path, *, token: str = BOT_TOKEN, key: str = DEFAULT_KEY, level: str = "INFO") -> Settings:
+def make_settings(
+    tmp_path: Path, *, token: str = BOT_TOKEN, key: str = DEFAULT_KEY, level: str = "INFO", **extra: Any
+) -> Settings:
     from tollwire_bot.config import Settings
 
     return Settings(  # type: ignore[call-arg]
@@ -151,6 +171,7 @@ def make_settings(tmp_path: Path, *, token: str = BOT_TOKEN, key: str = DEFAULT_
         state_dir=tmp_path,
         log_level=level,
         _env_file=None,
+        **extra,
     )
 
 
@@ -375,3 +396,169 @@ def clean_logging() -> Iterator[None]:
 def placeholders(text: str) -> set[str]:
     """Имена подстановок {name} в тексте (формат str.format)."""
     return set(re.findall(r"\{(\w+)\}", text))
+
+
+# --- исходящая очередь (этап 25.4) ---------------------------------------------------------------------------------
+
+
+@dataclass
+class SenderWorld:
+    """Отправитель очереди над фейками: без диспетчера и диалогов. Хранилище - файл, поэтому перезапуск настоящий."""
+
+    tmp_path: Path
+    clock: FakeClock
+    panel: FakePanel
+    telegram: FakeTelegram
+    bot: Bot
+    storage: SqliteStorage = field(init=False)
+    client: PanelClient = field(init=False)
+    sender: OutboxSender | None = None
+    task: asyncio.Task[None] | None = None
+    driver: asyncio.Task[None] | None = None
+
+    @property
+    def state_file(self) -> Path:
+        return self.tmp_path / "state.sqlite3"
+
+    def open(self) -> None:
+        self.storage = make_storage(self.state_file, self.clock)
+        self.client = make_client(self.panel, self.clock)
+
+    def make_sender(self, **options: Any) -> OutboxSender:
+        from tollwire_bot.outbox import OutboxSender
+
+        return OutboxSender(
+            self.bot, self.client, self.storage, sleep=self.clock.sleep, clock=self.clock.wall, **options
+        )
+
+    def start(self, **options: Any) -> None:
+        """Отправитель запущен фоновой задачей (так его запускает `__main__`)."""
+        self.sender = self.make_sender(**options)
+        self.task = asyncio.create_task(self.sender.run())
+
+    async def stop(self) -> None:
+        """Остановка процесса (SIGTERM): задача отменена, накопленные подтверждения должны уйти в панель."""
+        if self.task is not None:
+            self.task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self.task
+            self.task = None
+
+    async def close(self) -> None:
+        await self.stop()
+        await self.client.aclose()
+        await self.storage.close()
+
+    async def restart(self, **options: Any) -> None:
+        """Процесс бота перезапущен: Telegram, панель и время остались, память и задачи - нет, файл состояния - да."""
+        await self.close()
+        self.open()
+        self.start(**options)
+
+    def alive(self) -> bool:
+        return self.task is not None and not self.task.done()
+
+    # --- журнал отправленного (таблица outbox_journal в файле состояния)
+    def journal(self) -> list[tuple[Any, ...]]:
+        if not self.state_file.exists():
+            return []
+        connection = sqlite3.connect(self.state_file)
+        try:
+            return connection.execute("SELECT id, lease_id, kind, status, error FROM outbox_journal").fetchall()
+        except sqlite3.OperationalError:
+            return []
+        finally:
+            connection.close()
+
+    def put_in_journal(self, rows: list[tuple[str, str, str, str, str | None, float]]) -> None:
+        """Записи журнала напрямую (id, lease_id, kind, status, error, at): подготовить «старое»."""
+        connection = sqlite3.connect(self.state_file)
+        try:
+            connection.executemany(
+                "INSERT INTO outbox_journal (id, lease_id, kind, status, error, at) VALUES (?, ?, ?, ?, ?, ?)", rows
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+    # --- что видно снаружи
+    def sent_to_panel(self) -> int:
+        return len(self.panel.in_status("sent"))
+
+    def texts_of(self, telegram_id: int) -> list[str]:
+        return self.telegram.texts(telegram_id)
+
+    def sends(self) -> int:
+        from aiogram.methods import SendMessage
+
+        return self.telegram.count(SendMessage)
+
+
+@contextlib.asynccontextmanager
+async def running_sender(
+    tmp_path: Path, *, drive: bool = True, quiet: float = 0.006, limits: bool = True
+) -> AsyncIterator[SenderWorld]:
+    """Отправитель с виртуальным временем. `quiet` - сколько настоящих секунд тишины нужно, чтобы время сдвинулось к
+    ближайшему спящему (тут меньше, чем у диалога: тысяча сообщений - это тысяча коротких пауз). `drive=False` -
+    время стоит: сообщения в пределах разрешённого уходят сразу, паузы не заканчиваются. `limits` - лимиты Telegram."""
+    clock = FakeClock()
+    panel = FakePanel(clock)
+    telegram = FakeTelegram()
+    telegram.clock = clock
+    if limits:
+        telegram.limits = TelegramLimits()
+    bot = Bot(BOT_TOKEN, default=DefaultBotProperties(link_preview_is_disabled=True))
+    bot.session.middleware(telegram)
+    world = SenderWorld(tmp_path, clock, panel, telegram, bot)
+    world.open()
+    if drive:
+        world.driver = asyncio.create_task(clock.drive(quiet=quiet))
+    try:
+        yield world
+    finally:
+        await world.close()
+        if world.driver is not None:
+            world.driver.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await world.driver
+        await bot.session.close()
+
+
+def retry_after_error(seconds: int) -> Exception:
+    """429 от Telegram: бот должен подождать `seconds`."""
+    from aiogram.exceptions import TelegramRetryAfter
+    from aiogram.methods import SendMessage
+
+    return TelegramRetryAfter(
+        method=SendMessage(chat_id=1, text="x"),
+        message=f"Too Many Requests: retry after {seconds}",
+        retry_after=seconds,
+    )
+
+
+def telegram_error(kind: str, message: str = "boom") -> Exception:
+    """Сбой Telegram по виду: network / server."""
+    from aiogram.exceptions import TelegramNetworkError, TelegramServerError
+    from aiogram.methods import SendMessage
+
+    method = SendMessage(chat_id=1, text="x")
+    return (
+        TelegramNetworkError(method=method, message=message)
+        if kind == "network"
+        else TelegramServerError(method=method, message=message)
+    )
+
+
+def config_message(url: str, until: str = FAKE_UNTIL) -> str:
+    """Сообщение со ссылкой по рассылке: шаблон `broadcast_config`."""
+    return t(K.broadcast_config, url=url, until=until)
+
+
+def ack_results(panel: FakePanel, lease_id: str | None = None) -> dict[str, dict[str, Any]]:
+    """Итоги из принятых панелью подтверждений (по аренде, если задана): {id строки: результат}."""
+    found: dict[str, dict[str, Any]] = {}
+    for body in panel.acks:
+        if lease_id is None or body["lease_id"] == lease_id:
+            for result in body["results"]:
+                found[result["id"]] = result
+    return found

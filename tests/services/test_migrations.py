@@ -1090,8 +1090,9 @@ async def test_the_failover_reason_fits_the_assignment_column() -> None:
 
 BEFORE_BOT = "f3b8d2a6c914"  # голова перед миграцией бота
 BOT_TABLES = ("bot_invites", "bot_keys", "bot_registrations")
-BOT_TABLES_SQL = text(
-    "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'bot\\_%' ORDER BY tablename"
+BOT_TABLES_SQL = text(  # таблицы этапа 25.1; очередь и рассылки (25.4) проверяются ниже отдельно
+    "SELECT tablename FROM pg_tables WHERE schemaname = 'public' "
+    "AND tablename IN ('bot_invites', 'bot_keys', 'bot_registrations') ORDER BY tablename"
 )
 TELEGRAM_COLUMNS_SQL = text(
     "SELECT column_name, data_type, is_nullable, character_maximum_length FROM information_schema.columns "
@@ -1492,3 +1493,526 @@ async def test_config_links_migration_cycle_is_idempotent_and_leaves_no_orphans(
     finally:
         await _alembic("upgrade", "head")
     assert len(await _query(CONFIG_LINK_INDEXES_SQL)) == 3  # первичный ключ и два уникальных индекса
+
+
+# --- очередь сообщений, рассылки и настройки бота (25.4): bot_settings, bot_broadcasts, bot_outbox ---
+
+BEFORE_OUTBOX = "b4f1c8e27a69"  # голова перед миграцией очереди (config_links)
+OUTBOX_TABLES = ("bot_broadcasts", "bot_outbox", "bot_settings")
+OUTBOX_TABLES_SQL = text(
+    "SELECT tablename FROM pg_tables WHERE schemaname = 'public' "
+    "AND tablename IN ('bot_broadcasts', 'bot_outbox', 'bot_settings') ORDER BY tablename"
+)
+OUTBOX_COLUMNS = {
+    "bot_settings": {
+        "id",
+        "default_protocol_id",
+        "default_days",
+        "invite_valid_days",
+        "panel_down_after_seconds",
+        "updated_at",
+        "updated_by",
+    },
+    "bot_broadcasts": {
+        "id",
+        "kind",
+        "text",
+        "target",
+        "protocol_id",
+        "request_id",
+        "created_by",
+        "created_at",
+        "cancelled_at",
+        "finished_at",
+        "total",
+        "sent",
+        "blocked",
+        "failed",
+        "skipped",
+        "cancelled",
+    },
+    "bot_outbox": {
+        "id",
+        "kind",
+        "broadcast_id",
+        "user_id",
+        "access_grant_id",
+        "status",
+        "priority",
+        "not_before",
+        "lease_id",
+        "claimed_until",
+        "claimed_by_key_id",
+        "attempts",
+        "error",
+        "config_link_id",
+        "created_at",
+        "updated_at",
+        "sent_at",
+    },
+}
+OUTBOX_INDEXES_SQL = text(
+    "SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'bot_outbox' ORDER BY indexname"
+)
+NEW_COLUMNS_SQL = text(
+    "SELECT table_name, column_name, data_type, is_nullable FROM information_schema.columns "
+    "WHERE (table_name = 'vpn_users' AND column_name = 'bot_blocked_at') "
+    "OR (table_name = 'bot_keys' AND column_name = 'last_claim_at') ORDER BY table_name"
+)
+DELETE_RULES = {"a": "no action", "r": "restrict", "c": "cascade", "n": "set null", "d": "set default"}
+
+
+def _columns_sql(table: str) -> Any:
+    return text(
+        "SELECT column_name, data_type, is_nullable, character_maximum_length, column_default "
+        f"FROM information_schema.columns WHERE table_name = '{table}' ORDER BY column_name"  # noqa: S608
+    )
+
+
+async def _delete_rules(table: str) -> dict[str, str]:
+    """{колонка: что делает внешний ключ при удалении строки, на которую он указывает}."""
+    rows = await _query(
+        text(
+            "SELECT a.attname, c.confdeltype::text FROM pg_constraint c "
+            "JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey) "
+            f"WHERE c.conrelid = '{table}'::regclass AND c.contype = 'f'"  # noqa: S608
+        )
+    )
+    return {str(name): DELETE_RULES[str(rule)] for name, rule in rows}
+
+
+async def _run(statement: str, **params: Any) -> None:
+    async with engine.begin() as conn:
+        await conn.execute(text(statement), params)
+
+
+async def _refused_sql(statement: str, **params: Any) -> str:
+    """Текст отказа БД на SQL-запрос; если БД приняла - тест падает."""
+    try:
+        await _run(statement, **params)
+    except IntegrityError as exc:
+        return str(exc.orig).lower()
+    raise AssertionError("the database accepted a statement it must refuse")
+
+
+def _insert_sql(table: str, **values: Any) -> tuple[str, dict[str, Any]]:
+    names = ", ".join(values)
+    marks = ", ".join(f":{name}" for name in values)
+    return f"INSERT INTO {table} ({names}) VALUES ({marks})", values  # noqa: S608 - имена из тестов
+
+
+async def _refused_insert(table: str, **values: Any) -> str:
+    statement, params = _insert_sql(table, **values)
+    return await _refused_sql(statement, **params)
+
+
+def _broadcast_values(**override: Any) -> dict[str, Any]:
+    values: dict[str, Any] = {
+        "id": uuid4(),
+        "kind": "news",
+        "text": "hello",
+        "target": "all",
+        "request_id": uuid4(),
+        "created_at": _later(),
+        "total": 0,
+        "sent": 0,
+        "blocked": 0,
+        "failed": 0,
+        "skipped": 0,
+        "cancelled": 0,
+    }
+    return {**values, **override}
+
+
+def _outbox_values(user_id: UUID, **override: Any) -> dict[str, Any]:
+    values: dict[str, Any] = {
+        "id": uuid4(),
+        "kind": "news",
+        "user_id": user_id,
+        "status": "pending",
+        "priority": 10,
+        "attempts": 0,
+        "created_at": _later(),
+        "updated_at": _later(),
+    }
+    return {**values, **override}
+
+
+async def _add_broadcast(**override: Any) -> UUID:
+    values = _broadcast_values(**override)
+    statement, params = _insert_sql("bot_broadcasts", **values)
+    await _run(statement, **params)
+    return values["id"]  # type: ignore[no-any-return]
+
+
+async def _add_outbox(user_id: UUID, **override: Any) -> UUID:
+    values = _outbox_values(user_id, **override)
+    statement, params = _insert_sql("bot_outbox", **values)
+    await _run(statement, **params)
+    return values["id"]  # type: ignore[no-any-return]
+
+
+async def _new_user(email: str = "queue@example.org") -> UUID:
+    async with engine.begin() as conn:
+        return await _insert_user(conn, email)
+
+
+async def _ensure_settings_row() -> None:
+    await _run("INSERT INTO bot_settings (id) VALUES (1) ON CONFLICT DO NOTHING")
+
+
+async def test_outbox_migration_creates_the_tables_with_the_agreed_columns() -> None:
+    assert tuple(row[0] for row in await _query(OUTBOX_TABLES_SQL)) == OUTBOX_TABLES
+    for table, expected in OUTBOX_COLUMNS.items():
+        found = {str(row[0]) for row in await _query(_columns_sql(table))}
+        assert expected <= found, (table, expected - found)
+
+
+async def test_outbox_migration_adds_the_blocked_mark_and_the_claim_time() -> None:
+    rows = await _query(NEW_COLUMNS_SQL)
+
+    assert rows == [
+        ("bot_keys", "last_claim_at", "timestamp with time zone", "YES"),
+        ("vpn_users", "bot_blocked_at", "timestamp with time zone", "YES"),
+    ]
+
+
+async def test_outbox_kinds_and_statuses_are_short_strings_not_database_enums() -> None:
+    """VARCHAR(16) с CHECK: новый вид (`notify` в 25.5) добавляется без ALTER TYPE, а downgrade не оставляет типов."""
+    outbox = {str(row[0]): row for row in await _query(_columns_sql("bot_outbox"))}
+    broadcasts = {str(row[0]): row for row in await _query(_columns_sql("bot_broadcasts"))}
+
+    for column in ("kind", "status"):
+        assert outbox[column][1:4] == ("character varying", "NO", 16), column
+    assert broadcasts["kind"][1:4] == ("character varying", "NO", 16)
+    assert broadcasts["target"][1:4] == ("character varying", "NO", 16)
+    assert outbox["error"][1] == "character varying" and outbox["error"][3] == 32
+
+
+async def test_outbox_columns_that_must_be_filled_and_that_may_stay_empty() -> None:
+    outbox = {str(row[0]): row[2] for row in await _query(_columns_sql("bot_outbox"))}
+    broadcasts = {str(row[0]): row[2] for row in await _query(_columns_sql("bot_broadcasts"))}
+
+    assert all(outbox[name] == "NO" for name in ("kind", "user_id", "status", "priority", "attempts", "created_at"))
+    assert all(
+        outbox[name] == "YES"
+        for name in ("broadcast_id", "access_grant_id", "lease_id", "claimed_until", "config_link_id", "error")
+    )
+    assert all(broadcasts[name] == "NO" for name in ("kind", "target", "request_id", "total", "sent", "cancelled"))
+    assert all(broadcasts[name] == "YES" for name in ("text", "protocol_id", "cancelled_at", "finished_at"))
+
+
+async def test_the_settings_row_exists_right_after_the_upgrade_with_the_agreed_values() -> None:
+    await _alembic("downgrade", BEFORE_OUTBOX)
+    await _alembic("upgrade", "head")
+
+    rows = await _query(
+        text(
+            "SELECT id, default_protocol_id, default_days, invite_valid_days, panel_down_after_seconds "
+            "FROM bot_settings"
+        )
+    )
+
+    assert rows == [(1, None, 30, 7, 300)]
+
+
+async def test_there_can_be_only_one_settings_row_with_id_one() -> None:
+    await _ensure_settings_row()
+
+    assert "check" in await _refused_sql("INSERT INTO bot_settings (id) VALUES (2)")
+    assert "check" in await _refused_sql("INSERT INTO bot_settings (id) VALUES (0)")
+    assert "bot_settings" in await _refused_sql("INSERT INTO bot_settings (id) VALUES (1)")
+    assert await _query(text("SELECT count(*) FROM bot_settings")) == [(1,)]
+
+
+SETTINGS_RANGES = [
+    ("default_days", 1, 3650),
+    ("invite_valid_days", 1, 365),
+    ("panel_down_after_seconds", 60, 86400),
+]
+
+
+@pytest.mark.parametrize(("column", "low", "high"), SETTINGS_RANGES, ids=[name for name, _, _ in SETTINGS_RANGES])
+async def test_the_settings_values_are_held_in_their_ranges_by_the_database(column: str, low: int, high: int) -> None:
+    await _ensure_settings_row()
+    update = f"UPDATE bot_settings SET {column} = :value"  # noqa: S608 - колонка из списка выше
+
+    for refused in (low - 1, high + 1, -1):
+        assert "check" in await _refused_sql(update, value=refused), (column, refused)
+    for accepted in (low, high):
+        await _run(update, value=accepted)
+        assert await _query(text(f"SELECT {column} FROM bot_settings")) == [(accepted,)]  # noqa: S608
+
+
+async def test_the_settings_defaults_agree_with_the_orm() -> None:
+    from modules.bot.models.settings import BotSettings
+
+    await _ensure_settings_row()
+    async with session_factory() as session:
+        row = await session.get(BotSettings, 1)
+
+    assert row is not None
+    assert (row.default_protocol_id, row.default_days, row.invite_valid_days, row.panel_down_after_seconds) == (
+        None,
+        30,
+        7,
+        300,
+    )
+    assert row.updated_by is None
+
+
+async def test_the_orm_reads_a_broadcast_row_the_way_the_database_stores_it() -> None:
+    from modules.bot.models.broadcast import BotBroadcast
+
+    broadcast_id = await _add_broadcast(total=5, sent=2)
+    async with session_factory() as session:
+        row = await session.get(BotBroadcast, broadcast_id)
+
+    assert row is not None and (row.total, row.sent, row.blocked, row.failed, row.skipped, row.cancelled) == (
+        5,
+        2,
+        0,
+        0,
+        0,
+        0,
+    )
+    assert row.text == "hello" and row.created_at is not None
+    assert row.cancelled_at is None and row.finished_at is None and row.protocol_id is None
+
+
+async def test_the_orm_reads_an_outbox_row_the_way_the_database_stores_it() -> None:
+    from modules.bot.models.outbox import BotOutbox
+
+    user_id = await _new_user()
+    outbox_id = await _add_outbox(user_id, attempts=2, error="network")
+    async with session_factory() as session:
+        row = await session.get(BotOutbox, outbox_id)
+
+    assert row is not None and row.user_id == user_id and (row.attempts, row.error) == (2, "network")
+    assert str(getattr(row.status, "value", row.status)) == "pending" and row.priority == 10
+    assert (row.lease_id, row.claimed_until, row.sent_at, row.broadcast_id, row.config_link_id) == (None,) * 5
+
+
+async def test_outbox_kinds_and_statuses_outside_the_list_are_refused() -> None:
+    user_id = await _new_user()
+
+    for status in ("weird", "SENT", "done", ""):
+        assert "check" in await _refused_insert("bot_outbox", **_outbox_values(user_id, status=status))
+    assert "check" in await _refused_insert("bot_outbox", **_outbox_values(user_id, kind="digest"))
+
+
+@pytest.mark.parametrize("status", ["pending", "claimed", "sent", "blocked", "failed", "skipped", "cancelled"])
+async def test_every_status_of_the_list_is_accepted(status: str) -> None:
+    await _add_outbox(await _new_user(), status=status)
+
+    assert await _query(text("SELECT status FROM bot_outbox")) == [(status,)]
+
+
+async def test_broadcast_kinds_and_targets_outside_the_list_are_refused() -> None:
+    for override in ({"kind": "digest"}, {"kind": "broadcast"}, {"target": "everybody"}, {"target": ""}):
+        assert "check" in await _refused_insert("bot_broadcasts", **_broadcast_values(**override))
+    for kind, target in (("news", "all"), ("news", "selected"), ("news", "protocol"), ("config", "selected")):
+        await _add_broadcast(kind=kind, target=target)
+
+
+async def test_a_news_broadcast_must_have_text_but_a_config_one_has_none() -> None:
+    assert "check" in await _refused_insert("bot_broadcasts", **_broadcast_values(kind="news", text=None))
+
+    await _add_broadcast(kind="config", text=None, target="protocol")
+
+    assert await _query(text("SELECT kind, text FROM bot_broadcasts")) == [("config", None)]
+
+
+async def test_a_request_id_belongs_to_one_broadcast() -> None:
+    request_id = uuid4()
+    await _add_broadcast(request_id=request_id)
+
+    assert "request_id" in await _refused_insert("bot_broadcasts", **_broadcast_values(request_id=request_id))
+
+
+async def test_outbox_has_the_agreed_indexes_and_the_ready_one_is_partial() -> None:
+    indexes = {str(row[0]): str(row[1]) for row in await _query(OUTBOX_INDEXES_SQL)}
+
+    for name in (
+        "ix_bot_outbox_ready",
+        "ix_bot_outbox_broadcast_status",
+        "ix_bot_outbox_lease",
+        "uq_bot_outbox_broadcast_user",
+        "uq_bot_outbox_open_config",
+    ):
+        assert name in indexes, name
+    ready = indexes["ix_bot_outbox_ready"]
+    assert "priority" in ready and "created_at" in ready and "WHERE" in ready
+    assert "pending" in ready and "claimed" in ready and "UNIQUE" not in ready
+    per_broadcast = indexes["uq_bot_outbox_broadcast_user"]
+    assert "UNIQUE" in per_broadcast and "broadcast_id" in per_broadcast and "user_id" in per_broadcast
+    open_config = indexes["uq_bot_outbox_open_config"]
+    assert "UNIQUE" in open_config and "user_id" in open_config and "WHERE" in open_config and "config" in open_config
+    by_status = indexes["ix_bot_outbox_broadcast_status"]
+    assert "broadcast_id" in by_status and "status" in by_status
+    assert "lease_id" in indexes["ix_bot_outbox_lease"]
+
+
+async def test_a_person_is_in_a_broadcast_once() -> None:
+    user_id, broadcast_id = await _new_user(), await _add_broadcast()
+    await _add_outbox(user_id, broadcast_id=broadcast_id)
+
+    refusal = await _refused_insert("bot_outbox", **_outbox_values(user_id, broadcast_id=broadcast_id))
+
+    assert "uq_bot_outbox_broadcast_user" in refusal
+
+
+async def test_individual_messages_without_a_broadcast_may_repeat_for_one_person() -> None:
+    user_id = await _new_user()
+
+    await _add_outbox(user_id, kind="news", broadcast_id=None)
+    await _add_outbox(user_id, kind="news", broadcast_id=None)
+
+    assert await _query(text("SELECT count(*) FROM bot_outbox")) == [(2,)]
+
+
+async def test_the_same_person_may_be_in_several_broadcasts() -> None:
+    user_id = await _new_user()
+    first, second = await _add_broadcast(), await _add_broadcast()
+
+    await _add_outbox(user_id, broadcast_id=first)
+    await _add_outbox(user_id, broadcast_id=second)
+
+    assert await _query(text("SELECT count(*) FROM bot_outbox")) == [(2,)]
+
+
+@pytest.mark.parametrize("open_status", ["pending", "claimed"])
+async def test_a_person_has_at_most_one_open_config_message(open_status: str) -> None:
+    user_id = await _new_user()
+    await _add_outbox(user_id, kind="config", status=open_status)
+
+    for other in ("pending", "claimed"):
+        refusal = await _refused_insert("bot_outbox", **_outbox_values(user_id, kind="config", status=other))
+        assert "uq_bot_outbox_open_config" in refusal
+
+
+async def test_finished_config_messages_and_news_do_not_count_as_an_open_config_message() -> None:
+    user_id = await _new_user()
+    await _add_outbox(user_id, kind="config", status="pending")
+
+    for status in ("sent", "blocked", "failed", "skipped", "cancelled"):
+        await _add_outbox(user_id, kind="config", status=status)
+    await _add_outbox(user_id, kind="news", status="pending")
+
+    assert await _query(text("SELECT count(*) FROM bot_outbox")) == [(7,)]
+
+
+async def test_an_open_config_message_of_another_person_does_not_get_in_the_way() -> None:
+    first, second = await _new_user("a@example.org"), await _new_user("b@example.org")
+
+    await _add_outbox(first, kind="config", status="pending")
+    await _add_outbox(second, kind="config", status="pending")
+
+    assert await _query(text("SELECT count(*) FROM bot_outbox")) == [(2,)]
+
+
+async def test_a_finished_config_message_frees_the_place_for_a_new_one() -> None:
+    user_id = await _new_user()
+    first = await _add_outbox(user_id, kind="config", status="pending")
+
+    await _run("UPDATE bot_outbox SET status = 'sent' WHERE id = :id", id=first)
+    await _add_outbox(user_id, kind="config", status="pending")
+
+    assert await _query(text("SELECT count(*) FROM bot_outbox")) == [(2,)]
+
+
+async def test_outbox_foreign_keys_cascade_or_clear_as_agreed() -> None:
+    assert await _delete_rules("bot_outbox") == {
+        "broadcast_id": "cascade",
+        "user_id": "cascade",
+        "access_grant_id": "set null",
+        "claimed_by_key_id": "set null",
+        "config_link_id": "set null",
+    }
+    assert await _delete_rules("bot_broadcasts") == {"protocol_id": "set null", "created_by": "set null"}
+    assert await _delete_rules("bot_settings") == {"default_protocol_id": "set null", "updated_by": "set null"}
+
+
+async def test_outbox_rows_follow_their_person_on_delete_but_the_broadcast_keeps_its_totals() -> None:
+    user_id, broadcast_id = await _new_user(), await _add_broadcast(total=1, sent=1)
+    await _add_outbox(user_id, broadcast_id=broadcast_id, status="sent")
+
+    await _run("DELETE FROM vpn_users WHERE id = :id", id=user_id)
+
+    assert await _query(text("SELECT count(*) FROM bot_outbox")) == [(0,)]
+    assert await _query(text("SELECT total, sent FROM bot_broadcasts")) == [(1, 1)]
+
+
+async def test_outbox_rows_follow_their_broadcast_on_delete() -> None:
+    user_id, broadcast_id = await _new_user(), await _add_broadcast()
+    await _add_outbox(user_id, broadcast_id=broadcast_id)
+    await _add_outbox(user_id, broadcast_id=None)
+
+    await _run("DELETE FROM bot_broadcasts WHERE id = :id", id=broadcast_id)
+
+    assert await _query(text("SELECT broadcast_id FROM bot_outbox")) == [(None,)]
+
+
+async def test_deleting_the_key_or_the_link_keeps_the_outbox_row() -> None:
+    from modules.bot.models.key import BotKey
+
+    async with engine.begin() as conn:
+        credential_id = await _credential_id(conn)
+    user_id, key = await _new_user(), BotKey(name="k", key_hash="q" * 64, key_prefix="abcdefgh")
+    await _save(key, _link(credential_id))
+    link_id = (await _query(text("SELECT id FROM config_links")))[0][0]
+    await _add_outbox(user_id, kind="config", status="claimed", claimed_by_key_id=key.id, config_link_id=link_id)
+
+    await _run("DELETE FROM bot_keys WHERE id = :id", id=key.id)
+    await _run("DELETE FROM config_links WHERE id = :id", id=link_id)
+
+    assert await _query(text("SELECT claimed_by_key_id, config_link_id FROM bot_outbox")) == [(None, None)]
+
+
+async def test_outbox_needs_an_existing_person() -> None:
+    assert "user_id" in await _refused_insert("bot_outbox", **_outbox_values(uuid4()))
+
+
+async def test_outbox_migration_downgrade_drops_tables_indexes_and_columns_keeps_people_then_upgrade_restores() -> None:
+    user_id = await _new_user("keeper@example.org")
+    await _add_outbox(user_id)
+    await _alembic("downgrade", BEFORE_OUTBOX)
+    try:
+        assert await _query(OUTBOX_TABLES_SQL) == []
+        assert await _query(NEW_COLUMNS_SQL) == []
+        assert await _query(text("SELECT indexname FROM pg_indexes WHERE indexname LIKE '%bot_outbox%'")) == []
+        assert await _query(text("SELECT email FROM vpn_users")) == [("keeper@example.org",)]  # теряется очередь
+        assert tuple(row[0] for row in await _query(BOT_TABLES_SQL)) == BOT_TABLES  # бот 25.1 на месте
+        assert await _query(CONFIG_LINKS_SQL) == [("config_links",)]  # и страница конфига 25.3
+    finally:
+        await _alembic("upgrade", "head")
+    assert tuple(row[0] for row in await _query(OUTBOX_TABLES_SQL)) == OUTBOX_TABLES
+    assert await _query(text("SELECT count(*) FROM bot_outbox")) == [(0,)]
+    assert await _query(text("SELECT id FROM bot_settings")) == [(1,)]  # строка настроек снова на месте
+    assert len(await _query(NEW_COLUMNS_SQL)) == 2
+
+
+async def test_outbox_migration_cycle_is_idempotent_and_leaves_no_orphans() -> None:
+    await _alembic("downgrade", BEFORE_OUTBOX)
+    await _alembic("upgrade", "head")
+    await _alembic("downgrade", BEFORE_OUTBOX)
+    try:
+        assert await _query(OUTBOX_TABLES_SQL) == []
+        enums = await _query(
+            text(
+                "SELECT typname FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace "
+                "WHERE n.nspname = 'public' AND t.typtype = 'e' AND (t.typname LIKE '%outbox%' "
+                "OR t.typname LIKE '%broadcast%' OR t.typname LIKE '%settings%')"
+            )
+        )
+        assert enums == []
+        leftovers = await _query(
+            text(
+                "SELECT indexname FROM pg_indexes WHERE indexname LIKE '%bot_outbox%' "
+                "OR indexname LIKE '%bot_broadcasts%' OR indexname LIKE '%bot_settings%'"
+            )
+        )
+        assert leftovers == []
+    finally:
+        await _alembic("upgrade", "head")
+    assert tuple(row[0] for row in await _query(OUTBOX_TABLES_SQL)) == OUTBOX_TABLES

@@ -25,6 +25,7 @@ from support import (
     running_world,
     setup_logging,
     t,
+    wait_until,
 )
 
 ANOTHER_TOKEN = "123456789:" + "AAGq" * 9  # похож на токен BotFather, но в настройках его нет
@@ -265,3 +266,40 @@ async def test_a_whole_conversation_leaves_no_secrets_and_no_personal_data_in_th
     ]
     leaked = [secret for secret in forbidden if secret in output]
     assert not leaked, f"in the log: {len(leaked)} of {len(forbidden)} forbidden values (first: {leaked[0][:8]}...)"
+
+
+# --- исходящая очередь (этап 25.4) -----------------------------------------------------------------------------------
+
+
+async def test_an_outbox_run_leaves_no_secrets_no_texts_and_no_addresses_in_the_log(
+    stream: io.StringIO, tmp_path: Path
+) -> None:
+    """Новости и ссылки идут через бота пачками: при любом сбое (Telegram, панель, подтверждение) в журнал не попадают
+    ни токены, ни текст новости, ни адреса ссылок, ни номера чатов."""
+    from fakes import OUTBOX_ACK, OUTBOX_CLAIM
+    from support import retry_after_error, running_sender, telegram_error
+
+    configure(stream, tmp_path, token=SECRET_TOKEN, key=SECRET_KEY, level="DEBUG")
+    private_phrase = "мой личный секретный текст рассылки"
+    async with running_sender(tmp_path) as world:
+        chats = [5550001000 + number for number in range(8)]
+        for chat in chats:
+            world.panel.queue_news(chat, private_phrase, "e1e1e1e1-e1e1-41e1-81e1-e1e1e1e1e1e1")
+        item = world.panel.queue_config(5550001100)
+        world.telegram.forbidden.add(chats[0])
+        world.telegram.rejected[chats[1]] = f"Bad Request: chat not found {private_phrase}"
+        world.telegram.fail(SendMessage, telegram_error("network", f"cannot reach /bot{SECRET_TOKEN}/sendMessage"))
+        world.telegram.fail(SendMessage, retry_after_error(3))
+        world.panel.override(OUTBOX_CLAIM, unavailable(), times=5)
+        world.panel.override(OUTBOX_ACK, unauthorized(), times=2)
+        world.panel.override(OUTBOX_ACK, unavailable(), times=5)
+
+        world.start()
+        await wait_until(lambda: not world.panel.open_items(), timeout=60, what="the queue to be handled")
+        await world.stop()
+
+    output = stream.getvalue()
+    forbidden = [SECRET_TOKEN, SECRET_KEY, private_phrase, item.urls[0], item.urls[0].partition("#")[2]]
+    leaked = [secret for secret in forbidden if secret in output]
+    assert not leaked, f"in the log: {len(leaked)} of {len(forbidden)} forbidden values (first: {leaked[0][:8]}...)"
+    assert not any(str(chat) in output for chat in [*chats, 5550001100])

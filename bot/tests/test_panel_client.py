@@ -18,6 +18,8 @@ import pytest
 from fakes import (
     API_PREFIX,
     CONFIG_LINK,
+    OUTBOX_ACK,
+    OUTBOX_CLAIM,
     FakeClock,
     FakePanel,
     Outcome,
@@ -658,3 +660,237 @@ def test_the_test_certificate_is_made_by_the_installer_command() -> None:
     )
     for fragment in fragments:
         assert fragment in script, fragment
+
+
+# --- исходящая очередь: claim и ack (этап 25.4) ----------------------------------------------------------------------
+
+BROADCAST = "e1e1e1e1-e1e1-41e1-81e1-e1e1e1e1e1e1"
+NO_LEASE = "00000000-0000-4000-8000-000000000000"
+
+
+def outbox_result(item_id: str, status: str, error: str | None = None, retry_after: int | None = None) -> Any:
+    from tollwire_bot.panel import OutboxResult
+
+    return OutboxResult(id=item_id, status=status, error=error, retry_after=retry_after)
+
+
+async def test_claim_posts_the_limit_and_returns_the_lease_the_items_and_the_texts(
+    panel: FakePanel, client: PanelClient
+) -> None:
+    news = panel.queue_news(TG_ID, "<b>Текст</b>", BROADCAST)
+    config = panel.queue_config(TG_ID + 1)
+
+    claim = await client.claim(50)
+
+    assert panel.bodies(OUTBOX_CLAIM) == [{"limit": 50}]
+    assert claim.lease_id == panel.claim_log[0][1] and claim.lease_until
+    items = {item.id: item for item in claim.items}
+    assert set(items) == {news.id, config.id}
+    assert (items[news.id].kind, items[news.id].telegram_id, items[news.id].broadcast_id) == ("news", TG_ID, BROADCAST)
+    assert (items[config.id].kind, items[config.id].telegram_id) == ("config", TG_ID + 1)
+    assert items[config.id].config_url == config.urls[0] and items[config.id].valid_until
+    assert claim.texts == {BROADCAST: "<b>Текст</b>"}
+
+
+async def test_claim_of_an_empty_queue_is_an_empty_claim(panel: FakePanel, client: PanelClient) -> None:
+    claim = await client.claim(50)
+
+    assert list(claim.items) == [] and dict(claim.texts) == {}
+
+
+async def test_claim_carries_the_bot_key(panel: FakePanel, client: PanelClient) -> None:
+    await client.claim(1)
+
+    (call,) = panel.calls
+    assert call.route == OUTBOX_CLAIM and call.headers["x-bot-key"] == panel.key
+
+
+async def test_the_address_of_a_claimed_link_is_not_in_the_repr_of_the_item_or_of_the_claim(
+    panel: FakePanel, client: PanelClient
+) -> None:
+    config = panel.queue_config(TG_ID)
+
+    claim = await client.claim(50)
+
+    (item,) = claim.items
+    token = config.urls[0].partition("#")[2]
+    for shown in (repr(item), str(item), repr(claim), str(claim), f"{claim.items}"):
+        assert token not in shown and "/c#" not in shown
+
+
+async def test_the_address_of_a_claimed_link_never_reaches_the_log(
+    panel: FakePanel, client: PanelClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    config = panel.queue_config(TG_ID)
+
+    with caplog.at_level(logging.DEBUG):
+        await client.claim(50)
+        panel.override(OUTBOX_CLAIM, unavailable(), times=5)
+        with pytest.raises(PanelUnavailable):
+            await client.claim(50)
+
+    logs = "\n".join(record.getMessage() + str(vars(record)) for record in caplog.records)
+    assert config.urls[0].partition("#")[2] not in logs and "/c#" not in logs
+
+
+async def test_claim_is_retried_on_an_outage_like_any_other_request(
+    panel: FakePanel, client: PanelClient, naps: Naps
+) -> None:
+    panel.queue_news(TG_ID, "Текст", BROADCAST)
+    panel.override(OUTBOX_CLAIM, unavailable(), times=2)
+
+    claim = await client.claim(50)
+
+    assert len(claim.items) == 1 and naps.delays == [0.5, 1]
+
+
+async def test_claim_gives_up_after_the_retries_with_panel_unavailable(
+    panel: FakePanel, client: PanelClient, naps: Naps
+) -> None:
+    panel.override(OUTBOX_CLAIM, unavailable(), times=10)
+
+    with pytest.raises(PanelUnavailable):
+        await client.claim(50)
+
+    assert naps.delays == [0.5, 1, 2, 4]
+
+
+async def test_claim_rejects_a_wrong_key_without_retries(panel: FakePanel, client: PanelClient, naps: Naps) -> None:
+    panel.override(OUTBOX_CLAIM, unauthorized())
+
+    with pytest.raises(PanelAuthError):
+        await client.claim(50)
+
+    assert naps.delays == []
+
+
+async def test_claim_waits_out_a_short_rate_limit_but_not_a_long_one(
+    panel: FakePanel, client: PanelClient, naps: Naps
+) -> None:
+    panel.override(OUTBOX_CLAIM, rate_limited(3))
+    assert list((await client.claim(50)).items) == [] and naps.delays == [3]
+
+    panel.override(OUTBOX_CLAIM, rate_limited(60))
+    with pytest.raises(RateLimited):
+        await client.claim(50)
+
+
+@pytest.mark.parametrize("limit", [0, 101])
+async def test_claim_with_a_limit_the_panel_refuses_names_the_field(
+    panel: FakePanel, client: PanelClient, limit: int
+) -> None:
+    with pytest.raises(Rejected) as caught:
+        await client.claim(limit)
+
+    assert caught.value.field == "limit"
+
+
+async def test_a_claim_answer_that_is_not_a_claim_is_panel_unexpected(panel: FakePanel, client: PanelClient) -> None:
+    import httpx
+
+    from tollwire_bot.panel import PanelUnexpected
+
+    panel.override(OUTBOX_CLAIM, lambda: httpx.Response(200, json={"lease_id": NO_LEASE}))
+    with pytest.raises(PanelUnexpected):
+        await client.claim(50)
+
+    panel.override(OUTBOX_CLAIM, lambda: httpx.Response(200, text="<html>bad gateway</html>"))
+    with pytest.raises(PanelUnexpected):
+        await client.claim(50)
+
+
+async def test_ack_posts_the_lease_and_the_results_and_returns_what_was_applied(
+    panel: FakePanel, client: PanelClient
+) -> None:
+    panel.queue_news(TG_ID, "Текст", BROADCAST)
+    panel.queue_news(TG_ID + 1, "Текст", BROADCAST)
+    panel.queue_news(TG_ID + 2, "Текст", BROADCAST)
+    claim = await client.claim(50)
+    first, second, third = (item.id for item in claim.items)
+
+    outcome = await client.ack(
+        claim.lease_id,
+        [
+            outbox_result(first, "sent"),
+            outbox_result(second, "failed", "chat_not_found"),
+            outbox_result(third, "retry", "network", 30),
+        ],
+    )
+
+    (body,) = panel.bodies(OUTBOX_ACK)
+    assert body["lease_id"] == claim.lease_id
+    assert [(row["id"], row["status"]) for row in body["results"]] == [
+        (first, "sent"),
+        (second, "failed"),
+        (third, "retry"),
+    ]
+    assert body["results"][0].get("error") is None
+    assert (body["results"][1]["error"], body["results"][2]["error"], body["results"][2]["retry_after"]) == (
+        "chat_not_found",
+        "network",
+        30,
+    )
+    assert sorted(outcome.applied) == sorted([first, second, third]) and list(outcome.ignored) == []
+    assert [item.status for item in panel.outbox] == ["sent", "failed", "pending"]
+
+
+async def test_ack_with_a_lease_the_panel_does_not_know_comes_back_as_ignored(
+    panel: FakePanel, client: PanelClient
+) -> None:
+    panel.queue_news(TG_ID, "Текст", BROADCAST)
+    claim = await client.claim(50)
+    item = claim.items[0].id
+
+    outcome = await client.ack(NO_LEASE, [outbox_result(item, "sent")])
+
+    assert list(outcome.applied) == [] and list(outcome.ignored) == [item]
+    assert panel.outbox[0].status == "claimed"
+
+
+async def test_ack_rejects_a_wrong_key_without_retries(panel: FakePanel, client: PanelClient, naps: Naps) -> None:
+    panel.override(OUTBOX_ACK, unauthorized())
+
+    with pytest.raises(PanelAuthError):
+        await client.ack(NO_LEASE, [outbox_result("00000000-0000-4000-8000-000000000001", "sent")])
+
+    assert naps.delays == []
+
+
+async def test_ack_is_retried_on_an_outage_and_gives_up_in_the_end(
+    panel: FakePanel, client: PanelClient, naps: Naps
+) -> None:
+    panel.override(OUTBOX_ACK, unavailable(), times=10)
+
+    with pytest.raises(PanelUnavailable):
+        await client.ack(NO_LEASE, [outbox_result("00000000-0000-4000-8000-000000000001", "sent")])
+
+    assert naps.delays == [0.5, 1, 2, 4]
+
+
+async def test_ack_refused_with_422_names_the_field_and_keeps_no_text(
+    panel: FakePanel, client: PanelClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    secret = "Bad Request: chat not found SECRET-7731"
+
+    with caplog.at_level(logging.DEBUG), pytest.raises(Rejected) as caught:
+        await client.ack(NO_LEASE, [outbox_result("00000000-0000-4000-8000-000000000001", "failed", secret)])
+
+    assert caught.value.field == "results" and secret not in str(caught.value)
+    assert "SECRET-7731" not in "\n".join(record.getMessage() + str(vars(record)) for record in caplog.records)
+
+
+async def test_ack_waits_out_a_short_rate_limit_once(panel: FakePanel, client: PanelClient, naps: Naps) -> None:
+    panel.override(OUTBOX_ACK, rate_limited(2))
+
+    outcome = await client.ack(NO_LEASE, [outbox_result("00000000-0000-4000-8000-000000000001", "sent")])
+
+    assert naps.delays == [2] and list(outcome.applied) == []
+
+
+def test_the_bot_version_is_0_2_0_everywhere() -> None:
+    """Панель по версии из heartbeat видит, что бот умеет забирать очередь; в pyproject та же версия."""
+    import tomllib
+
+    pyproject = tomllib.loads((Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8"))
+
+    assert __version__ == "0.2.0" and pyproject["project"]["version"] == "0.2.0"

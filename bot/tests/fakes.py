@@ -11,11 +11,17 @@
   на страницу конфига (`POST /users/by-telegram/{id}/config-link`: каждая выдача гасит прежнюю живую ссылку).
   Режимы сбоев задаются `override(route, фабрика)`: 401/409/422/429/503/обрыв/таймаут отдаются по очереди, потом панель
   снова ведёт себя как настоящая. `hold(route)` останавливает запрос на сервере (для проверки гонок без `gather`).
+- Этап 25.4. `FakeTelegram.limits` включает лимиты Bot API на виртуальных часах: больше 30 сообщений в секунду всего или
+  больше одного в секунду в один чат - ответ 429 (`TelegramRetryAfter`); `forbidden` и `rejected` - чаты, где бот
+  заблокирован (403) или запрос отвергнут (400). `FakePanel` держит исходящую очередь в памяти (`queue_news`,
+  `queue_config`) и отвечает на `POST /outbox/claim` и `POST /outbox/ack` как панель: аренда `lease_id`, `retry`,
+  чужая аренда - `ignored`, на каждый `claim` по строке `config` выпускается новая ссылка и прежняя гаснет.
 """
 
 import asyncio
 import heapq
 import json
+import math
 import re
 import unicodedata
 import uuid
@@ -29,6 +35,7 @@ import httpx
 from aiogram import Bot
 from aiogram.client.default import Default
 from aiogram.client.session.middlewares.base import BaseRequestMiddleware
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
 from aiogram.methods import (
     AnswerCallbackQuery,
     DeleteMessage,
@@ -46,6 +53,8 @@ BOT_USERNAME = "tollwire_test_bot"
 API_PREFIX = "/api/v1/bot"
 PUBLIC_URL = "https://panel.example.test"
 CONFIG_LINK = "POST /users/by-telegram/*/config-link"  # имя маршрута в журнале FakePanel (`calls`, `override`, `count`)
+OUTBOX_CLAIM = "POST /outbox/claim"
+OUTBOX_ACK = "POST /outbox/ack"
 
 # --- время ---------------------------------------------------------------------------------------------------------
 
@@ -129,6 +138,17 @@ class Sent:
     buttons: list[Button] = field(default_factory=list)
 
 
+@dataclass
+class TelegramLimits:
+    """Лимиты Bot API: не больше `per_second` сообщений в секунду всего и одно в `chat_interval` секунд в чат."""
+
+    per_second: int = 30
+    chat_interval: float = 1.0
+
+
+_EDGE = 1e-6  # допуск на ошибки округления виртуальных секунд
+
+
 class FakeTelegram(BaseRequestMiddleware):
     """Подключается к сессии бота: `bot.session.middleware(fake)`. Методы не уходят в сеть."""
 
@@ -142,6 +162,11 @@ class FakeTelegram(BaseRequestMiddleware):
         self.clock: FakeClock | None = None
         self._next_id = 100
         self._failures: list[tuple[type[TelegramMethod[Any]], deque[Exception]]] = []
+        self.limits: TelegramLimits | None = None  # None - лимитов нет (как в тестах диалога)
+        self.forbidden: set[int] = set()  # чаты, где человек заблокировал бота: sendMessage -> 403
+        self.rejected: dict[int, str] = {}  # чат -> текст 400 («Bad Request: chat not found»)
+        self.deliveries: list[tuple[float, int]] = []  # принятые sendMessage: (виртуальное время, chat_id)
+        self.flood_errors: list[tuple[float, int]] = []  # выданные 429: (время, retry_after)
 
     # --- что видно снаружи
     def texts(self, chat_id: int) -> list[str]:
@@ -161,6 +186,20 @@ class FakeTelegram(BaseRequestMiddleware):
     def parse_modes(self) -> set[str | None]:
         return {sent.parse_mode for sent in self.messages.values()}
 
+    def delivery_times(self, chat_id: int | None = None) -> list[float]:
+        """Моменты принятых сообщений (всех или в одном чате) по порядку."""
+        return [at for at, chat in self.deliveries if chat_id in (None, chat)]
+
+    def busiest_second(self) -> int:
+        """Сколько сообщений уместилось в самое плотное окно в одну секунду."""
+        times = self.delivery_times()
+        best, start = 0, 0
+        for end, moment in enumerate(times):
+            while moment - times[start] >= 1 - _EDGE:
+                start += 1
+            best = max(best, end - start + 1)
+        return best
+
     # --- сбои
     def fail(self, method: type[TelegramMethod[Any]], error: Exception, times: int = 1) -> None:
         """Следующие `times` вызовов этого метода бросают `error` (пользователь заблокировал бота, сеть упала)."""
@@ -177,6 +216,7 @@ class FakeTelegram(BaseRequestMiddleware):
         if isinstance(method, GetMe):
             return User(id=BOT_ID, is_bot=True, first_name="Tollwire", username=self.username)
         if isinstance(method, SendMessage):
+            self._check_send(method)
             return self._store(bot, method, new=True)
         if isinstance(method, EditMessageText):
             return self._store(bot, method, new=False)
@@ -191,6 +231,32 @@ class FakeTelegram(BaseRequestMiddleware):
             self.answers.append(method)
             return True
         return True  # SetMyCommands, DeleteWebhook и прочее служебное
+
+    def _now(self) -> float:
+        return self.clock.now if self.clock else 0.0
+
+    def _check_send(self, method: SendMessage) -> None:
+        """403, 400 и лимиты Telegram для sendMessage; принятое сообщение попадает в `deliveries`."""
+        chat_id = int(str(method.chat_id))
+        if chat_id in self.forbidden:
+            raise TelegramForbiddenError(method=method, message="Forbidden: bot was blocked by the user")
+        if chat_id in self.rejected:
+            raise TelegramBadRequest(method=method, message=self.rejected[chat_id])
+        now = self._now()
+        if self.limits is not None:
+            recent = [at for at, _ in self.deliveries if at > now - 1 + _EDGE]
+            if len(recent) >= self.limits.per_second:
+                self._flood(method, max(1, math.ceil(recent[0] + 1 - now - _EDGE)))
+            last = max((at for at, chat in self.deliveries if chat == chat_id), default=None)
+            if last is not None and now - last < self.limits.chat_interval - _EDGE:
+                self._flood(method, max(1, math.ceil(last + self.limits.chat_interval - now - _EDGE)))
+        self.deliveries.append((now, chat_id))
+
+    def _flood(self, method: SendMessage, retry_after: int) -> None:
+        self.flood_errors.append((self._now(), retry_after))
+        raise TelegramRetryAfter(
+            method=method, message=f"Too Many Requests: retry after {retry_after}", retry_after=retry_after
+        )
 
     def _store(self, bot: Bot, method: SendMessage | EditMessageText, new: bool) -> Message:
         chat_id = int(str(method.chat_id))
@@ -369,6 +435,25 @@ class IssuedLink:
 
 
 @dataclass
+class Queued:
+    """Сообщение в исходящей очереди FakePanel (то, что в панели лежит в `bot_outbox`)."""
+
+    id: str
+    kind: str  # news / config
+    telegram_id: int
+    broadcast_id: str | None = None
+    text: str | None = None  # текст новости (в панели он лежит у рассылки)
+    status: str = "pending"  # pending / claimed / sent / blocked / failed
+    lease_id: str | None = None
+    claimed_until: float = 0.0  # «настенные» секунды, как FakeClock.wall()
+    not_before: float = 0.0
+    attempts: int = 0
+    error: str | None = None
+    claims: int = 0  # сколько раз строка выдавалась боту
+    urls: list[str] = field(default_factory=list)  # адреса, выпущенные для строки config, по порядку
+
+
+@dataclass
 class Call:
     method: str
     path: str  # полный путь запроса, например /api/v1/bot/heartbeat
@@ -392,6 +477,7 @@ class Hold:
 
 
 _FORBIDDEN_NAME = ("Cc", "Cf", "Cs", "Zl", "Zp")
+OUTBOX_ERRORS = ("blocked", "chat_not_found", "bad_request", "network", "telegram_5xx", "flood", "too_many_attempts")
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 _FAR_DATE = "2026-11-25T12:00:00Z"
@@ -411,6 +497,10 @@ class FakePanel:
         self.registrations: dict[str, dict[str, Any]] = {}
         self.calls: list[Call] = []
         self.heartbeats: list[dict[str, Any]] = []
+        self.outbox: list[Queued] = []
+        self.lease_seconds = 60.0  # на сколько секунд панель отдаёт пачку в аренду
+        self.acks: list[dict[str, Any]] = []  # тела принятых к разбору POST /outbox/ack, по порядку
+        self.claim_log: list[tuple[float, str, list[str]]] = []  # (время, lease_id, id выданных строк)
         self.transport = httpx.MockTransport(self._handle)
         self._overrides: list[tuple[str, deque[Outcome]]] = []
         self._holds: dict[str, Hold] = {}
@@ -433,6 +523,34 @@ class FakePanel:
 
     def live_links(self, telegram_id: int | None = None) -> list[IssuedLink]:
         return [link for link in self.links if link.live and telegram_id in (None, link.telegram_id)]
+
+    # --- очередь (этап 25.4)
+    def queue_news(self, telegram_id: int, text: str = "Новость", broadcast_id: str | None = None) -> Queued:
+        item = Queued(str(uuid.uuid4()), "news", telegram_id, broadcast_id or str(uuid.uuid4()), text)
+        self.outbox.append(item)
+        return item
+
+    def queue_config(self, telegram_id: int) -> Queued:
+        item = Queued(str(uuid.uuid4()), "config", telegram_id)
+        self.outbox.append(item)
+        return item
+
+    def in_status(self, status: str) -> list[Queued]:
+        return [item for item in self.outbox if item.status == status]
+
+    def open_items(self) -> list[Queued]:
+        return [item for item in self.outbox if item.status in ("pending", "claimed")]
+
+    def expire_leases(self) -> None:
+        """Аренда вышла: выданные, но не подтверждённые строки снова годятся к выдаче."""
+        for item in self.in_status("claimed"):
+            item.claimed_until = self.clock.wall() - 1
+
+    def steal_leases(self, seconds: float = 30.0) -> None:
+        """Выданные строки перешли в чужую аренду (другая выдача): подтверждение старой аренды теперь игнорируется."""
+        for item in self.in_status("claimed"):
+            item.lease_id = str(uuid.uuid4())
+            item.claimed_until = self.clock.wall() + seconds
 
     def only_registration(self) -> str:
         assert len(self.registrations) == 1, f"expected one registration, there are {len(self.registrations)}"
@@ -522,6 +640,10 @@ class FakePanel:
             return self._config_link(path.split("/")[-2])
         if route == "POST /heartbeat":
             return self._heartbeat(body)
+        if route == OUTBOX_CLAIM:
+            return self._outbox_claim(body)
+        if route == OUTBOX_ACK:
+            return self._outbox_ack(body)
         if route == "POST /invites/check":
             status = self.invites.get(str(body.get("code", "")), "unknown")
             return httpx.Response(200, json={"status": status})
@@ -559,6 +681,93 @@ class FakePanel:
         link = IssuedLink(telegram_id, token, f"{PUBLIC_URL}/c#{token}")
         self.links.append(link)
         return httpx.Response(200, json={"config_url": link.url, "valid_until": user["valid_until"]})
+
+    def _iso(self, wall: float) -> str:
+        return datetime.fromtimestamp(wall, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+
+    def _outbox_claim(self, body: Any) -> httpx.Response:
+        limit = body.get("limit") if isinstance(body, dict) else None
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 100:
+            return self._invalid("limit")
+        now = self.clock.wall()
+        ready = [
+            item
+            for item in self.outbox
+            if (item.status == "pending" and item.not_before <= now)
+            or (item.status == "claimed" and item.claimed_until < now)
+        ][:limit]
+        lease_id, until = str(uuid.uuid4()), now + self.lease_seconds
+        items: list[dict[str, Any]] = []
+        texts: dict[str, str] = {}
+        for item in ready:
+            if item.status == "claimed":
+                item.attempts += 1  # аренда вышла: строка выдаётся снова
+            item.status, item.lease_id, item.claimed_until = "claimed", lease_id, until
+            item.claims += 1
+            if item.kind == "config":
+                for link in self.live_links(item.telegram_id):
+                    link.live = False
+                token = f"OutboxLnk{len(self.links) + 1:034d}"  # 43 символа, как у настоящего токена
+                link = IssuedLink(item.telegram_id, token, f"{PUBLIC_URL}/c#{token}")
+                self.links.append(link)
+                item.urls.append(link.url)
+                items.append(
+                    {
+                        "id": item.id,
+                        "kind": "config",
+                        "telegram_id": item.telegram_id,
+                        "config_url": link.url,
+                        "valid_until": _FAR_DATE,
+                    }
+                )
+            else:
+                items.append(
+                    {"id": item.id, "kind": "news", "telegram_id": item.telegram_id, "broadcast_id": item.broadcast_id}
+                )
+                if item.broadcast_id is not None and item.text is not None:
+                    texts[item.broadcast_id] = item.text
+        self.claim_log.append((self.clock.now, lease_id, [item.id for item in ready]))
+        return httpx.Response(
+            200,
+            json={"lease_id": lease_id, "lease_until": self._iso(until), "items": items, "texts": texts},
+            headers={"Cache-Control": "no-store"},
+        )
+
+    def _outbox_ack(self, body: Any) -> httpx.Response:
+        results = body.get("results") if isinstance(body, dict) else None
+        lease_id = str(body.get("lease_id", "")) if isinstance(body, dict) else ""
+        if not _UUID.match(lease_id):
+            return self._invalid("lease_id")
+        if not isinstance(results, list) or len(results) > 100:
+            return self._invalid("results")
+        for result in results:
+            valid = (
+                isinstance(result, dict)
+                and _UUID.match(str(result.get("id", "")))
+                and result.get("status") in ("sent", "blocked", "failed", "retry")
+                and result.get("error") in (None, *OUTBOX_ERRORS)
+            )
+            if not valid:
+                return self._invalid("results")
+        self.acks.append(body)
+        now = self.clock.wall()
+        applied: list[str] = []
+        ignored: list[str] = []
+        for result in results:
+            item = next((queued for queued in self.outbox if queued.id == result["id"]), None)
+            if item is None or item.status != "claimed" or item.lease_id != lease_id:
+                ignored.append(result["id"])
+                continue
+            item.error = result.get("error")
+            if result["status"] == "retry":
+                item.status, item.lease_id = "pending", None
+                item.not_before = now + max(result.get("retry_after") or 0, 5)
+                if result.get("error") != "flood":
+                    item.attempts += 1
+            else:
+                item.status = result["status"]
+            applied.append(result["id"])
+        return httpx.Response(200, json={"applied": applied, "ignored": ignored})
 
     def _heartbeat(self, body: Any) -> httpx.Response:
         username, version = str(body.get("bot_username", "")), str(body.get("version", ""))

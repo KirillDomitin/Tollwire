@@ -18,12 +18,14 @@ from core.security import hash_token
 from infrastructure.workers.worker import JobWorker
 from main import app
 from modules.bot.models.invite import BotInvite
-from tests.bot_client_support import Conflict, PanelAuthError, PanelClient, RateLimited, Rejected
+from tests.bot_client_support import Conflict, PanelAuthError, PanelClient, RateLimited, Rejected, outbox_result
 from tests.bot_support import (
     CONFIG_UNAVAILABLE,
     EMAIL,
     KEYS_URL,
     NAME,
+    NEWS_MARKER,
+    NEWS_TEXT,
     NO_ACCESS,
     NOT_CONFIGURED,
     NOT_READY,
@@ -33,6 +35,8 @@ from tests.bot_support import (
     SECOND_TELEGRAM_ID,
     TELEGRAM_ID,
     USERNAME,
+    add_people,
+    admin_create_broadcast,
     admin_create_invite,
     admin_create_key,
     audit_dump,
@@ -472,3 +476,169 @@ async def test_the_token_of_a_link_is_not_in_the_audit(scene: Scene, worker: Job
 
     dump = await audit_dump()
     assert token_of(link.config_url) not in dump and hash_token(token_of(link.config_url)) not in dump
+
+
+# --- очередь сообщений (25.4) ----------------------------------------------------------------------------------------
+
+
+async def person_id(session: AsyncSession, telegram_id: int = TELEGRAM_ID) -> str:
+    query = text("SELECT id FROM vpn_users WHERE telegram_id = :t")
+    return str((await session.execute(query, {"t": telegram_id})).scalar_one())
+
+
+async def test_claim_gives_the_queued_news_with_its_text_and_ack_closes_the_rows(
+    scene: Scene, session: AsyncSession
+) -> None:
+    await add_people(session, 2)
+    created = await admin_create_broadcast(scene.api)
+
+    claim = await scene.client.claim(50)
+
+    assert claim.lease_id and claim.lease_until and len(claim.items) == 2
+    assert {item.kind for item in claim.items} == {"news"}
+    assert {item.broadcast_id for item in claim.items} == {created["id"]}
+    assert all(isinstance(item.telegram_id, int) for item in claim.items)
+    assert claim.texts == {created["id"]: NEWS_TEXT}
+    outcome = await scene.client.ack(claim.lease_id, [outbox_result(item.id, "sent") for item in claim.items])
+    assert sorted(outcome.applied) == sorted(item.id for item in claim.items) and list(outcome.ignored) == []
+    done = (await scene.api.get(f"/api/v1/bot-admin/broadcasts/{created['id']}")).json()
+    assert done["sent"] == 2 and done["state"] == "finished"
+
+
+async def test_claim_of_an_empty_queue_is_an_empty_claim_not_an_error(scene: Scene) -> None:
+    claim = await scene.client.claim(50)
+
+    assert list(claim.items) == [] and dict(claim.texts) == {}
+
+
+async def test_claim_gives_a_working_link_for_a_config_message(
+    scene: Scene, worker: JobWorker, session: AsyncSession
+) -> None:
+    await active_person(scene, worker)
+    await admin_create_broadcast(scene.api, kind="config", target="selected", user_ids=[await person_id(session)])
+
+    claim = await scene.client.claim(50)
+
+    (item,) = claim.items
+    assert item.kind == "config" and item.telegram_id == TELEGRAM_ID and item.broadcast_id is not None
+    assert item.config_url.startswith(f"{PUBLIC_BASE}/c#") and len(token_of(item.config_url)) == 43
+    until = datetime.fromisoformat(str(item.valid_until).replace("Z", "+00:00"))
+    assert abs((until - (datetime.now(timezone.utc) + timedelta(days=30))).total_seconds()) < 300
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as person:
+        assert (await person.post(PUBLIC_CONFIG_URL, json={"token": token_of(item.config_url)})).status_code == 200
+    assert claim.texts == {}
+
+
+async def test_the_address_of_a_claimed_link_stays_out_of_the_repr_of_the_item_and_of_the_claim(
+    scene: Scene, worker: JobWorker, session: AsyncSession
+) -> None:
+    await active_person(scene, worker)
+    await admin_create_broadcast(scene.api, kind="config", target="selected", user_ids=[await person_id(session)])
+
+    claim = await scene.client.claim(50)
+
+    (item,) = claim.items
+    token = token_of(item.config_url)
+    assert token not in repr(item) and "/c#" not in repr(item)
+    assert token not in repr(claim) and token not in str(claim)
+
+
+async def test_ack_with_a_lease_the_panel_did_not_give_ignores_everything(scene: Scene, session: AsyncSession) -> None:
+    await add_people(session, 2)
+    await admin_create_broadcast(scene.api)
+    claim = await scene.client.claim(50)
+    results = [outbox_result(item.id, "sent") for item in claim.items]
+
+    outcome = await scene.client.ack("00000000-0000-4000-8000-000000000000", results)
+
+    assert list(outcome.applied) == [] and sorted(outcome.ignored) == sorted(item.id for item in claim.items)
+
+
+async def test_ack_blocked_marks_the_person_and_failed_keeps_the_code(scene: Scene, session: AsyncSession) -> None:
+    await add_people(session, 2)
+    created = await admin_create_broadcast(scene.api)
+    claim = await scene.client.claim(50)
+    first, second = claim.items
+
+    await scene.client.ack(
+        claim.lease_id,
+        [outbox_result(first.id, "blocked", "blocked"), outbox_result(second.id, "failed", "chat_not_found")],
+    )
+
+    done = (await scene.api.get(f"/api/v1/bot-admin/broadcasts/{created['id']}")).json()
+    assert (done["blocked"], done["failed"], done["sent"]) == (1, 1, 0)
+    marked = (await session.execute(text("SELECT telegram_id FROM vpn_users WHERE bot_blocked_at IS NOT NULL"))).all()
+    assert [row[0] for row in marked] == [first.telegram_id]
+
+
+async def test_ack_retry_puts_the_row_back_and_a_later_claim_gives_it_again(
+    scene: Scene, session: AsyncSession
+) -> None:
+    await add_people(session, 1)
+    await admin_create_broadcast(scene.api)
+    first = await scene.client.claim(50)
+
+    await scene.client.ack(first.lease_id, [outbox_result(first.items[0].id, "retry", "network", 30)])
+
+    assert list((await scene.client.claim(50)).items) == []  # ждёт 30 с
+    await session.execute(text("UPDATE bot_outbox SET not_before = now() - interval '1 second'"))
+    await session.commit()
+    again = await scene.client.claim(50)
+    assert [item.id for item in again.items] == [first.items[0].id] and again.lease_id != first.lease_id
+
+
+@pytest.mark.parametrize("limit", [0, 101, -1])
+async def test_claim_with_a_limit_the_panel_refuses_is_rejected_by_field(scene: Scene, limit: int) -> None:
+    with pytest.raises(Rejected) as caught:
+        await scene.client.claim(limit)
+
+    assert caught.value.field == "limit"
+
+
+async def test_ack_with_an_error_that_is_not_a_code_is_rejected_and_the_text_is_not_kept(
+    scene: Scene, session: AsyncSession
+) -> None:
+    await add_people(session, 1)
+    await admin_create_broadcast(scene.api)
+    claim = await scene.client.claim(50)
+    secret_text = "Bad Request: chat not found for 5550001234"
+
+    with pytest.raises(Rejected) as caught:
+        await scene.client.ack(claim.lease_id, [outbox_result(claim.items[0].id, "failed", secret_text)])
+
+    assert secret_text not in str(caught.value) and "5550001234" not in str(caught.value)
+
+
+async def test_a_revoked_key_can_neither_claim_nor_ack(scene: Scene, session: AsyncSession) -> None:
+    await add_people(session, 1)
+    await admin_create_broadcast(scene.api)
+    claim = await scene.client.claim(50)
+    assert (await scene.api.post(f"{KEYS_URL}/{scene.key['id']}/revoke")).status_code == 200
+
+    with pytest.raises(PanelAuthError):
+        await scene.client.claim(50)
+    with pytest.raises(PanelAuthError):
+        await scene.client.ack(claim.lease_id, [outbox_result(claim.items[0].id, "sent")])
+
+
+async def test_the_time_of_the_last_claim_is_shown_to_the_admin(scene: Scene) -> None:
+    assert (await scene.api.get("/api/v1/bot-admin/status")).json()["last_claim_at"] is None
+
+    await scene.client.claim(1)
+
+    assert (await scene.api.get("/api/v1/bot-admin/status")).json()["last_claim_at"] is not None
+
+
+async def test_the_claimed_link_and_the_news_text_are_not_in_the_audit(
+    scene: Scene, worker: JobWorker, session: AsyncSession
+) -> None:
+    await active_person(scene, worker)
+    await admin_create_broadcast(scene.api, kind="config", target="selected", user_ids=[await person_id(session)])
+    await admin_create_broadcast(scene.api)
+    claim = await scene.client.claim(50)
+    await scene.client.ack(claim.lease_id, [outbox_result(item.id, "sent") for item in claim.items])
+
+    dump = await audit_dump()
+
+    link = next(item for item in claim.items if item.kind == "config")
+    assert token_of(link.config_url) not in dump and NEWS_MARKER not in dump and str(TELEGRAM_ID) not in dump

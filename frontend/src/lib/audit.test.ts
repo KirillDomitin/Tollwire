@@ -497,3 +497,121 @@ describe("config link events (stage 25.3)", () => {
     }
   });
 });
+
+describe("broadcast and bot settings events (stage 25.4)", () => {
+  const BROADCAST_EVENTS = [
+    "bot_broadcast_created",
+    "bot_broadcast_cancelled",
+    "bot_config_link_queued",
+    "bot_settings_updated",
+  ] as const;
+  // До перегенерации схемы этих действий нет в AuditAction: читаем таблицу как обычную карту.
+  const info = (action: string) =>
+    (AUDIT_ACTIONS as Record<string, { group: string; tone?: string | null } | undefined>)[action];
+  const text = (action: string) => auditActionText(action as unknown as AuditAction);
+  const asLog = (action: string, extra: Record<string, unknown> = {}) => log({ action, ...extra });
+
+  it("are known and belong to the bot group", () => {
+    for (const action of BROADCAST_EVENTS) expect(info(action)?.group, action).toBe("bot");
+  });
+
+  it("can be picked with the rest of the bot group in the journal filter", () => {
+    for (const action of BROADCAST_EVENTS) expect(actionsOfGroup("bot")).toContain(action);
+  });
+
+  it("have a human text in every language, not the key", async () => {
+    for (const language of ["ru", "en"]) {
+      await i18n.changeLanguage(language);
+      for (const action of BROADCAST_EVENTS) {
+        expect(text(action), `${language} ${action}`).not.toBe(`audit.actions.${action}`);
+        expect(text(action).length).toBeGreaterThan(5);
+      }
+    }
+  });
+
+  it("have English texts without a trace of Russian, and Russian texts in Russian", async () => {
+    await i18n.changeLanguage("en");
+    for (const action of BROADCAST_EVENTS) expect(text(action)).not.toMatch(/[А-Яа-яЁё]/);
+    await i18n.changeLanguage("ru");
+    for (const action of BROADCAST_EVENTS) expect(text(action)).toMatch(/[А-Яа-яЁё]/);
+  });
+
+  it("show the kind, the audience and the number of recipients in words, but no ids", () => {
+    const details = auditDetails(
+      asLog("bot_broadcast_created", {
+        metadata: {
+          kind: "news",
+          target: "protocol",
+          protocol_id: "99999999-9999-4999-8999-999999999999",
+          recipients: 12,
+        },
+      }),
+    );
+    const shownText = JSON.stringify(details);
+
+    expect(details.length).toBeGreaterThanOrEqual(3);
+    for (const detail of details) expect(detail.label).not.toContain("audit.details"); // подпись переведена
+    expect(shownText).toMatch(/news|новост/i);
+    expect(shownText).toMatch(/protocol|протокол/i);
+    expect(shownText).toContain("12");
+    expect(shownText).not.toContain("99999999");
+  });
+
+  it("show how many messages a cancellation stopped", () => {
+    const details = auditDetails(asLog("bot_broadcast_cancelled", { metadata: { cancelled: 40 } }));
+
+    expect(details).toHaveLength(1);
+    expect(details[0]?.value).toBe("40");
+    expect(details[0]?.label).not.toContain("audit.details");
+  });
+
+  it("show settings that changed as field: was → became", () => {
+    const shownText = JSON.stringify(
+      auditDetails(asLog("bot_settings_updated", { metadata: { changes: { default_days: [30, 14] } } })),
+    );
+
+    expect(shownText).toContain("default_days: 30 → 14");
+  });
+
+  it("never show the text of a news item, a Telegram id, an address, a token or the list of people", () => {
+    const shownText = JSON.stringify(
+      auditDetails(
+        asLog("bot_broadcast_created", {
+          metadata: {
+            kind: "news",
+            recipients: 3,
+            text: "SECRET-NEWS-TEXT",
+            telegram_id: 123456789,
+            config_url: "https://vpn.example.com/c#SECRET-TOKEN",
+            token: "SECRET-TOKEN",
+            user_ids: ["SECRET-USER-ID"],
+            outbox_id: "SECRET-OUTBOX-ID",
+          },
+        }),
+      ),
+    );
+
+    for (const secret of [
+      "SECRET-NEWS-TEXT",
+      "123456789",
+      "SECRET-TOKEN",
+      "SECRET-USER-ID",
+      "SECRET-OUTBOX-ID",
+    ]) {
+      expect(shownText).not.toContain(secret);
+    }
+  });
+
+  it("name the person of a queued config link and link to their card", () => {
+    const subject = auditSubject(
+      asLog("bot_config_link_queued", {
+        entity_type: "vpn_user",
+        entity_id: USER_ID,
+        metadata: { outbox_id: "o1" },
+      }),
+      names({ users: new Map([[USER_ID, "anna"]]) }),
+    );
+
+    expect(subject).toEqual({ label: "anna", to: `/users/${USER_ID}` });
+  });
+});

@@ -129,6 +129,8 @@ def test_every_bot_api_route_requires_the_bot_key_and_no_admin_permission() -> N
         ("GET", "registrations/{}"),
         ("GET", "users/by-telegram/{}"),
         ("POST", "users/by-telegram/{}/config-link"),
+        ("POST", "outbox/claim"),
+        ("POST", "outbox/ack"),
     }
     unmarked = [f"{m} {p}" for m, p, route in BOT_API_ROUTES if marks(route, "bot_key_required") != 1]
     assert unmarked == []
@@ -158,6 +160,44 @@ def test_no_admin_route_accepts_a_bot_key() -> None:
 def test_bot_admin_routes_exist_and_cover_keys_invites_and_registrations() -> None:
     segments = {path.removeprefix("/api/v1/bot-admin/").split("/")[0] for _, path, _ in BOT_ADMIN_ROUTES}
     assert {"keys", "invites", "registrations"} <= segments
+
+
+def bot_admin_shape(path: str) -> str:
+    return re.sub(r"\{[^}]+\}", "{}", path.removeprefix("/api/v1/bot-admin/"))
+
+
+def test_the_bot_page_routes_exist_with_the_agreed_permissions() -> None:
+    """Этап 25.4: страница «Бот». Чтение - bot:read, все записи кроме ключей - bot:manage (права не добавляются)."""
+    read, manage = Permission.BOT_READ, Permission.BOT_MANAGE
+    expected = {
+        ("GET", "status"): read,
+        ("GET", "settings"): read,
+        ("PUT", "settings"): manage,
+        ("GET", "protocols"): read,
+        ("GET", "recipients"): read,
+        ("GET", "invites"): read,
+        ("GET", "registrations"): read,
+        ("GET", "broadcasts"): read,
+        ("POST", "broadcasts"): manage,
+        ("POST", "broadcasts/audience"): manage,
+        ("GET", "broadcasts/{}"): read,
+        ("POST", "broadcasts/{}/cancel"): manage,
+        ("POST", "users/{}/config-link"): manage,
+        ("GET", "outbox/{}"): read,
+    }
+    declared = {
+        (method, bot_admin_shape(path)): required_permissions(route)[0] for method, path, route in BOT_ADMIN_ROUTES
+    }
+    assert {key: declared.get(key) for key in expected} == expected
+
+
+def test_the_bot_page_writes_are_closed_to_a_viewer_and_open_to_an_operator() -> None:
+    for method in ("PUT", "POST"):
+        for _, path, route in BOT_ADMIN_ROUTES:
+            if method in route.methods and "/keys" not in path:
+                (permission,) = required_permissions(route)
+                assert not has_permission(AdminRole.VIEWER, permission), path
+                assert has_permission(AdminRole.OPERATOR, permission), path
 
 
 def test_bot_admin_writes_need_manage_and_key_changes_need_the_keys_permission() -> None:
@@ -343,6 +383,8 @@ def bot_critical() -> dict[str, Permission]:
     """Опасные действия бота. Функция, а не словарь рядом с CRITICAL: Permission.BOT_KEYS читается при вызове."""
     return {
         "POST /api/v1/bot-admin/keys": Permission.BOT_KEYS,  # выпуск ключа: им бот входит в панель
+        "POST /api/v1/bot-admin/broadcasts": Permission.BOT_MANAGE,  # сообщения настоящим людям от имени сервиса
+        "POST /api/v1/bot-admin/users/{user_id}/config-link": Permission.BOT_MANAGE,  # выпуск ссылки на конфиг
     }
 
 

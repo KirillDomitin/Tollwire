@@ -164,3 +164,35 @@ def test_every_invite_problem_has_its_own_text() -> None:
     keys = [K.bad_link, K.invite_used, K.invite_expired, K.invite_revoked, K.invite_unknown]
 
     assert len({t(key) for key in keys}) == len(keys)
+
+
+# --- сообщение со ссылкой по рассылке админа (этап 25.4) -------------------------------------------------------------
+
+
+def test_the_broadcast_link_message_takes_the_url_and_the_end_date() -> None:
+    assert placeholders(TEXTS[K.broadcast_config]["ru"]) == {"url", "until"}
+
+
+def test_the_broadcast_link_message_puts_the_url_and_the_date_in_as_they_are() -> None:
+    url = "https://panel.example.test/c#LinkToken0000000000000000000000000000000001"
+
+    text = t(K.broadcast_config, url=url, until="25.11.2026")
+
+    assert url in text and "25.11.2026" in text and "{" not in text
+
+
+def test_the_broadcast_link_message_says_the_old_link_no_longer_works_and_warns_not_to_forward() -> None:
+    """Выдача по рассылке гасит прежнюю ссылку человека: он должен понять, почему старая перестала открываться."""
+    text = TEXTS[K.broadcast_config]["ru"].lower()
+
+    assert "прежн" in text and any(word in text for word in ("не работ", "не открыв", "перестан"))
+    assert "пересыл" in text
+
+
+def test_the_broadcast_link_message_is_plain_text_because_it_is_sent_without_parse_mode() -> None:
+    assert not re.search(r"</?[A-Za-z][^>]*>", TEXTS[K.broadcast_config]["ru"])
+    assert "&" not in TEXTS[K.broadcast_config]["ru"]
+
+
+def test_the_broadcast_link_message_is_its_own_text_not_a_copy_of_the_answer_to_config() -> None:
+    assert TEXTS[K.broadcast_config]["ru"] != TEXTS["config_link"]["ru"] != TEXTS[K.ready_link]["ru"]

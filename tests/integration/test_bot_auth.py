@@ -13,9 +13,14 @@ import pytest
 from modules.bot.models.key import BotKey
 from tests.bot_support import (
     BOT_KEY_HEADER,
+    BROADCASTS_URL,
     INVITES_URL,
     KEYS_URL,
+    OUTBOX_ACK_URL,
+    OUTBOX_CLAIM_URL,
     REGISTRATIONS_URL,
+    SETTINGS_URL,
+    STATUS_URL,
     TELEGRAM_ID,
     admin_create_key,
     bot_client,
@@ -24,6 +29,7 @@ from tests.bot_support import (
 )
 
 HEARTBEAT = {"bot_username": "tollwire_bot", "version": "0.1.0"}
+NO_LEASE = "00000000-0000-4000-8000-000000000000"
 
 # Все маршруты Bot API 25.1 с телами, которые прошли бы валидацию: 401 должен приходить раньше любой обработки.
 BOT_ROUTES: list[tuple[str, str, dict[str, Any] | None]] = [
@@ -33,6 +39,8 @@ BOT_ROUTES: list[tuple[str, str, dict[str, Any] | None]] = [
     ("GET", "/api/v1/bot/registrations/00000000-0000-0000-0000-000000000000", None),
     ("GET", f"/api/v1/bot/users/by-telegram/{TELEGRAM_ID}", None),
     ("POST", f"/api/v1/bot/users/by-telegram/{TELEGRAM_ID}/config-link", None),
+    ("POST", OUTBOX_CLAIM_URL, {"limit": 10}),
+    ("POST", OUTBOX_ACK_URL, {"lease_id": NO_LEASE, "results": []}),
 ]
 ROUTE_IDS = [
     "heartbeat",
@@ -41,6 +49,8 @@ ROUTE_IDS = [
     "registrations-get",
     "users-by-telegram",
     "config-link",
+    "outbox-claim",
+    "outbox-ack",
 ]
 
 
@@ -153,6 +163,11 @@ ADMIN_ROUTES = [
     ("GET", "/api/v1/servers"),
     ("GET", "/api/v1/audit-logs"),
     ("GET", "/api/v1/auth/me"),
+    ("GET", STATUS_URL),
+    ("GET", SETTINGS_URL),
+    ("GET", BROADCASTS_URL),
+    ("POST", BROADCASTS_URL),
+    ("POST", f"{BROADCASTS_URL}/audience"),
 ]
 
 
@@ -272,3 +287,34 @@ async def test_a_limited_key_is_still_a_key_and_the_panel_keeps_working(
     async with bot_client(key["key"]) as bot:
         assert await hits_until_limited(bot, heartbeat) is not None
     assert (await api.get(KEYS_URL)).status_code == 200  # админский API не делит счётчик с ботом
+
+
+async def test_outbox_requests_are_counted_in_the_limit_of_the_key(api: httpx.AsyncClient, key: dict[str, Any]) -> None:
+    """Бот ходит за очередью раз в 5 с и подтверждает пачками: это те же 300 запросов в минуту, что у остального API."""
+    other = await admin_create_key(api, "second-bot")
+
+    async def claim(bot: httpx.AsyncClient, attempt: int) -> httpx.Response:
+        return await bot.post(OUTBOX_CLAIM_URL, json={"limit": 1})
+
+    async with bot_client(key["key"]) as bot, bot_client(other["key"]) as calm_bot:
+        limited = await hits_until_limited(bot, claim)
+        assert limited is not None, "outbox/claim must be rate limited per key"
+        assert int(limited.headers["Retry-After"]) >= 1
+        assert (await bot.post(OUTBOX_ACK_URL, json={"lease_id": NO_LEASE, "results": []})).status_code == 429
+        assert (await calm_bot.post(OUTBOX_CLAIM_URL, json={"limit": 1})).status_code == 200  # лимит по ключу
+
+
+async def test_a_claim_with_a_wrong_key_leaves_no_trace_in_the_queue(api: httpx.AsyncClient) -> None:
+    async with bot_client("this-is-not-a-bot-key-0123456789abcdef") as bot:
+        assert (await bot.post(OUTBOX_CLAIM_URL, json={"limit": 10})).status_code == 401
+    assert (await api.get(STATUS_URL)).json()["last_claim_at"] is None
+
+
+async def test_a_claim_of_one_key_does_not_mark_another_key(api: httpx.AsyncClient, key: dict[str, Any]) -> None:
+    other = await admin_create_key(api, "second-bot")
+    async with bot_client(key["key"]) as bot:
+        assert (await bot.post(OUTBOX_CLAIM_URL, json={"limit": 10})).status_code == 200
+
+    untouched: BotKey = await fetch(BotKey, UUID(other["id"]))
+    touched: BotKey = await fetch(BotKey, UUID(key["id"]))
+    assert untouched.last_claim_at is None and touched.last_claim_at is not None  # type: ignore[attr-defined]

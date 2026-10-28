@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 import httpx
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -452,3 +452,361 @@ async def request_link(bot: httpx.AsyncClient, telegram_id: int = TELEGRAM_ID) -
 
 async def open_over_http(client: httpx.AsyncClient, token: str) -> httpx.Response:
     return await client.post(PUBLIC_CONFIG_URL, json={"token": token})
+
+
+# --- очередь сообщений, рассылки, настройки бота (этап 25.4) -------------------------------------------------------
+#
+# Тесты написаны до кода (план: docs/plans/telegram-bot-25-4.md). Принятое из плана: таблицы `bot_settings` (одна строка
+# `id = 1`), `bot_broadcasts`, `bot_outbox`; колонки `vpn_users.bot_blocked_at`, `bot_keys.last_claim_at`; Bot API
+# `POST /api/v1/bot/outbox/{claim,ack}`; админский API `/api/v1/bot-admin/`: `status`, `settings`, `protocols`,
+# `recipients`, `invites`, `registrations`, `broadcasts`, `broadcasts/audience`, `broadcasts/{id}`,
+# `broadcasts/{id}/cancel`, `users/{id}/config-link`, `outbox/{id}`;
+# события аудита `bot_broadcast_created`, `bot_broadcast_cancelled`, `bot_config_link_queued`, `bot_settings_updated`;
+# лимиты в `core.config.settings`.
+#
+# Допущения, которых в плане нет (правятся ТОЛЬКО здесь):
+#
+# - модели: `modules.bot.models.settings.BotSettings`, `modules.bot.models.broadcast.BotBroadcast`,
+#   `modules.bot.models.outbox.BotOutbox` - колонки по плану под теми же именами; `kind`, `target`, `status` - строки
+#   (или enum со значениями плана; сравниваем через `status_value`);
+# - сервисы: `modules.bot.settings.BotSettingsService(session, actor)`: `get()` (создаёт строку `id = 1`, если её нет:
+#   тестовая БД чистится TRUNCATE, миграция строку вставляет один раз), `update(BotSettingsUpdate)`;
+#   `modules.bot.outbox.OutboxService(session, actor)`: `create_broadcast(BroadcastCreate) -> BotBroadcast`,
+#   `audience(BroadcastCreate) -> {recipients, without_telegram, blocked}`, `cancel_broadcast(id) -> BotBroadcast`,
+#   `queue_config_link(user_id) -> BotOutbox`, `claim(key_id, limit)`, `ack(lease_id, items)`;
+#   результат `claim` - атрибуты `lease_id`, `lease_until`, `items` (у элемента `id`, `kind`, `telegram_id`,
+#   `broadcast_id`, `config_url`, `valid_until`), `texts` (`{broadcast_id: text}`); результат `ack` - `applied` и
+#   `ignored` (списки id); `ConfigLinkService.stage_issue(user_id, grant_id, *, source, meta) -> (ConfigLink, token)`
+#   без commit; текст из одних пробелов и переводов строк для `telegram_html` - пустой (`telegram_html_empty`);
+# - схемы в `modules.bot.schemas`: `BroadcastCreate(request_id, kind, text, target, protocol_id, user_ids)`,
+#   `OutboxAckItem(id, status, error, retry_after)`, `BotSettingsUpdate(default_protocol_id, default_days,
+#   invite_valid_days)`; `InviteCreate.protocol_id/days/expires_at` необязательны;
+# - `modules.bot.telegram_html.check_telegram_html(text) -> int` (видимая длина в единицах UTF-16) бросает
+#   `TelegramHtmlError` с `.code` (`telegram_html_tag|attr|entity|nesting|length|empty`) и `.position` (смещение
+#   в исходном тексте, с 0); запрещённые символы и голые `<`/`&` - код `telegram_html_entity`;
+# - причины 409 в дополнение к 25.3: `no_telegram`, `bot_blocked` (индивидуальная отправка), `no_default_protocol`
+#   (приглашение без протокола); коды `error` строки очереди - перечень плана плюс `no_telegram`, `no_access`,
+#   `config_unavailable`, `not_configured`, `not_ready`, `too_many_attempts`;
+# - 422 неверного HTML: `detail[0].type` - код, `detail[0].ctx.position` - число, поля `input` нет;
+# - настройки читаются при каждом обращении (`settings.bot_outbox_lease_seconds`, `bot_outbox_max_attempts`,
+#   `bot_broadcast_max_recipients`, `bot_outbox_retention_days`): тесты подменяют их monkeypatch'ем;
+# - списки админского API (`/invites`, `/registrations`, `/broadcasts`) - массив, новые первыми; курсор - как у
+#   `/audit-logs` (`before_created_at` + `before_id` из последней строки, `limit` 1..100); у рассылки поле `state`:
+#   `running` / `cancelled` / `finished`; у человека в `/recipients` - `id`, `username`, `telegram_username`,
+#   `bot_blocked_at`;
+# - лимит админа считается первым делом в обработчике (до проверок), по одному вызову на запрос.
+
+NEWS, CONFIG = "news", "config"
+TARGET_ALL, TARGET_SELECTED, TARGET_PROTOCOL = "all", "selected", "protocol"
+PENDING, CLAIMED, SENT, BLOCKED, FAILED, SKIPPED, CANCELLED = (
+    "pending",
+    "claimed",
+    "sent",
+    "blocked",
+    "failed",
+    "skipped",
+    "cancelled",
+)
+OPEN_STATUSES = (PENDING, CLAIMED)
+PRIORITY_INDIVIDUAL, PRIORITY_BROADCAST = 0, 10
+NO_TELEGRAM, BOT_BLOCKED, NO_DEFAULT_PROTOCOL = "no_telegram", "bot_blocked", "no_default_protocol"
+TOO_MANY_ATTEMPTS = "too_many_attempts"
+NOT_READY_GIVE_UP_MINUTES = 30  # дольше этого строка `config` с `not_ready` пропускается
+
+NEWS_MARKER = "Секретная-новость-8842"  # по нему видно, что текст новости не попал в аудит и логи
+NEWS_TEXT = f"<b>Плановые работы</b> сегодня в 23:00. {NEWS_MARKER}"
+
+ADMIN_URL = "/api/v1/bot-admin"
+STATUS_URL = f"{ADMIN_URL}/status"
+SETTINGS_URL = f"{ADMIN_URL}/settings"
+PROTOCOLS_URL = f"{ADMIN_URL}/protocols"
+RECIPIENTS_URL = f"{ADMIN_URL}/recipients"
+BROADCASTS_URL = f"{ADMIN_URL}/broadcasts"
+AUDIENCE_URL = f"{ADMIN_URL}/broadcasts/audience"
+OUTBOX_CLAIM_URL = "/api/v1/bot/outbox/claim"
+OUTBOX_ACK_URL = "/api/v1/bot/outbox/ack"
+
+
+def lease_seconds() -> int:
+    from core.config import settings
+
+    return int(getattr(settings, "bot_outbox_lease_seconds"))
+
+
+def max_attempts() -> int:
+    from core.config import settings
+
+    return int(getattr(settings, "bot_outbox_max_attempts"))
+
+
+def user_config_link_url(user_id: UUID | str) -> str:
+    return f"{ADMIN_URL}/users/{user_id}/config-link"
+
+
+def outbox_url(outbox_id: UUID | str) -> str:
+    return f"{ADMIN_URL}/outbox/{outbox_id}"
+
+
+def broadcast_url(broadcast_id: UUID | str, tail: str = "") -> str:
+    return f"{BROADCASTS_URL}/{broadcast_id}{tail}"
+
+
+# --- данные --------------------------------------------------------------------------------------------------------
+
+
+async def add_person(
+    session: AsyncSession,
+    telegram_id: int | None = TELEGRAM_ID,
+    name: str = "Person",
+    *,
+    blocked: bool = False,
+    telegram_username: str | None = None,
+) -> VPNUser:
+    """Человек без доступа (для новостей доступ не нужен): только имя, почта и Telegram."""
+    extra: dict[str, Any] = {"bot_blocked_at": now()} if blocked else {}
+    user = VPNUser(
+        username=name,
+        email=f"{uuid4().hex[:10]}@example.org",
+        telegram_id=telegram_id,
+        telegram_username=telegram_username,
+        **extra,
+    )
+    session.add(user)
+    await session.commit()
+    return user
+
+
+async def add_people(session: AsyncSession, count: int, *, first_telegram_id: int = 7_000_000_000) -> list[VPNUser]:
+    """Много людей с Telegram одним коммитом: telegram_id идут подряд от first_telegram_id."""
+    users = [
+        VPNUser(username=f"Person {index}", email=f"person{index}@example.org", telegram_id=first_telegram_id + index)
+        for index in range(count)
+    ]
+    session.add_all(users)
+    await session.commit()
+    return users
+
+
+async def issued_person(
+    world: World, telegram_id: int | None = TELEGRAM_ID, protocol: VPNProtocol | None = None
+) -> tuple[VPNUser, Subscription, AccessGrant, Any]:
+    """Человек с живым клиентом, выданным из панели, и привязанным Telegram (как `issued_user` в тестах 25.3)."""
+    if protocol is None:
+        _, protocol, _ = await world.server()
+    assert protocol is not None
+    user, subscription, grant, credential = await world.issued(protocol)
+    user.telegram_id = telegram_id
+    await world.session.commit()
+    return user, subscription, grant, credential
+
+
+async def sql(statement: str, **params: Any) -> None:
+    """Прямая запись в БД отдельной сессией (подготовить состояние: состарить аренду, сменить `not_before`)."""
+    async with session_factory() as session:
+        await session.execute(text(statement), params)
+        await session.commit()
+
+
+async def sql_rows(statement: str, **params: Any) -> list[tuple[Any, ...]]:
+    async with session_factory() as session:
+        return [tuple(row) for row in (await session.execute(text(statement), params)).all()]
+
+
+async def tables_dump(*tables: str) -> str:
+    """Все строки таблиц одной строкой: для проверки «токена и адреса ссылки нет ни в одной колонке»."""
+    async with session_factory() as session:
+        return "\n".join(
+            str((await session.execute(text(f"SELECT * FROM {table}"))).all())  # noqa: S608 - имена из тестов
+            for table in tables
+        )
+
+
+def broadcast_data(
+    *,
+    kind: str = NEWS,
+    target: str = TARGET_ALL,
+    text: str | None = None,
+    protocol_id: UUID | None = None,
+    user_ids: list[UUID] | None = None,
+    request_id: UUID | None = None,
+) -> Any:
+    from modules.bot.schemas import BroadcastCreate
+
+    if kind == NEWS and text is None:
+        text = NEWS_TEXT
+    return BroadcastCreate(
+        request_id=request_id or uuid4(),
+        kind=kind,
+        text=text,
+        target=target,
+        protocol_id=protocol_id,
+        user_ids=user_ids,
+    )
+
+
+def broadcast_body(
+    *,
+    kind: str = NEWS,
+    target: str = TARGET_ALL,
+    text: str | None = None,
+    protocol_id: UUID | str | None = None,
+    user_ids: list[UUID | str] | None = None,
+    request_id: UUID | str | None = None,
+) -> dict[str, Any]:
+    """Тело `POST /broadcasts`: пустые поля не отправляются."""
+    if kind == NEWS and text is None:
+        text = NEWS_TEXT
+    body: dict[str, Any] = {"request_id": str(request_id or uuid4()), "kind": kind, "target": target}
+    if text is not None:
+        body["text"] = text
+    if protocol_id is not None:
+        body["protocol_id"] = str(protocol_id)
+    if user_ids is not None:
+        body["user_ids"] = [str(user_id) for user_id in user_ids]
+    return body
+
+
+def audience_body(**fields: Any) -> dict[str, Any]:
+    """Тело `POST /broadcasts/audience`: тот же отбор, без `request_id` и без текста."""
+    body = broadcast_body(**fields)
+    body.pop("request_id", None)
+    body.pop("text", None)
+    return body
+
+
+def outbox_service(session: AsyncSession, actor: AuditActor = SYSTEM_ACTOR) -> Any:
+    from modules.bot.outbox import OutboxService
+
+    return OutboxService(session, actor)
+
+
+async def create_broadcast(session: AsyncSession, actor: AuditActor = SYSTEM_ACTOR, **fields: Any) -> Any:
+    return await outbox_service(session, actor).create_broadcast(broadcast_data(**fields))
+
+
+async def audience_of(session: AsyncSession, **fields: Any) -> Any:
+    return await outbox_service(session).audience(broadcast_data(**fields))
+
+
+async def cancel_broadcast(session: AsyncSession, broadcast_id: UUID, actor: AuditActor = SYSTEM_ACTOR) -> Any:
+    return await outbox_service(session, actor).cancel_broadcast(broadcast_id)
+
+
+async def queue_link(session: AsyncSession, user_id: UUID, actor: AuditActor = SYSTEM_ACTOR) -> Any:
+    return await outbox_service(session, actor).queue_config_link(user_id)
+
+
+async def claim(session: AsyncSession, key: BotKey, limit: int = 50) -> Any:
+    return await outbox_service(session).claim(key.id, limit)
+
+
+def ack_item(item_id: UUID, status: str, *, error: str | None = None, retry_after: int | None = None) -> Any:
+    from modules.bot.schemas import OutboxAckItem
+
+    return OutboxAckItem(id=item_id, status=status, error=error, retry_after=retry_after)
+
+
+async def ack(session: AsyncSession, lease_id: UUID, *items: Any) -> Any:
+    return await outbox_service(session).ack(lease_id, list(items))
+
+
+async def ack_all(session: AsyncSession, claimed: Any, status: str = SENT) -> Any:
+    """Подтвердить все выданные строки одним статусом."""
+    return await ack(session, claimed.lease_id, *[ack_item(item.id, status) for item in claimed.items])
+
+
+async def outbox_rows(**where: Any) -> list[Any]:
+    """Строки очереди отдельной сессией, по порядку постановки; `where` - равенства по колонкам модели (строки и enum
+    сравниваются по значению)."""
+    from modules.bot.models.outbox import BotOutbox
+
+    async with session_factory() as session:
+        rows = list((await session.execute(select(BotOutbox).order_by(BotOutbox.created_at, BotOutbox.id))).scalars())
+
+    def same(row: Any, column: str, expected: Any) -> bool:
+        actual = getattr(row, column)
+        return status_value(actual) == expected if isinstance(expected, str) else bool(actual == expected)
+
+    return [row for row in rows if all(same(row, column, value) for column, value in where.items())]
+
+
+async def outbox_row(outbox_id: UUID) -> Any:
+    from modules.bot.models.outbox import BotOutbox
+
+    return await fetch(BotOutbox, outbox_id)
+
+
+async def broadcast_row(broadcast_id: UUID) -> Any:
+    from modules.bot.models.broadcast import BotBroadcast
+
+    return await fetch(BotBroadcast, broadcast_id)
+
+
+async def user_row(user_id: UUID) -> Any:
+    return await fetch(VPNUser, user_id)
+
+
+def statuses(rows: list[Any]) -> list[str]:
+    return [status_value(row.status) for row in rows]
+
+
+COUNTER_NAMES = ("total", "sent", "blocked", "failed", "skipped", "cancelled")
+
+
+def counters(broadcast: Any) -> dict[str, int]:
+    return {name: int(getattr(broadcast, name)) for name in COUNTER_NAMES}
+
+
+async def assert_counters_consistent(broadcast_id: UUID, *, dropped: int = 0) -> None:
+    """Инвариант Р4-A: total = сумма итогов + открытые строки + выбывшие (строки удалённых людей)."""
+    broadcast = await broadcast_row(broadcast_id)
+    rows = await outbox_rows(broadcast_id=broadcast_id)
+    shown = counters(broadcast)
+    done = sum(shown[name] for name in COUNTER_NAMES if name != "total")
+    opened = statuses(rows).count(PENDING) + statuses(rows).count(CLAIMED)
+    assert shown["total"] == done + opened + dropped, (shown, statuses(rows))
+    if dropped == 0:  # строки не чистились и не удалялись: каждый счётчик равен числу строк со своим статусом
+        for name in (SENT, BLOCKED, FAILED, SKIPPED, CANCELLED):
+            assert shown[name] == statuses(rows).count(name), (name, shown, statuses(rows))
+
+
+async def expire_lease(outbox_id: UUID | None = None) -> None:
+    """Аренда вышла (у одной строки или у всех выданных): `claimed_until` в прошлом, строка всё ещё `claimed`."""
+    if outbox_id is None:
+        await sql("UPDATE bot_outbox SET claimed_until = now() - interval '1 second' WHERE status = 'claimed'")
+    else:
+        await sql(
+            "UPDATE bot_outbox SET claimed_until = now() - interval '1 second' WHERE id = :id AND status = 'claimed'",
+            id=outbox_id,
+        )
+
+
+async def make_ready(outbox_id: UUID | None = None) -> None:
+    """`not_before` в прошлом: отложенная строка снова годится к выдаче."""
+    if outbox_id is None:
+        await sql("UPDATE bot_outbox SET not_before = now() - interval '1 second'")
+    else:
+        await sql("UPDATE bot_outbox SET not_before = now() - interval '1 second' WHERE id = :id", id=outbox_id)
+
+
+async def http_claim(bot: httpx.AsyncClient, limit: int = 50) -> httpx.Response:
+    return await bot.post(OUTBOX_CLAIM_URL, json={"limit": limit})
+
+
+async def http_ack(bot: httpx.AsyncClient, lease_id: str | UUID, results: list[dict[str, Any]]) -> httpx.Response:
+    return await bot.post(OUTBOX_ACK_URL, json={"lease_id": str(lease_id), "results": results})
+
+
+def ack_result(item_id: str | UUID, status: str = SENT, **fields: Any) -> dict[str, Any]:
+    return {"id": str(item_id), "status": status, **fields}
+
+
+async def admin_broadcast(api: httpx.AsyncClient, **fields: Any) -> httpx.Response:
+    return await api.post(BROADCASTS_URL, json=broadcast_body(**fields))
+
+
+async def admin_create_broadcast(api: httpx.AsyncClient, **fields: Any) -> dict[str, Any]:
+    response = await admin_broadcast(api, **fields)
+    assert response.status_code == 201, response.text
+    created: dict[str, Any] = response.json()
+    return created
