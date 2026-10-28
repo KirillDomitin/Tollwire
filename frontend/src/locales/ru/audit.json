@@ -96,7 +96,11 @@
     "bot_registration_activated": "Регистрация через бота завершена: доступ выдан",
     "bot_registration_failed": "Регистрация через бота: доступ выдать не удалось",
     "bot_registration_retried": "Выдача доступа по регистрации через бота повторена",
-    "config_link_created": "Выпущена ссылка на страницу конфига (через бота)"
+    "config_link_created": "Выпущена ссылка на страницу конфига (через бота)",
+    "bot_broadcast_created": "Создана рассылка через бота",
+    "bot_broadcast_cancelled": "Рассылка через бота отменена",
+    "bot_config_link_queued": "Ссылка на конфиг поставлена в очередь бота",
+    "bot_settings_updated": "Изменены настройки бота"
   },
   "details": {
     "reason": "Причина",
@@ -137,7 +141,11 @@
     "action": "Куда",
     "weight": "Вес",
     "force": "Принудительно",
-    "exits": "Выходов"
+    "exits": "Выходов",
+    "kind": "Вид",
+    "target": "Кому",
+    "recipients": "Получателей",
+    "cancelled": "Остановлено сообщений"
   },
   "actor": {
     "anonymous": "Аноним",
@@ -197,6 +205,15 @@
     "force": {
       "true": "да",
       "false": "нет"
+    },
+    "kind": {
+      "news": "новость",
+      "config": "ссылки на конфиг"
+    },
+    "target": {
+      "all": "все с Telegram",
+      "selected": "выбранные люди",
+      "protocol": "по протоколу"
     }
   }
 }

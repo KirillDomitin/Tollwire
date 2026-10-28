@@ -96,7 +96,11 @@
     "bot_registration_activated": "Bot registration finished: access issued",
     "bot_registration_failed": "Bot registration: access could not be issued",
     "bot_registration_retried": "Access issuing retried for a bot registration",
-    "config_link_created": "Config page link issued (via the bot)"
+    "config_link_created": "Config page link issued (via the bot)",
+    "bot_broadcast_created": "Broadcast created via the bot",
+    "bot_broadcast_cancelled": "Bot broadcast cancelled",
+    "bot_config_link_queued": "Config link queued for the bot",
+    "bot_settings_updated": "Bot settings changed"
   },
   "details": {
     "reason": "Reason",
@@ -137,7 +141,11 @@
     "action": "Goes",
     "weight": "Weight",
     "force": "Forced",
-    "exits": "Exits"
+    "exits": "Exits",
+    "kind": "Kind",
+    "target": "Audience",
+    "recipients": "Recipients",
+    "cancelled": "Messages stopped"
   },
   "actor": {
     "anonymous": "Anonymous",
@@ -197,6 +205,15 @@
     "force": {
       "true": "yes",
       "false": "no"
+    },
+    "kind": {
+      "news": "news",
+      "config": "config links"
+    },
+    "target": {
+      "all": "everyone with Telegram",
+      "selected": "selected people",
+      "protocol": "by protocol"
     }
   }
 }

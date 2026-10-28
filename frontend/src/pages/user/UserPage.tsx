@@ -14,6 +14,7 @@ import { ChangePeriodDialog } from "./ChangePeriodDialog";
 import { EditUserDialog } from "./EditUserDialog";
 import { GrantAccessDialog } from "./GrantAccessDialog";
 import { GrantRow } from "./GrantRow";
+import { TelegramLink } from "./TelegramLink";
 import styles from "./UserPage.module.css";
 import { liveCredential, useAccessJobs, userKeys, useUserData } from "./useUser";
 
@@ -74,6 +75,7 @@ export function UserPage() {
           </h1>
           <p className={styles.address}>{user.email ?? "—"}</p>
           {user.description && <p className={styles.description}>{user.description}</p>}
+          <TelegramLink user={user} />
           {can("vpn_users:manage") && <EditUserDialog user={user} />}
         </div>
         <div className={styles.state}>

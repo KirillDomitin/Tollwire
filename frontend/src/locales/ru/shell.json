@@ -4,7 +4,8 @@
     "servers": "Серверы",
     "users": "Пользователи",
     "audit": "Журнал",
-    "signOut": "Выйти"
+    "signOut": "Выйти",
+    "bot": "Бот"
   },
   "roles": {
     "superadmin": "Суперадмин",

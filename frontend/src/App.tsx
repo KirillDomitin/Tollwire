@@ -60,6 +60,39 @@ export const router = createBrowserRouter([
                 path: "/audit",
                 lazy: async () => ({ Component: (await import("./pages/AuditPage")).AuditPage }),
               },
+              {
+                // Страница «Бот»: каркас с разделами и по ленивому чанку на каждый раздел.
+                path: "/bot",
+                lazy: async () => ({ Component: (await import("./pages/bot/BotPage")).BotPage }),
+                children: [
+                  {
+                    index: true,
+                    lazy: async () => ({ Component: (await import("./pages/bot/StatusPage")).StatusPage }),
+                  },
+                  {
+                    path: "invites",
+                    lazy: async () => ({ Component: (await import("./pages/bot/InvitesPage")).InvitesPage }),
+                  },
+                  {
+                    path: "registrations",
+                    lazy: async () => ({
+                      Component: (await import("./pages/bot/RegistrationsPage")).RegistrationsPage,
+                    }),
+                  },
+                  {
+                    path: "broadcasts",
+                    lazy: async () => ({
+                      Component: (await import("./pages/bot/BroadcastsPage")).BroadcastsPage,
+                    }),
+                  },
+                  {
+                    path: "settings",
+                    lazy: async () => ({
+                      Component: (await import("./pages/bot/SettingsPage")).SettingsPage,
+                    }),
+                  },
+                ],
+              },
               { path: "*", element: <NotFoundPage /> },
             ],
           },

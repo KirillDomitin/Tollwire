@@ -342,7 +342,7 @@ text}}`, заголовок `Cache-Control: no-store`.
   `retention`. Коммит.
 - [x] 7. Бот: `panel.py`, `outbox.py`, `storage.py` (журнал), `texts.py`, `config.py`, `__main__.py`, версия; тесты.
   Коммит.
-- [ ] 8. Фронтенд: `export_openapi` → `gen:api`, меню, `pages/bot/*`, карточка пользователя, словари,
+- [x] 8. Фронтенд: `export_openapi` → `gen:api`, меню, `pages/bot/*`, карточка пользователя, словари,
   `AUDIT_ACTIONS`, тесты. Коммит.
 - [ ] 9. Документация: `src/modules/bot/CLAUDE.md`, `docs/bot/api.md`, новый `docs/bot/outbox.md`,
   `docs/bot/tests.md`, `bot/CLAUDE.md`, `docs/bot-service/{panel-client,tests}.md` и новый

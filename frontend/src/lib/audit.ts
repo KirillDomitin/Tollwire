@@ -107,6 +107,11 @@ export const AUDIT_ACTIONS: Record<AuditAction, ActionInfo> = {
   bot_registration_failed: { group: "bot", tone: "down" },
   bot_registration_retried: { group: "bot" },
   config_link_created: { group: "bot" },
+  // Рассылки и настройки бота. Текст новости, адреса и список людей в запись не попадают.
+  bot_broadcast_created: { group: "bot" },
+  bot_broadcast_cancelled: { group: "bot", tone: "warn" },
+  bot_config_link_queued: { group: "bot" },
+  bot_settings_updated: { group: "bot" },
 };
 
 /** Безличная фраза о событии на языке интерфейса: кто действовал, показывается отдельно. */
@@ -240,10 +245,16 @@ const DETAIL_KEYS = [
   "weight",
   "force",
   "exits",
+  // Рассылки бота: вид, кому, сколько получателей и сколько сообщений остановила отмена. Текст новости, список людей
+  // (user_ids), protocol_id и номер сообщения (outbox_id) не выводятся.
+  "kind",
+  "target",
+  "recipients",
+  "cancelled",
 ] as const;
 
 /** Ключи, значения которых — слова бэкенда (enum): их показываем по-человечески, если перевод есть. */
-const TRANSLATED_VALUES = ["protocol_type", "action", "status", "reason", "force"] as const;
+const TRANSLATED_VALUES = ["protocol_type", "action", "status", "reason", "force", "kind", "target"] as const;
 /** «reason» есть и у других событий (там это слова с другим смыслом): переводится только у шлюзовых. */
 const GATEWAY_ONLY_VALUES = ["reason"];
 

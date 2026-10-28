@@ -1,0 +1,199 @@
+{
+  "title": "Bot",
+  "loading": "Loading…",
+  "reload": "Reload",
+  "more": "Show more",
+  "copy": "Copy",
+  "copied": "Copied",
+  "copyFailed": "Could not copy automatically — copy the value from the field by hand.",
+  "done": "Done",
+  "protocolPlaceholder": "Choose a protocol",
+  "notConnected": {
+    "title": "Bot not connected",
+    "hint": "No key has been issued for the bot yet. A superadmin creates the first key on the Status tab."
+  },
+  "nav": {
+    "label": "Bot sections",
+    "status": "Status",
+    "invites": "Invites",
+    "registrations": "Registrations",
+    "broadcasts": "Broadcasts",
+    "settings": "Settings"
+  },
+  "errors": {
+    "tooMany": "Too often, try again in {{seconds}} s.",
+    "invalid": "The server did not accept the values. Check the fields and try again.",
+    "conflict": "This action is not possible right now. Refresh the page and check the state.",
+    "reasons": {
+      "no_telegram": "This person has no Telegram linked.",
+      "bot_blocked": "The person has blocked the bot — the message will not reach them.",
+      "not_configured": "The public address of the panel is not set, so a config link cannot be built. Set the address in the panel settings.",
+      "no_access": "This person has no active access to a server.",
+      "config_unavailable": "A config link cannot be issued for this access: for example, the client was picked up from AmneziaVPN.",
+      "no_default_protocol": "No protocol chosen: choose one in the form or set a default protocol in the Settings tab.",
+      "not_failed": "This registration is no longer in error.",
+      "already_finished": "The broadcast is already finished or cancelled."
+    }
+  },
+  "html": {
+    "tag": "Unsupported tag. Allowed: b, i, u, s, code, pre, blockquote, a and tg-spoiler.",
+    "attr": "Unsupported tag attribute. A link takes only href with an http or https address.",
+    "entity": "Write the signs \"<\" and \"&\" in the text as &lt; and &amp;; Telegram knows no other named entities.",
+    "nesting": "Tags are nested wrongly: close each one, in reverse order. A link inside a link and a quote inside a quote are not allowed.",
+    "length": "The visible text is longer than 4096 characters. An emoji counts as two.",
+    "empty": "There is nothing in the text but markup."
+  },
+  "status": {
+    "title": "Status",
+    "stale": "The bot has not been in touch for a long time. Check that it is running.",
+    "queueStuck": "The bot is not taking the queue (update the bot): messages are waiting to be sent.",
+    "bot": "Bot",
+    "version": "Version",
+    "lastSeen": "Last poll",
+    "lastClaim": "Queue taken",
+    "queue": "In the queue",
+    "queueCounts": "waiting: {{pending}}, with the bot: {{claimed}}",
+    "never": "never"
+  },
+  "keys": {
+    "title": "Keys",
+    "empty": "No keys yet.",
+    "revoked": "Revoked",
+    "revoke": {
+      "trigger": "Revoke",
+      "title": "Revoke the key \"{{name}}\"?",
+      "consequences": "The bot stops working at once: its requests to the panel will be rejected. A key cannot be restored — you need a new one.",
+      "action": "Revoke key",
+      "busy": "Revoking…"
+    },
+    "create": {
+      "trigger": "Create key",
+      "title": "New bot key",
+      "description": "The key is the bot's password to the panel. Give it a name you will recognise later.",
+      "doneTitle": "Key created",
+      "doneDescription": "Copy the key and paste it into the bot settings. Once the window is closed it cannot be shown again.",
+      "keyLabel": "Bot key — shown once",
+      "name": "Name",
+      "nameHint": "For example, \"main bot\".",
+      "busy": "Creating…",
+      "submit": "Create"
+    }
+  },
+  "invites": {
+    "title": "Invites",
+    "empty": "No invites yet.",
+    "revoke": "Revoke",
+    "status": {
+      "valid": "Waiting",
+      "used": "Used",
+      "expired": "Expired",
+      "revoked": "Revoked"
+    },
+    "days_one": "access for {{count}} day",
+    "days_other": "access for {{count}} days",
+    "created": "created",
+    "expires": "valid until",
+    "usedBy": "used by:",
+    "create": {
+      "trigger": "Create invite",
+      "title": "New invite",
+      "description": "The person opens the bot by the link and gets access for the chosen period.",
+      "doneTitle": "Invite created",
+      "protocol": "Protocol",
+      "days": "Access period, days",
+      "validity": "Invite is valid for",
+      "validityDays_one": "{{count}} day",
+      "validityDays_other": "{{count}} days",
+      "custom": "Own date",
+      "date": "Date",
+      "note": "Note",
+      "busy": "Creating…",
+      "submit": "Create",
+      "linkLabel": "Invite link",
+      "codeLabel": "Invite code",
+      "onceLink": "The link is shown once: after the window is closed it cannot be retrieved, and the list does not have it. Send it to the person.",
+      "onceCode": "The code is shown once. The bot name is not known yet (the bot has not been in touch), so there is no ready link: send the code to the person and ask them to open the bot and send it /start with this code."
+    }
+  },
+  "registrations": {
+    "title": "Registrations",
+    "filter": "Status",
+    "all": "All",
+    "status": {
+      "payment_pending": "Waiting for payment",
+      "provisioning": "Issuing access",
+      "active": "Access issued",
+      "failed": "Error"
+    },
+    "empty": "No registrations yet.",
+    "emptyFiltered": "No registrations with this status.",
+    "details": "Details",
+    "retry": "Retry"
+  },
+  "settings": {
+    "title": "Settings",
+    "protocol": "Default protocol",
+    "noProtocol": "Not chosen",
+    "days": "Default period, days",
+    "daysHint": "How many days of access a person gets when the invite names no period.",
+    "validDays": "Invite is valid for, days",
+    "validDaysHint": "After how many days an unaccepted invite expires.",
+    "saving": "Saving…",
+    "save": "Save",
+    "saved": "Saved"
+  },
+  "broadcasts": {
+    "title": "Broadcasts",
+    "list": "Sent broadcasts",
+    "empty": "No broadcasts yet.",
+    "new": "New broadcast",
+    "kind": {
+      "legend": "What to send",
+      "news": "News",
+      "config": "Config links"
+    },
+    "text": "News text",
+    "counter": "{{used}} of {{max}}",
+    "textHint": "Telegram HTML: b, i, u, s, code, pre, blockquote, a href, tg-spoiler. Write the signs \"<\" and \"&\" as &lt; and &amp;.",
+    "preview": "Preview",
+    "target": {
+      "legend": "To whom",
+      "all": "Everyone with Telegram",
+      "protocol": "By protocol",
+      "selected": "Selected"
+    },
+    "protocol": "Protocol",
+    "search": "Search recipients",
+    "searchHint": "Start typing a name or a nickname.",
+    "blockedBot": "blocked the bot",
+    "nobody": "Nobody found.",
+    "audienceNote": "Will not get it: without Telegram — {{withoutTelegram}}, blocked the bot — {{blocked}}.",
+    "send": "Send",
+    "sendTo_one": "Send to {{count}} recipient",
+    "sendTo_other": "Send to {{count}} recipients",
+    "recipients_one": "{{count}} recipient",
+    "recipients_other": "{{count}} recipients",
+    "confirm": {
+      "title": "Send the broadcast?",
+      "who": "Recipients: {{recipients}}.",
+      "news": "What is sent cannot be taken back: cancelling stops only what has not gone yet.",
+      "config": "The previous links of the recipients will stop working: everyone gets a new link to their config.",
+      "action": "Send",
+      "busy": "Sending…"
+    },
+    "state": {
+      "running": "In progress",
+      "finished": "Finished",
+      "cancelled": "Cancelled"
+    },
+    "progress": "Processed {{done}} of {{total}}",
+    "counters": {
+      "sent": "sent",
+      "blocked": "blocked",
+      "failed": "errors",
+      "skipped": "skipped",
+      "cancelled": "cancelled"
+    },
+    "cancel": "Cancel"
+  }
+}

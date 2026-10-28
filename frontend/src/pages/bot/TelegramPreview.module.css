@@ -1,0 +1,52 @@
+/* Предпросмотр новости: перенос строк как в сообщении, разметка - как в Telegram. */
+.preview {
+  max-width: 420px;
+  padding: var(--space-3) var(--space-4);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+}
+
+.preview code,
+.preview pre {
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  background: var(--fog);
+  border-radius: var(--radius-control);
+}
+.preview code {
+  padding: 0 var(--space-1);
+}
+.preview pre {
+  margin: var(--space-1) 0;
+  padding: var(--space-2) var(--space-3);
+}
+.preview pre code {
+  padding: 0;
+  background: none;
+}
+
+.preview blockquote {
+  margin: var(--space-1) 0;
+  padding-left: var(--space-3);
+  border-left: 3px solid var(--signal-process);
+}
+
+.link {
+  color: var(--signal-process);
+  text-decoration: underline;
+}
+
+/* Спойлер: закрашен, пока на него не навели или не встали фокусом. */
+.spoiler {
+  color: transparent;
+  background: var(--rule-strong);
+  border-radius: 3px;
+}
+.spoiler:hover,
+.spoiler:focus-visible {
+  color: inherit;
+  background: none;
+}

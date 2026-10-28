@@ -1,0 +1,320 @@
+/* Страница «Бот» говорит тем же языком, что остальные разделы: строки журнала, цвет несёт только статус. */
+
+.page {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.title {
+  font-size: var(--text-display);
+}
+
+.sectionTitle {
+  font-size: var(--text-title);
+}
+
+.section {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.sectionHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+
+.subTitle {
+  font-size: var(--text-lead);
+}
+
+.quiet {
+  color: var(--pine-soft);
+}
+
+.hint {
+  font-size: var(--text-meta);
+  color: var(--pine-soft);
+}
+
+.good {
+  color: var(--signal-ok);
+  font-weight: 550;
+}
+
+/* Разделы страницы: ссылки-вкладки, открытая отмечена снизу. */
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  border-bottom: 1px solid var(--rule);
+}
+.navLink {
+  padding: var(--space-2) 0;
+  margin-bottom: -1px;
+  color: var(--pine-soft);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+}
+.navLink:hover {
+  color: var(--pine);
+}
+.navLink[aria-current="page"] {
+  color: var(--pine);
+  font-weight: 600;
+  border-bottom-color: var(--pine);
+}
+
+/* Сведения парами «что / значение». */
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  margin: 0;
+  background: var(--paper);
+}
+.facts dt,
+.facts dd {
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--rule);
+}
+.facts dt {
+  color: var(--pine-soft);
+}
+.facts > :nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+
+/* Список строк: слева полоса состояния. */
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--paper);
+}
+.item {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--rule);
+  border-left: var(--rule-width) solid var(--signal-idle);
+}
+.item:last-child {
+  border-bottom: 0;
+}
+.item[data-signal="ok"] {
+  border-left-color: var(--signal-ok);
+}
+.item[data-signal="warn"] {
+  border-left-color: var(--signal-warn);
+}
+.item[data-signal="down"] {
+  border-left-color: var(--signal-down);
+}
+.item[data-signal="process"] {
+  border-left-color: var(--signal-process);
+}
+
+.itemHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+.itemName {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.itemMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  font-size: var(--text-meta);
+  color: var(--pine-soft);
+}
+.state {
+  font-weight: 550;
+}
+.state[data-signal="down"] {
+  color: var(--signal-down);
+}
+.state[data-signal="warn"] {
+  color: var(--signal-warn-text);
+}
+.state[data-signal="process"] {
+  color: var(--signal-process);
+}
+.state[data-signal="idle"] {
+  font-weight: 400;
+  color: var(--pine-soft);
+}
+.mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+}
+.link {
+  color: inherit;
+  text-decoration-color: var(--rule-strong);
+  text-underline-offset: 3px;
+}
+.link:hover {
+  text-decoration-color: currentColor;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.details {
+  font-size: var(--text-meta);
+}
+.details summary {
+  cursor: pointer;
+  color: var(--pine-soft);
+}
+.details p {
+  margin-top: var(--space-1);
+  overflow-wrap: anywhere;
+  color: var(--signal-down);
+}
+
+/* Формы. */
+.form {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 640px;
+}
+.field {
+  display: grid;
+  gap: var(--space-1);
+}
+.label {
+  font-size: var(--text-meta);
+  font-weight: 550;
+  color: var(--pine-soft);
+}
+.control {
+  min-height: 42px;
+  padding: 0 var(--space-3);
+  background: var(--paper);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-control);
+}
+.control:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 0;
+  border-color: var(--focus);
+}
+.control[aria-invalid="true"] {
+  border-color: var(--signal-down);
+}
+.control:disabled {
+  color: var(--pine-soft);
+}
+.textarea {
+  min-height: 160px;
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  resize: vertical;
+}
+.fieldError {
+  font-size: var(--text-meta);
+  color: var(--signal-down);
+}
+.counter {
+  font-size: var(--text-meta);
+  font-variant-numeric: tabular-nums;
+  color: var(--pine-soft);
+}
+.counter[data-over="true"] {
+  color: var(--signal-down);
+}
+
+.choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.choice legend {
+  margin-bottom: var(--space-2);
+  padding: 0;
+  font-size: var(--text-meta);
+  font-weight: 550;
+  color: var(--pine-soft);
+}
+.choice label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.people {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+}
+.people li {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--rule);
+}
+.people li:last-child {
+  border-bottom: 0;
+}
+.people label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+}
+.blocked {
+  font-size: var(--text-meta);
+  color: var(--signal-warn-text);
+}
+
+/* Поле, которое можно только скопировать: ключ, ссылка. */
+.secret {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  background: var(--fog);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-control);
+}
+
+/* Рассылки: прогресс и счётчики. */
+.progress {
+  width: 100%;
+  height: 10px;
+  accent-color: var(--signal-process);
+}
+.counters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-meta);
+  color: var(--pine-soft);
+}
+.excerpt {
+  color: var(--pine-soft);
+  overflow-wrap: anywhere;
+}

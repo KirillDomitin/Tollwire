@@ -24,13 +24,17 @@ export type Grant = Schemas["AccessGrantRead"];
 export type VPNCredential = Schemas["VPNCredentialRead"];
 
 /** Ошибка API с понятным человеку текстом; status — для веток (401/403/429); detail — текст `detail` из ответа
- *  бэкенда (английский, фиксированные фразы): по нему выбирают, что показать, но сам он не показывается. */
+ *  бэкенда (английский, фиксированные фразы): по нему выбирают, что показать, но сам он не показывается.
+ *  reason — причина 409 (`no_telegram`, `not_configured`…), code — тип первой ошибки проверки в 422
+ *  (`telegram_html_tag`…): по ним выбирают свой текст. */
 export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
     readonly retryAfterSeconds?: number,
     readonly detail?: string,
+    readonly reason?: string,
+    readonly code?: string,
   ) {
     super(message);
   }
@@ -58,11 +62,18 @@ export async function unwrap<T>(
   }
   const { status, ok } = result.response;
   if (ok) return result.data as T; // 204 — данных нет, и это успех
-  const detail = (result.error as { detail?: unknown } | null | undefined)?.detail;
+  const body = result.error as { detail?: unknown; reason?: unknown } | null | undefined;
+  const detail = body?.detail;
+  const first: unknown = Array.isArray(detail) ? detail[0] : undefined;
+  const type = (first as { type?: unknown } | undefined)?.type;
+  // Retry-After читаем только у 429: «через сколько секунд повторить» нужно человеку, на остальных статусах заголовка нет.
+  const retryAfter = status === 429 ? Number(result.response.headers.get("Retry-After")) : Number.NaN;
   throw new ApiError(
     messages[status] ?? messageForStatus(status),
     status,
-    undefined,
+    Number.isFinite(retryAfter) && retryAfter > 0 ? Math.ceil(retryAfter) : undefined,
     typeof detail === "string" ? detail : undefined,
+    typeof body?.reason === "string" ? body.reason : undefined,
+    typeof type === "string" ? type : undefined,
   );
 }

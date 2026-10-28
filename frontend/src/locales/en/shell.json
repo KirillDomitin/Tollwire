@@ -4,7 +4,8 @@
     "servers": "Servers",
     "users": "Users",
     "audit": "Audit log",
-    "signOut": "Sign out"
+    "signOut": "Sign out",
+    "bot": "Bot"
   },
   "roles": {
     "superadmin": "Superadmin",

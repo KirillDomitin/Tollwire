@@ -180,5 +180,19 @@
     "errors": {
       "revoked": "The config is unavailable: it is revoked, or the client was taken over from AmneziaVPN and the panel has no client key. For a revoked one, issue a new config."
     }
+  },
+  "telegram": {
+    "line": "Telegram: {{who}}",
+    "lineBlocked": "Telegram: {{who}} · blocked the bot {{date}}",
+    "linked": "linked",
+    "send": "Send link to Telegram",
+    "blockedHint": "The person blocked the bot — the message will not reach them. The mark is removed once they write to the bot themselves.",
+    "sending": "Sending the link…",
+    "result": {
+      "sent": "The link was sent to Telegram",
+      "blocked": "The person blocked the bot — the link was not delivered",
+      "failed": "Could not send the link",
+      "skipped": "The link was not sent: the bot skipped this message"
+    }
   }
 }
