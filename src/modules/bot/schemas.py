@@ -2,12 +2,14 @@
 # -*- coding: utf-8 -*-
 import unicodedata
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal, Self
 from uuid import UUID
 
-from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic_core import PydanticCustomError
 
 from modules.bot.models.registration import RegistrationStatus
+from modules.bot.telegram_html import TelegramHtmlError, check_telegram_html
 from modules.vpn_users.schemas import Email
 
 
@@ -57,10 +59,11 @@ class BotKeyCreated(BotKeyRead):
 
 
 class InviteCreate(BaseModel):
-    # bot_settings (значения по умолчанию) появятся позже: пока протокол и срок обязательны.
-    protocol_id: UUID
-    days: Annotated[int, Field(ge=1, le=3650)]
-    expires_at: AwareDatetime
+    # Не заданное берётся из bot_settings (протокол, срок доступа, срок действия приглашения); консольный bot_invite
+    # по-прежнему передаёт всё явно.
+    protocol_id: UUID | None = None
+    days: Annotated[int, Field(ge=1, le=3650)] | None = None
+    expires_at: AwareDatetime | None = None
     note: Annotated[str, StringConstraints(strip_whitespace=True, max_length=100)] | None = None
 
 
@@ -159,3 +162,63 @@ class HeartbeatRequest(BaseModel):
     # Имя бота подставляется в ссылку t.me/<имя>?start=<код>: только символы имени Telegram (допускается @ в начале).
     bot_username: Annotated[str, StringConstraints(pattern=r"^@?[A-Za-z0-9_]{1,32}$")]
     version: Annotated[str, StringConstraints(min_length=1, max_length=32)]
+
+
+# --- настройки -----------------------------------------------------------------------------------------------------
+
+
+class BotSettingsUpdate(BaseModel):
+    """Настройки, которые админ меняет из интерфейса. Порог «панель недоступна» появится в UI вместе с 25.5."""
+
+    default_protocol_id: UUID | None
+    default_days: Annotated[int, Field(ge=1, le=3650)]
+    invite_valid_days: Annotated[int, Field(ge=1, le=365)]
+
+
+# --- рассылки ------------------------------------------------------------------------------------------------------
+
+MAX_SELECTED_USERS = 1000
+
+
+def _telegram_html(value: str) -> str:
+    try:
+        check_telegram_html(value)
+    except TelegramHtmlError as error:
+        raise PydanticCustomError(error.code, "The text is not valid Telegram HTML", {"position": error.position})
+    return value
+
+
+class BroadcastCreate(BaseModel):
+    """Новая рассылка. kind: news (текст в Telegram HTML) или config (каждому новая ссылка на его конфиг)."""
+
+    request_id: UUID  # повторный POST с тем же id возвращает ту же рассылку
+    kind: Literal["news", "config"]
+    text: Annotated[str, AfterValidator(_telegram_html)] | None = None
+    target: Literal["all", "selected", "protocol"]
+    protocol_id: UUID | None = None
+    user_ids: Annotated[list[UUID], Field(min_length=1, max_length=MAX_SELECTED_USERS)] | None = None
+
+    @model_validator(mode="after")
+    def _consistent(self) -> Self:
+        if self.kind == "news" and self.text is None:
+            raise ValueError("A news broadcast needs a text")
+        if self.kind == "config" and self.target == "all":
+            raise ValueError("Config links go to selected people or to a protocol, not to everybody")
+        if self.target == "protocol" and self.protocol_id is None:
+            raise ValueError("The protocol target needs protocol_id")
+        if self.target == "selected" and not self.user_ids:
+            raise ValueError("The selected target needs user_ids")
+        return self
+
+
+# Коды, которые бот присылает вместо текста ошибки Telegram: в панель не попадает ничего из ответов Telegram.
+OutboxErrorCode = Literal[
+    "blocked", "chat_not_found", "bad_request", "network", "telegram_5xx", "flood", "too_many_attempts"
+]
+
+
+class OutboxAckItem(BaseModel):
+    id: UUID
+    status: Literal["sent", "blocked", "failed", "retry"]
+    error: OutboxErrorCode | None = None
+    retry_after: Annotated[int, Field(ge=0, le=86400)] | None = None
