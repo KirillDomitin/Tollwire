@@ -4,7 +4,8 @@ import enum
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, SmallInteger, String, Uuid, func, text
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, SmallInteger, String, Text, Uuid, func
+from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.database.base import Base, UuidPkMixin
@@ -12,7 +13,8 @@ from core.database.base import Base, UuidPkMixin
 
 class OutboxKind(enum.StrEnum):
     NEWS = "news"
-    CONFIG = "config"  # 25.5 добавит notify
+    CONFIG = "config"
+    NOTIFY = "notify"  # уведомление админу (этап 25.5): получатель - admin_link_id, текст в строке
 
 
 class OutboxStatus(enum.StrEnum):
@@ -27,7 +29,8 @@ class OutboxStatus(enum.StrEnum):
 
 OPEN_STATUSES = (OutboxStatus.PENDING, OutboxStatus.CLAIMED)
 
-PRIORITY_INDIVIDUAL = 0  # «Отправить ссылку в Telegram» из карточки не ждёт большую рассылку
+PRIORITY_NOTIFY = 0
+PRIORITY_INDIVIDUAL = 0 # «Отправить ссылку в Telegram» из карточки не ждёт большую рассылку
 PRIORITY_BROADCAST = 10
 
 
@@ -37,7 +40,13 @@ class BotOutbox(UuidPkMixin, Base):
 
     __tablename__ = "bot_outbox"
     __table_args__ = (
-        CheckConstraint("kind IN ('news', 'config')", name="ck_bot_outbox_kind"),
+        CheckConstraint("kind IN ('news', 'config', 'notify')", name="ck_bot_outbox_kind"),
+        CheckConstraint(
+            "(kind = 'notify' AND admin_link_id IS NOT NULL AND user_id IS NULL AND text IS NOT NULL "
+            "AND format IS NOT NULL) OR (kind <> 'notify' AND user_id IS NOT NULL AND admin_link_id IS NULL)",
+            name="ck_bot_outbox_recipient",
+        ),
+        Index("ix_bot_outbox_admin_link", "admin_link_id"),
         CheckConstraint(
             "status IN ('pending', 'claimed', 'sent', 'blocked', 'failed', 'skipped', 'cancelled')",
             name="ck_bot_outbox_status",
@@ -46,7 +55,7 @@ class BotOutbox(UuidPkMixin, Base):
             "ix_bot_outbox_ready",
             "priority",
             "created_at",
-            postgresql_where=text("status IN ('pending', 'claimed')"),
+            postgresql_where=sql_text("status IN ('pending', 'claimed')"),
         ),
         Index("ix_bot_outbox_broadcast_status", "broadcast_id", "status"),
         Index("ix_bot_outbox_lease", "lease_id"),
@@ -57,7 +66,7 @@ class BotOutbox(UuidPkMixin, Base):
             "uq_bot_outbox_open_config",
             "user_id",
             unique=True,
-            postgresql_where=text("kind = 'config' AND status IN ('pending', 'claimed')"),
+            postgresql_where=sql_text("kind = 'config' AND status IN ('pending', 'claimed')"),
         ),
     )
 
@@ -65,7 +74,15 @@ class BotOutbox(UuidPkMixin, Base):
     broadcast_id: Mapped[UUID | None] = mapped_column(
         Uuid, ForeignKey("bot_broadcasts.id", ondelete="CASCADE"), default=None
     )
-    user_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("vpn_users.id", ondelete="CASCADE"))
+    user_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("vpn_users.id", ondelete="CASCADE"), default=None)
+    # Только для kind=notify (этап 25.5): получатель - админ, текст готовит панель (без токенов и адресов серверов).
+    admin_link_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey("admin_telegram_links.id", ondelete="CASCADE"), default=None
+    )
+    text: Mapped[str | None] = mapped_column(Text, default=None)
+    format: Mapped[str | None] = mapped_column(String(8), default=None)  # plain | html
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    notify_key: Mapped[str | None] = mapped_column(String(32), default=None)  # ключ каталога событий
     # Доступ, по которому собрана рассылка «по протоколу»: ссылка выпускается на его клиента.
     access_grant_id: Mapped[UUID | None] = mapped_column(
         Uuid, ForeignKey("access_grants.id", ondelete="SET NULL"), default=None
@@ -78,7 +95,7 @@ class BotOutbox(UuidPkMixin, Base):
     claimed_by_key_id: Mapped[UUID | None] = mapped_column(
         Uuid, ForeignKey("bot_keys.id", ondelete="SET NULL"), default=None
     )
-    attempts: Mapped[int] = mapped_column(server_default=text("0"), default=0)
+    attempts: Mapped[int] = mapped_column(server_default=sql_text("0"), default=0)
     error: Mapped[str | None] = mapped_column(String(32), default=None)  # код из перечня, не текст Telegram
     config_link_id: Mapped[UUID | None] = mapped_column(
         Uuid, ForeignKey("config_links.id", ondelete="SET NULL"), default=None

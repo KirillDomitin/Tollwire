@@ -4,7 +4,7 @@
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic.types import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -59,6 +59,21 @@ class Settings(BaseSettings):
     bot_outbox_max_attempts: int = 5
     bot_outbox_retention_days: int = 30  # завершённые строки очереди старше удаляются; итоги рассылок остаются
     bot_stale_after_seconds: int = 120  # дольше без heartbeat - на странице «Бот» предупреждение
+
+    # Уведомления админу (этап 25.5). Сборщик читает аудит по курсору с перекрытием: created_at - начало транзакции,
+    # а задача воркера коммитит позже, поэтому перекрытие больше stale_job_timeout_seconds (проверяет валидатор).
+    bot_notify_interval_seconds: int = 15  # 0 - выключено
+    bot_notify_overlap_seconds: int = 2100
+    bot_notify_batch: int = 500
+    bot_notify_ttl_hours: int = 24  # просроченное уведомление не отправляется
+    bot_notify_timezone: str = "UTC"  # часовой пояс времени в тексте уведомлений
+    bot_admin_link_code_ttl_seconds: int = 600
+    bot_admin_link_failures_max: int = 10  # неудачных привязок по ключу бота
+    bot_admin_link_failures_window_seconds: int = 600
+    bot_admin_link_codes_per_admin_max: int = 10
+    bot_admin_link_codes_per_admin_window_seconds: int = 600
+    bot_notify_tests_per_admin_max: int = 10
+    bot_notify_tests_per_admin_window_seconds: int = 600
 
     # Публичный адрес панели - в ссылках на страницу конфига (этап 25.3), которые выдаёт бот. Явный PUBLIC_URL важнее;
     # иначе адрес собирается из PANEL_DOMAIN и HTTPS_PORT (их пишет install.sh в .env.prod). За внешним reverse proxy
@@ -127,6 +142,12 @@ class Settings(BaseSettings):
         if not (scheme_ok and parts.hostname and bare):
             raise ValueError("PUBLIC_URL must look like https://panel.example.com[:port] (http only for localhost)")
         return f"{parts.scheme}://{parts.netloc}"
+
+    @model_validator(mode="after")
+    def _notify_overlap_covers_stale_jobs(self) -> "Settings":
+        if self.bot_notify_overlap_seconds < self.stale_job_timeout_seconds + 300:
+            raise ValueError("BOT_NOTIFY_OVERLAP_SECONDS must be at least STALE_JOB_TIMEOUT_SECONDS + 300")
+        return self
 
     @property
     def public_base_url(self) -> str | None:

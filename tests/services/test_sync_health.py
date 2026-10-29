@@ -12,6 +12,7 @@ from infrastructure.vpn.awg_config import append_peer, generate_secret_keys, lis
 from infrastructure.vpn.config import CONTAINER_NAME, INTERNET_PROBE_COMMAND
 from modules.access.models import AccessGrantStatus as S
 from modules.access.models.vpn_credential import VPNCredential
+from modules.audit.actor import SYSTEM_ACTOR
 from modules.protocols.repository import ProtocolRepository
 from modules.servers.health import ServerHealthService
 from modules.servers.models.server import HealthStatus, ServerStatus
@@ -108,7 +109,7 @@ async def test_sync_unreachable_marks_offline(world: World) -> None:
 
 async def test_health_ok_then_degraded(world: World) -> None:
     server, protocol, fake = await world.server()
-    report = await ServerHealthService(world.session).check(server.id)
+    report = await ServerHealthService(world.session, SYSTEM_ACTOR).check(server.id)
     assert report["status"] == "ok", report
     assert report["internet_latency_ms"] == 42
     await world.session.refresh(server)
@@ -117,7 +118,7 @@ async def test_health_ok_then_degraded(world: World) -> None:
     fake.nat_rule = False
     protocol.port = 1
     await world.session.commit()
-    report = await ServerHealthService(world.session).check(server.id)
+    report = await ServerHealthService(world.session, SYSTEM_ACTOR).check(server.id)
     failed = {c["name"] for p in report["protocols"] for c in p["checks"] if not c["ok"]}
     assert report["status"] == "degraded" and failed == {"nat", "port_matches_db"}
     await world.session.refresh(protocol)
@@ -127,7 +128,7 @@ async def test_health_ok_then_degraded(world: World) -> None:
 async def test_health_down_is_a_result_not_an_error(world: World) -> None:
     server, _, fake = await world.server()
     fake.reachable = False
-    report = await ServerHealthService(world.session).check(server.id)  # не бросает исключение
+    report = await ServerHealthService(world.session, SYSTEM_ACTOR).check(server.id)  # не бросает исключение
     assert report["status"] == "down" and report["checks"][0]["name"] == "ssh"
     await world.session.refresh(server)
     assert (server.status, server.health_status) == (ServerStatus.OFFLINE, HealthStatus.DOWN)
@@ -138,16 +139,16 @@ async def test_health_without_protocol_reports_platform_only(world: World) -> No
     # Чужой контейнер с похожим именем, который панель не ищет ни под каким протоколом. (`amnezia-awg2` с 23.2 —
     # это приложение AmneziaVPN, его читает провайдер amnezia_app_awg2; см. тесты ниже.)
     fake.containers[f"{CONTAINER_NAME}-old"] = "running"
-    report = await ServerHealthService(world.session).check(server.id)
+    report = await ServerHealthService(world.session, SYSTEM_ACTOR).check(server.id)
     assert report["status"] == "ok" and report["protocols"] == []
 
 
 async def test_reachable_again_returns_ready(world: World) -> None:
     server, _, fake = await world.server()
     fake.reachable = False
-    await ServerHealthService(world.session).check(server.id)
+    await ServerHealthService(world.session, SYSTEM_ACTOR).check(server.id)
     fake.reachable = True
-    report = await ServerHealthService(world.session).check(server.id)
+    report = await ServerHealthService(world.session, SYSTEM_ACTOR).check(server.id)
     assert report["server_status"] == "ready"
 
 
@@ -256,14 +257,14 @@ async def test_sync_repairs_panel_clients_and_leaves_amnezia_app_alone(world: Wo
 
 async def test_health_of_ordinary_server_lists_only_the_tracked_protocol(world: World) -> None:
     server, _, _ = await world.server()
-    report = await ServerHealthService(world.session).check(server.id)
+    report = await ServerHealthService(world.session, SYSTEM_ACTOR).check(server.id)
     assert report["status"] == "ok", report
     assert [p["type"] for p in report["protocols"]] == ["amnezia_wg"]
 
 
 async def test_health_of_server_without_protocols_has_no_app_entries(world: World) -> None:
     server, _, fake = await world.server(install=False)
-    report = await ServerHealthService(world.session).check(server.id)
+    report = await ServerHealthService(world.session, SYSTEM_ACTOR).check(server.id)
     assert report["status"] == "ok" and report["protocols"] == []
     assert not any(c.startswith("docker exec") for c in fake.commands)
 
@@ -274,7 +275,7 @@ async def test_health_reports_installed_amnezia_app_as_untracked_without_changin
     app = fake.add_amnezia_app(
         "amnezia-awg2", peers=[AppPeer(k, handshake=int(datetime.now(timezone.utc).timestamp()))]
     )
-    report = await ServerHealthService(world.session).check(server.id)
+    report = await ServerHealthService(world.session, SYSTEM_ACTOR).check(server.id)
     entry = {p["type"]: p for p in report["protocols"]}["amnezia_app_awg2"]
     assert entry["in_db"] is False and entry["port"] == app.port
     assert entry["clients"] == {"total": 1, "active": 1}
@@ -289,7 +290,7 @@ async def test_health_reports_installed_amnezia_app_as_untracked_without_changin
 async def test_health_with_stopped_amnezia_app_reports_container_down(world: World) -> None:
     server, _, fake = await world.server(install=False)
     fake.add_amnezia_app("amnezia-awg2", peers=[generate_secret_keys().public_key], running=False)
-    report = await ServerHealthService(world.session).check(server.id)
+    report = await ServerHealthService(world.session, SYSTEM_ACTOR).check(server.id)
     entry = {p["type"]: p for p in report["protocols"]}["amnezia_app_awg2"]
     assert {c["name"]: c["ok"] for c in entry["checks"]}["container"] is False
     assert entry["clients"] == {"total": 0, "active": 0}
@@ -298,7 +299,7 @@ async def test_health_with_stopped_amnezia_app_reports_container_down(world: Wor
 async def test_health_report_has_no_amnezia_app_secrets(world: World) -> None:
     server, _, fake = await world.server(install=False)
     app = fake.add_amnezia_app("amnezia-awg2", peers=[generate_secret_keys().public_key])
-    report = await ServerHealthService(world.session).check(server.id)
+    report = await ServerHealthService(world.session, SYSTEM_ACTOR).check(server.id)
     text = str(report)
     assert "amnezia_app_awg2" in {p["type"] for p in report["protocols"]}  # приложение в отчёте есть
     assert not any(secret in text for secret in app.secrets)

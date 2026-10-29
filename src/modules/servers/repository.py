@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from modules.protocols.models.protocol import VPNProtocol
 from modules.servers.models.credential import ServerCredential
-from modules.servers.models.server import ServerStatus, VPNServer
+from modules.servers.models.server import HealthStatus, ServerStatus, VPNServer
 
 
 class ServerRepository:
@@ -22,6 +22,17 @@ class ServerRepository:
 
     async def get_by_id(self, server_id: UUID) -> VPNServer | None:
         return await self.session.get(VPNServer, server_id)
+
+    async def get_status_for_update(self, server_id: UUID) -> HealthStatus | None:
+        """Сохранённый health_status под блокировкой строки и свежий из БД (не из кеша сессии): два параллельных
+        замера не запишут одно событие о смене дважды."""
+        sql_request = (
+            select(VPNServer.health_status)
+            .where(VPNServer.id == server_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return (await self.session.execute(sql_request)).scalar_one_or_none()
 
     async def get_by_name(self, server_name: str) -> VPNServer | None:
         sql_request = select(VPNServer).where(VPNServer.name == server_name)

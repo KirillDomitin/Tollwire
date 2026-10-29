@@ -144,7 +144,7 @@ class JobWorker:
 
                         case JobType.HEALTH_CHECK:
                             # Без ServerLock: health только читает и не должен ждать выдачу/отзыв клиентов.
-                            job.result = await self.health_check(session, server_id)
+                            job.result = await self.health_check(session, server_id, actor)
 
                         case JobType.DISCOVER_VPN:
                             job.result = await ServerDiscoveryService(session).discover(server_id)
@@ -264,8 +264,8 @@ class JobWorker:
     async def sync_server(self, session: AsyncSession, server_id: UUID) -> dict[str, Any]:
         return await ServerSyncService(session).sync(server_id)
 
-    async def health_check(self, session: AsyncSession, server_id: UUID) -> dict[str, Any]:
-        return await ServerHealthService(session).check(server_id)
+    async def health_check(self, session: AsyncSession, server_id: UUID, actor: AuditActor) -> dict[str, Any]:
+        return await ServerHealthService(session, actor).check(server_id)
 
     async def revoke_access(
         self, session: AsyncSession, access_grant_id: UUID, actor: AuditActor

@@ -26,3 +26,5 @@ class BotKey(UuidPkMixin, Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     # Когда бот последний раз забирал очередь сообщений: пусто или давно при непустой очереди - бот старой версии.
     last_claim_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    # Бот сообщает, что стоит рядом с панелью (адрес без точки): падение всего сервера он не заметит (этап 25.5).
+    last_seen_local: Mapped[bool | None] = mapped_column(default=None)

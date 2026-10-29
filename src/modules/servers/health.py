@@ -13,7 +13,9 @@ from core.ssh_exception import CommandExecutionError
 from infrastructure.vpn.amnezia import AmneziaInstaller
 from infrastructure.vpn.gateway import AmneziaGatewayProvider
 from infrastructure.vpn.provider import HealthCheck, VPNProvider
-from modules.audit.actor import SYSTEM_ACTOR
+from modules.audit.actor import SYSTEM_ACTOR, AuditActor
+from modules.audit.models.audit_log import AuditAction, AuditEntity
+from modules.audit.service import AuditService
 from modules.gateway.exit_health import record_exit_status
 from modules.gateway.repository import GatewayExitRepository
 from modules.gateway.ru import GatewayRuService
@@ -32,8 +34,9 @@ class ServerHealthService:
     Отчёт сохраняется в Job.result, сводка — в VPNServer.health_status/last_health_at.
     """
 
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, actor: AuditActor):
         self.session = session
+        self.audit = AuditService(session, actor)
         self.servers = ServerRepository(session)
         self.protocols = ProtocolRepository(session)
         self.connections = ServerConnectionService(session)
@@ -50,9 +53,16 @@ class ServerHealthService:
             await ssh_client.connect()
         except SSHError as exc:
             # Недоступный сервер — это результат проверки, а не сбой задачи: отчёт сохраняется, задача SUCCESS.
-            if isinstance(exc, (SSHConnectionError, SSHTimeoutError)):
+            unreachable = isinstance(exc, (SSHConnectionError, SSHTimeoutError))
+            if unreachable:
                 mark_unreachable(server)
-            return await self._save(server, checked_at, [HealthCheck("ssh", False, str(exc))], [])
+            return await self._save(
+                server,
+                checked_at,
+                [HealthCheck("ssh", False, str(exc))],
+                [],
+                down_reason="unreachable" if unreachable else "ssh_error",
+            )
         ssh_ms = round((time.monotonic() - started) * 1000)
 
         checks = [HealthCheck("ssh", True, f"connected in {ssh_ms} ms")]
@@ -130,10 +140,21 @@ class ServerHealthService:
         checks: list[HealthCheck],
         protocols: list[dict[str, Any]],
         internet_latency_ms: int | None = None,
+        down_reason: str | None = None,
     ) -> dict[str, Any]:
         ssh_ok = checks[0].ok
         all_ok = all(check.ok for check in checks) and all(c["ok"] for p in protocols for c in p["checks"])
         status = HealthStatus.DOWN if not ssh_ok else HealthStatus.OK if all_ok else HealthStatus.DEGRADED
+        # Прежний статус - из БД под блокировкой строки: параллельные замеры не пишут одно событие дважды.
+        previous = await self.servers.get_status_for_update(server.id)
+        if previous != status:
+            meta: dict[str, Any] = {
+                "from": previous.value if previous else None,
+                "to": status.value,
+            }
+            if status is HealthStatus.DOWN and down_reason:
+                meta["reason"] = down_reason
+            self.audit.record(AuditAction.SERVER_HEALTH_CHANGED, AuditEntity.SERVER, server.id, meta)
         server.health_status = status
         server.last_health_at = checked_at
         await self.session.commit()
