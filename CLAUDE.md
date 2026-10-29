@@ -13,11 +13,15 @@ REST API + веб-интерфейс для управления VPN-серве�
 - Фича: `architect` → решение пользователя → `tester` (красные тесты) → реализация → `reviewer` → исправления →
   `doc-writer` → коммит. Агенты — `.claude/agents/`; весь процесс с точками остановки — команда `/feature <описание>`
   (`.claude/skills/feature/`), план фичи — `docs/plans/`.
+- Мелочь (правка в 1–2 файлах, текст, условие, баг с понятной причиной) — без агентов и `/feature`: `/quick`,
+  то есть прочитать нужное, поправить, `pytest --testmon`, ruff/mypy. Читать по частям (`smart_outline` /
+  Grep), а не файлы целиком. Агенты — только для задач на несколько слоёв.
 - Архитектурную развилку — на решение пользователя до кода, с рекомендацией.
 - После изменений: ruff, mypy, тесты, миграции (upgrade/downgrade) и живой прогон. Тесты гонять через агента
   `test-runner` (он вернёт только упавшие), а не pytest в основной сессии.
 - Изменения на реальных серверах — только с явного согласия пользователя.
-- Поменялось устройство модуля — обновить его `CLAUDE.md`.
+- Поменялось устройство модуля — обновить его `CLAUDE.md`. В нём только инварианты и грабли (до ~8 КБ); карты
+  файлов, модели, API, операции — в `docs/<модуль>/…reference.md` (ссылка в самом CLAUDE.md), туда же новое описательное.
 - Коммиты без Co-Authored-By. Документация библиотек — через Context7.
 
 ## Архитектура
@@ -48,8 +52,9 @@ docker compose up -d                             # Postgres + Redis (нужны 
 uv run uvicorn main:app --app-dir src --reload   # API
 uv run python src/worker.py                      # воркер + планировщик
 uv run ruff check . && uv run mypy src
-uv run pytest --testmon -q -x                     # только тесты, затронутые изменениями (обычный режим)
-uv run pytest -n 4 -q                             # полный прогон (~2000 тестов) — в фоне или через агента test-runner
+uv run pytest --testmon -q -x -m "not slow"     # только тесты, затронутые изменениями (обычный режим)
+uv run pytest -n 4 -q -m "not slow"              # быстрый полный прогон (~2900 тестов, ~4 мин) — в фоне или через test-runner
+uv run pytest -n 4 -q                             # всё, ~3400 тестов, ~12+ мин: перед коммитом, если менялись install.sh/panel/deploy/alembic
 uv run pytest tests/unit/test_x.py::test_y       # один тест
 uv run alembic upgrade head / downgrade -1       # миграции
 uv run --project bot pytest                      # тесты бота (своё окружение bot/; проверки как в CI — из bot/)

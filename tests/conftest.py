@@ -141,3 +141,14 @@ async def clean_db(database: None) -> AsyncIterator[None]:
     async with engine.begin() as conn:
         await conn.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
     await get_redis().flushdb()
+
+
+# Медленные по природе: каждый тест запускает bash-скрипт (install/panel/certbot) или alembic в подпроцессе.
+# Нужны, когда менялись deploy/*.sh, install.sh, panel, alembic/ — иначе локально гоняем `-m "not slow"`.
+_SLOW_FILES = ("test_install_", "test_panel", "test_letsencrypt", "test_migrations")
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    for item in items:
+        if Path(str(item.fspath)).name.startswith(_SLOW_FILES):
+            item.add_marker(pytest.mark.slow)

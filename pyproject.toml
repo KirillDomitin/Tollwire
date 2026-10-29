@@ -42,6 +42,9 @@ select = ["E", "F", "I"]            # какие группы правил вк�
 pythonpath = ["src", "."]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "slow: медленные тесты (shell-скрипты установки/panel/certbot и цикл миграций через alembic); локально: -m \"not slow\"",
+]
 # Один цикл событий на весь прогон: пул соединений asyncpg привязан к циклу и не переживает его смену.
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"

@@ -4,7 +4,11 @@
       {
         "matcher": "Edit|MultiEdit|Write",
         "hooks": [
-          { "type": "command", "command": "python3 .claude/hooks/ruff_on_edit.py", "timeout": 30 }
+          {
+            "type": "command",
+            "command": "python3 .claude/hooks/ruff_on_edit.py",
+            "timeout": 30
+          }
         ]
       }
     ]
@@ -15,7 +19,10 @@
       "Read(./frontend/package-lock.json)",
       "Read(./uv.lock)",
       "Read(./frontend/openapi.json)",
-      "Read(./frontend/src/assets/**)"
+      "Read(./frontend/src/assets/**)",
+      "Read(./alembic/versions/**)",
+      "Read(./frontend/dist/**)",
+      "Read(./frontend/coverage/**)"
     ],
     "allow": [
       "Bash(uv run pytest:*)",

@@ -81,3 +81,7 @@
   отсутствие прав админа; `/api/v1/bot-admin/*` — в матрице. `/api/v1/public/*` — отдельный список: ровно
   `POST /api/v1/public/config`, без прав и без ключа бота.
 - Известный плавающий тест: `test_login_limited_by_ip` (окно лимита 60 с, Argon2 под нагрузкой).
+
+## Маркер `slow`
+
+Тесты, каждый из которых запускает bash-скрипт или alembic в подпроцессе (`test_install_*`, `test_panel*`, `test_letsencrypt`, `test_migrations`; ~430 шт., 10–30 с на тест на Windows), помечаются в `conftest.py` (`pytest_collection_modifyitems`). Локально — `-m "not slow"` (~4 мин вместо ~12+); полный набор — при изменении `install.sh`, `panel`, `deploy/`, `alembic/` и перед слиянием. Postgres в `docker-compose.yml` запущен с `fsync=off` (только dev/тесты).
