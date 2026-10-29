@@ -55,7 +55,7 @@ export function StatusPage() {
         <h2 id="bot-status-title" className={styles.sectionTitle}>
           {t("bot.status.title")}
         </h2>
-        {manageKeys && keys.data && !broken && <CreateKeyDialog />}
+        {manageKeys && keys.data && <CreateKeyDialog />}
       </div>
 
       {broken && (

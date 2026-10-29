@@ -322,5 +322,23 @@
     "name": "control character",
     "input": "a\u0007b",
     "ok": false
+  },
+  {
+    "name": "nbsp only is visible content",
+    "input": " ",
+    "ok": true,
+    "visible_length": 1
+  },
+  {
+    "name": "byte order mark only is visible content",
+    "input": "﻿",
+    "ok": true,
+    "visible_length": 1
+  },
+  {
+    "name": "control character between tag and attribute is not a space",
+    "input": "<b\u001f>x</b>",
+    "ok": false,
+    "code": "telegram_html_entity"
   }
 ]

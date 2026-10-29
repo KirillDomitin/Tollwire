@@ -13,7 +13,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database.postgres import get_session
-from core.exceptions import NotFoundError
 from core.rate_limit import RateLimiter
 from modules.audit.actor import AuditActor
 from modules.audit.dependencies import get_audit_actor
@@ -25,10 +24,9 @@ from modules.bot.keys import BotKeyService
 from modules.bot.models.invite import BotInvite
 from modules.bot.models.registration import BotRegistration, RegistrationStatus
 from modules.bot.outbox import OutboxService
-from modules.bot.page import BotPageService, broadcast_read
+from modules.bot.page import BotPageService
 from modules.bot.rate_limits import BOT_BROADCASTS_BY_ADMIN, BOT_CONFIG_SENDS_BY_ADMIN
 from modules.bot.registrations import BotRegistrationService
-from modules.bot.repository import OutboxRepository
 from modules.bot.schemas import (
     AudienceRead,
     AudienceRequest,
@@ -242,17 +240,14 @@ async def create_broadcast(
     """Поставить рассылку в очередь бота. Повтор с тем же request_id возвращает ту же рассылку.
     422 с кодом telegram_html_*: текст не годится для Telegram; 409 not_configured: адрес панели не задан."""
     await RateLimiter().hit(BOT_BROADCASTS_BY_ADMIN, str(admin.id))
-    return broadcast_read(await OutboxService(session, actor).create_broadcast(data))
+    return await BotPageService(session).read(await OutboxService(session, actor).create_broadcast(data))
 
 
 @router.get(
     "/broadcasts/{broadcast_id}", dependencies=[Depends(require(Permission.BOT_READ))], response_model=BroadcastRead
 )
 async def get_broadcast(broadcast_id: UUID, session: Session) -> BroadcastRead:
-    broadcast = await OutboxRepository(session).get_broadcast(broadcast_id)
-    if broadcast is None:
-        raise NotFoundError(f"Broadcast '{broadcast_id}' not found")
-    return broadcast_read(broadcast)
+    return await BotPageService(session).broadcast(broadcast_id)
 
 
 @router.post(
@@ -262,7 +257,7 @@ async def get_broadcast(broadcast_id: UUID, session: Session) -> BroadcastRead:
 )
 async def cancel_broadcast(broadcast_id: UUID, session: Session, actor: Actor) -> BroadcastRead:
     """Ждущие сообщения закрываются, уже выданные боту доходят. Повтор ничего не меняет."""
-    return broadcast_read(await OutboxService(session, actor).cancel_broadcast(broadcast_id))
+    return await BotPageService(session).read(await OutboxService(session, actor).cancel_broadcast(broadcast_id))
 
 
 # --- ссылка на конфиг одному человеку ------------------------------------------------------------------------------
@@ -288,7 +283,4 @@ async def send_config_link(
 @router.get("/outbox/{outbox_id}", dependencies=[Depends(require(Permission.BOT_READ))], response_model=OutboxRowRead)
 async def get_outbox_row(outbox_id: UUID, session: Session) -> OutboxRowRead:
     """Состояние одного сообщения очереди: pending / claimed / sent / blocked / failed / skipped / cancelled."""
-    row = await OutboxRepository(session).get_row(outbox_id)
-    if row is None:
-        raise NotFoundError(f"Message '{outbox_id}' not found")
-    return OutboxRowRead(id=row.id, status=row.status, error=row.error)
+    return await BotPageService(session).outbox_row(outbox_id)

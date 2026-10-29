@@ -30,12 +30,14 @@ const KNOWN_TAGS = new Set([...PLAIN_TAGS, "span", "a", "code", "pre", "blockquo
 const NAMED_ENTITIES: Record<string, string> = { lt: "<", gt: ">", amp: "&", quot: '"' };
 
 const ENTITY_RE = /&(?:#([0-9]{1,7})|#[xX]([0-9A-Fa-f]{1,6})|([A-Za-z]{1,8}));/y;
-const OPEN_TAG_RE = /<([A-Za-z][A-Za-z0-9-]*)((?:\s+[^\s=>/"'<]+(?:\s*=\s*(?:"[^"]*"|'[^']*'))?)*)\s*>/y;
-const CLOSE_TAG_RE = /<\/([A-Za-z][A-Za-z0-9-]*)\s*>/y;
-const ATTRIBUTE_RE = /([^\s=>/"'<]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'))?/g;
-const TAG_NAME_RE = /<([A-Za-z][A-Za-z0-9-]*)(?=[\s/>])/y;
+// Пробел в разметке - явный набор, а не класс s: у JavaScript и Python он разный (U+FEFF, управляющие, U+0085).
+const OPEN_TAG_RE =
+  /<([A-Za-z][A-Za-z0-9-]*)((?:[ \t\n\r\f]+[^ \t\n\r\f=>/"'<]+(?:[ \t\n\r\f]*=[ \t\n\r\f]*(?:"[^"]*"|'[^']*'))?)*)[ \t\n\r\f]*>/y;
+const CLOSE_TAG_RE = /<\/([A-Za-z][A-Za-z0-9-]*)[ \t\n\r\f]*>/y;
+const ATTRIBUTE_RE = /([^ \t\n\r\f=>/"'<]+)(?:[ \t\n\r\f]*=[ \t\n\r\f]*(?:"([^"]*)"|'([^']*)'))?/g;
+const TAG_NAME_RE = /<([A-Za-z][A-Za-z0-9-]*)(?=[ \t\n\r\f/>])/y;
 const LANGUAGE_RE = /^language-[A-Za-z0-9_+#.-]{1,32}$/;
-const HTTP_RE = /^https?:\/\/\S/i;
+const HTTP_RE = /^https?:\/\/[^ \t\n\r\f]/i;
 
 /** Узел предпросмотра: строка - текст, объект - тег из белого списка (псевдонимы сведены к одному имени). */
 export type TelegramTag = "b" | "i" | "u" | "s" | "spoiler" | "a" | "code" | "pre" | "blockquote";
@@ -242,7 +244,7 @@ function scan(text: string, progress: { visible: number }): Scan {
     const chunk = text.slice(index, end === -1 ? size : end);
     const decoded = decode(chunk, index);
     progress.visible += decoded.length; // длина строки JS - это и есть единицы UTF-16
-    hasContent = hasContent || /\S/.test(decoded);
+    hasContent = hasContent || /[^ \t\n\r\f]/.test(decoded);
     children().push(decoded);
     index += chunk.length;
   }

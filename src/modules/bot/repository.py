@@ -557,6 +557,15 @@ class BotPageRepository:
         query = query.order_by(BotRegistration.created_at.desc(), BotRegistration.id.desc()).limit(limit)
         return (await self.session.execute(query)).scalars().all()
 
+    async def open_broadcast_ids(self, ids: Iterable[UUID]) -> set[UUID]:
+        """Рассылки из списка, у которых ещё есть ждущие или выданные боту строки (удалённые люди их не оставляют)."""
+        query = (
+            select(BotOutbox.broadcast_id)
+            .where(BotOutbox.broadcast_id.in_(list(ids)), BotOutbox.status.in_(_OPEN))
+            .distinct()
+        )
+        return {broadcast_id for broadcast_id in (await self.session.execute(query)).scalars() if broadcast_id}
+
     async def broadcasts(self, limit: int, before: tuple[datetime, UUID] | None) -> Sequence[BotBroadcast]:
         query = select(BotBroadcast)
         if before:

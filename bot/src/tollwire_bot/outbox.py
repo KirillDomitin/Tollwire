@@ -23,9 +23,10 @@ from aiogram.exceptions import (
     TelegramNetworkError,
     TelegramRetryAfter,
     TelegramServerError,
+    TelegramUnauthorizedError,
 )
 
-from tollwire_bot.panel import Claim, OutboxItem, OutboxResult, PanelClient, PanelError
+from tollwire_bot.panel import Claim, OutboxItem, OutboxResult, PanelClient, PanelError, Rejected
 from tollwire_bot.storage import JournalRow, SqliteStorage
 from tollwire_bot.texts import format_date, t
 
@@ -36,6 +37,9 @@ LEASE_MARGIN = 5.0  # за столько секунд до конца арен�
 CHAT_INTERVAL = 1.0  # в один чат не чаще раза в секунду
 ACK_EVERY = 25  # столько итогов - сразу в панель
 ACK_AFTER = 2.0  # или через столько секунд после первого накопленного итога
+UNKNOWN_KIND_PAUSE = 300  # неизвестный вид сообщения: вернуть панели, спросит снова не скоро
+UNAUTHORIZED_PAUSE = 300  # токен не принят: пачку вернуть, повторять не раньше чем через столько
+MAX_RETRY_AFTER = 86400  # больше панель не принимает (422 на весь чанк)
 ACK_BACKOFF = 5.0  # панель не приняла итоги: следующая попытка не раньше
 _TOLERANCE = 1e-7  # погрешность виртуальных и настенных секунд
 _FINAL = ("sent", "blocked", "failed")  # итоги, которые лежат в журнале; retry в журнал не пишется
@@ -81,7 +85,14 @@ class OutboxSender:
         try:
             await self._load_journal()
             while True:
-                if not await self._cycle():
+                try:
+                    more = await self._cycle()
+                except asyncio.CancelledError:
+                    raise
+                except Exception as error:  # noqa: BLE001 - диск, SQLite, сбой в разборе: цикл не должен умирать молча
+                    logger.error("the outbox cycle failed: %s", type(error).__name__)
+                    more = False
+                if not more:
                     await self._idle(CLAIM_PAUSE)
         except asyncio.CancelledError:
             await self._flush(force=True)
@@ -105,7 +116,9 @@ class OutboxSender:
         if not claim.items:
             return False
         await self._handle(claim)
-        return len(claim.items) >= self._batch
+        # Панель отсеивает часть строк при выдаче (пропущенные, заблокировавшие), поэтому в пачке может быть меньше
+        # batch, хотя очередь не пуста: пока что-то приходит, следующий опрос без паузы.
+        return True
 
     # --- пачка -------------------------------------------------------------------------------------------------------
 
@@ -120,6 +133,14 @@ class OutboxSender:
             else:
                 queue.append(item)
         lease_until = claim.lease_until.timestamp()
+        try:
+            await self._send_queue(claim, queue, lease_until)
+        except asyncio.CancelledError:
+            # Остановка бота: что не отправлено, возвращается панели сразу, а не ждёт конца аренды.
+            self._return_all(claim, queue, "flood", 0)
+            raise
+
+    async def _send_queue(self, claim: Claim, queue: list[OutboxItem], lease_until: float) -> None:
         while queue:
             now = self._clock()
             if lease_until - now < LEASE_MARGIN - 1e-3:
@@ -136,8 +157,9 @@ class OutboxSender:
             try:
                 result = await self._send(claim, item, lease_until)
             except _FloodTooLong as flood:
-                self._add_result(claim.lease_id, OutboxResult(item.id, "retry", "flood", flood.seconds))
-                self._return_all(claim, queue, "flood", flood.seconds)
+                seconds = min(flood.seconds, MAX_RETRY_AFTER)
+                self._add_result(claim.lease_id, OutboxResult(item.id, "retry", "flood", seconds))
+                self._return_all(claim, queue, "flood", seconds)
                 return
             await self._record(claim, item, result)
             if self._flush_due(self._clock()):
@@ -196,11 +218,16 @@ class OutboxSender:
     async def _send(self, claim: Claim, item: OutboxItem, lease_until: float) -> OutboxResult:
         """Одно сообщение в Telegram. 429 - пауза всего отправителя и тот же вызов ещё раз."""
         if item.kind == "config":
-            text = t("broadcast_config", url=item.config_url or "", until=format_date(item.valid_until))
+            if not item.config_url:
+                return OutboxResult(item.id, "failed", "bad_request")  # ссылки нет: отправлять нечего
+            text = t("broadcast_config", url=item.config_url, until=format_date(item.valid_until))
             parse_mode = None
-        else:
+        elif item.kind == "news":
             text = claim.texts.get(item.broadcast_id or "", "")
             parse_mode = "HTML"
+        else:
+            # Вид сообщения, которого этот бот не знает (панель новее): не отправлять и не закрывать, а вернуть.
+            return OutboxResult(item.id, "retry", "flood", UNKNOWN_KIND_PAUSE)
         while True:
             try:
                 await self._bot.send_message(item.telegram_id, text, parse_mode=parse_mode)
@@ -216,12 +243,15 @@ class OutboxSender:
             except TelegramBadRequest as error:
                 code = "chat_not_found" if "chat not found" in str(error).lower() else "bad_request"
                 return OutboxResult(item.id, "failed", code)
+            except TelegramUnauthorizedError:
+                # Токен отозван или заменён: это не вина сообщений. Пачка возвращается панели, рассылка не сгорает.
+                raise _FloodTooLong(UNAUTHORIZED_PAUSE) from None
             except TelegramNetworkError:
                 return OutboxResult(item.id, "retry", "network")
             except TelegramServerError:
                 return OutboxResult(item.id, "retry", "telegram_5xx")
             except TelegramAPIError:
-                return OutboxResult(item.id, "failed", "bad_request")
+                return OutboxResult(item.id, "retry", "network")  # неизвестное: повторим, а не закроем навсегда
             except Exception as error:  # noqa: BLE001 - сообщение исключения может нести текст: пишем только тип
                 logger.warning("sending failed: %s", type(error).__name__)
                 return OutboxResult(item.id, "retry", "network")
@@ -234,11 +264,11 @@ class OutboxSender:
 
     async def _record(self, claim: Claim, item: OutboxItem, result: OutboxResult) -> None:
         """Итог одного сообщения: в журнал (если он окончательный) и в очередь подтверждений."""
+        self._add_result(claim.lease_id, result)  # раньше журнала: отмена посреди записи не должна терять итог
         if result.status in _FINAL:
             await self._storage.journal_put(
                 JournalRow(result.id, claim.lease_id, item.kind, result.status, result.error), self._clock()
             )
-        self._add_result(claim.lease_id, result)
 
     def _add_result(self, lease_id: str, result: OutboxResult) -> None:
         if not self._buffer:
@@ -272,6 +302,10 @@ class OutboxSender:
                     continue
                 try:
                     outcome = await self._panel.ack(lease_id, chunk)
+                except Rejected as error:
+                    # Панель отвергла сами итоги (422): повтор тот же ответ - чанк отбрасывается, иначе цепочка встанет.
+                    logger.error("the panel refused the results: %s", type(error).__name__)
+                    continue
                 except PanelError as error:
                     logger.warning("the panel did not take the results: %s", type(error).__name__)
                     failed = True

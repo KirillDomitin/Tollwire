@@ -10,26 +10,30 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
+from core.exceptions import NotFoundError
 from modules.bot.models.broadcast import BotBroadcast
 from modules.bot.models.invite import BotInvite
 from modules.bot.models.registration import BotRegistration, RegistrationStatus
-from modules.bot.repository import BotPageRepository
+from modules.bot.repository import BotPageRepository, OutboxRepository
 from modules.bot.schemas import (
     BotProtocolRead,
     BotStatusRead,
     BroadcastRead,
     OutboxCounts,
+    OutboxRowRead,
     RecipientRead,
 )
 
 Cursor = tuple[datetime, UUID] | None
 
 
-def broadcast_read(broadcast: BotBroadcast) -> BroadcastRead:
+def broadcast_read(broadcast: BotBroadcast, has_open_rows: bool) -> BroadcastRead:
+    """Состояние: отменена; идёт, пока есть ждущие или выданные строки; иначе завершена (в том числе когда строки
+    пропали вместе с удалёнными людьми и finished_at никто не поставил)."""
     state: Literal["running", "cancelled", "finished"]
     if broadcast.cancelled_at is not None:
         state = "cancelled"
-    elif broadcast.finished_at is not None:
+    elif broadcast.finished_at is not None or not has_open_rows:
         state = "finished"
     else:
         state = "running"
@@ -54,6 +58,7 @@ def broadcast_read(broadcast: BotBroadcast) -> BroadcastRead:
 
 class BotPageService:
     def __init__(self, session: AsyncSession):
+        self.session = session
         self.page = BotPageRepository(session)
 
     async def status(self) -> BotStatusRead:
@@ -107,4 +112,22 @@ class BotPageService:
         return await self.page.registrations(status, limit, before)
 
     async def broadcasts(self, limit: int, before: Cursor) -> list[BroadcastRead]:
-        return [broadcast_read(broadcast) for broadcast in await self.page.broadcasts(limit, before)]
+        found = await self.page.broadcasts(limit, before)
+        open_ids = await self.page.open_broadcast_ids(broadcast.id for broadcast in found)
+        return [broadcast_read(broadcast, broadcast.id in open_ids) for broadcast in found]
+
+    async def read(self, broadcast: BotBroadcast) -> BroadcastRead:
+        open_ids = await self.page.open_broadcast_ids([broadcast.id])
+        return broadcast_read(broadcast, broadcast.id in open_ids)
+
+    async def broadcast(self, broadcast_id: UUID) -> BroadcastRead:
+        found = await OutboxRepository(self.session).get_broadcast(broadcast_id)
+        if found is None:
+            raise NotFoundError(f"Broadcast '{broadcast_id}' not found")
+        return await self.read(found)
+
+    async def outbox_row(self, outbox_id: UUID) -> OutboxRowRead:
+        row = await OutboxRepository(self.session).get_row(outbox_id)
+        if row is None:
+            raise NotFoundError(f"Message '{outbox_id}' not found")
+        return OutboxRowRead(id=row.id, status=row.status, error=row.error)

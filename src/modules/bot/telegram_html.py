@@ -22,10 +22,16 @@ EMPTY = "telegram_html_empty"
 _PLAIN_TAGS = frozenset({"b", "strong", "i", "em", "u", "ins", "s", "strike", "del", "tg-spoiler"})
 _NAMED_ENTITIES = {"lt": "<", "gt": ">", "amp": "&", "quot": '"'}
 _ENTITY = re.compile(r"&(?:#([0-9]{1,7})|#[xX]([0-9A-Fa-f]{1,6})|([A-Za-z]{1,8}));")
-_OPEN_TAG = re.compile(r"<([A-Za-z][A-Za-z0-9-]*)((?:\s+[^\s=>/\"'<]+(?:\s*=\s*(?:\"[^\"]*\"|'[^']*'))?)*)\s*>")
-_CLOSE_TAG = re.compile(r"</([A-Za-z][A-Za-z0-9-]*)\s*>")
-_ATTRIBUTE = re.compile(r"""([^\s=>/"'<]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'))?""")
-_TAG_NAME = re.compile(r"<([A-Za-z][A-Za-z0-9-]*)(?=[\s/>])")
+# Пробельные символы в разметке - явный набор, а не \s: у Python и JavaScript он разный (\x1c-\x1f, \x85, U+FEFF), и
+# проверка на сервере разошлась бы с предпросмотром.
+_WS = r"[ \t\n\r\f]"
+_NOT_WS = r"[^ \t\n\r\f"
+_OPEN_TAG = re.compile(
+    rf"<([A-Za-z][A-Za-z0-9-]*)((?:{_WS}+{_NOT_WS}=>/\"'<]+(?:{_WS}*={_WS}*(?:\"[^\"]*\"|'[^']*'))?)*){_WS}*>"
+)
+_CLOSE_TAG = re.compile(rf"</([A-Za-z][A-Za-z0-9-]*){_WS}*>")
+_ATTRIBUTE = re.compile(rf"""({_NOT_WS}=>/"'<]+)(?:{_WS}*={_WS}*(?:"([^"]*)"|'([^']*)'))?""")
+_TAG_NAME = re.compile(r"<([A-Za-z][A-Za-z0-9-]*)(?=[ \t\n\r\f/>])")
 _KNOWN_TAGS = _PLAIN_TAGS | {"span", "a", "code", "pre", "blockquote"}
 _LANGUAGE = re.compile(r"language-[A-Za-z0-9_+#.-]{1,32}")
 _FORBIDDEN_BIDI = frozenset(range(0x202A, 0x202F)) | frozenset(range(0x2066, 0x206A))
@@ -108,7 +114,9 @@ def _check_attributes(name: str, attrs: dict[str, str | None], parent: str | Non
         href = attrs.get("href")
         if set(attrs) != {"href"} or href is None:
             raise TelegramHtmlError(ATTR, position)
-        if not re.match(r"https?://[^\s]", href, re.IGNORECASE):  # только http/https, без javascript:, data:, tg://
+        if not re.match(
+            r"https?://[^ \t\n\r\f]", href, re.IGNORECASE
+        ):  # только http/https, без javascript:, data:, tg://
             raise TelegramHtmlError(ATTR, position)
     elif name == "code":
         if attrs:
@@ -171,7 +179,7 @@ def check_telegram_html(text: str) -> int:
         chunk = text[index : end if end != -1 else size]
         decoded = _decode(chunk, index)
         visible += _units(decoded)
-        has_content = has_content or any(not part.isspace() for part in decoded)
+        has_content = has_content or any(part not in " \t\n\r\f" for part in decoded)
         index += len(chunk)
     if stack:
         raise TelegramHtmlError(NESTING, size)

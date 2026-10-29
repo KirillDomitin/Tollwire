@@ -91,7 +91,7 @@ async def run(settings: Settings) -> int:
         for task in background:
             task.cancel()
         for task in background:
-            with contextlib.suppress(asyncio.CancelledError):
+            with contextlib.suppress(asyncio.CancelledError, Exception):  # упавшая фоновая задача не мешает закрыть
                 await task
         await panel.aclose()
         await storage.close()

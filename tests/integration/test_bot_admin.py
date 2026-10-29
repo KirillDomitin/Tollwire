@@ -562,6 +562,37 @@ async def test_the_state_follows_the_run_from_running_to_finished(scene: Scene, 
     assert done["state"] == "finished" and done["sent"] == 2 and done["finished_at"] is not None
 
 
+async def test_a_broadcast_whose_last_open_row_vanished_with_a_deleted_person_is_finished(
+    scene: Scene, session: AsyncSession
+) -> None:
+    people = await add_people(session, 2)
+    created = await admin_create_broadcast(scene.api)
+    claimed = (await http_claim(scene.bot, 1)).json()
+    await http_ack(scene.bot, claimed["lease_id"], [ack_result(item["id"]) for item in claimed["items"]])
+    gone = next(person for person in people if person.telegram_id != claimed["items"][0]["telegram_id"])
+
+    await sql("DELETE FROM vpn_users WHERE id = :id", id=gone.id)  # у него оставалась открытая строка
+
+    assert (await get_json(scene.api, broadcast_url(created["id"])))["state"] == "finished"
+    assert [item["state"] for item in await get_json(scene.api, BROADCASTS_URL)] == ["finished"]
+
+
+async def test_cancelling_a_finished_broadcast_changes_nothing(scene: Scene, session: AsyncSession) -> None:
+    await add_people(session, 1)
+    created = await admin_create_broadcast(scene.api)
+    claimed = (await http_claim(scene.bot)).json()
+    await http_ack(scene.bot, claimed["lease_id"], [ack_result(item["id"]) for item in claimed["items"]])
+
+    response = await scene.api.post(broadcast_url(created["id"], "/cancel"))
+
+    assert (
+        response.status_code == 200
+        and response.json()["state"] == "finished"
+        and response.json()["cancelled_at"] is None
+    )
+    assert (await scene.api.get("/api/v1/audit-logs", params={"action": "bot_broadcast_cancelled"})).json() == []
+
+
 async def test_cancelling_a_broadcast_is_200_and_a_repeat_changes_nothing(scene: Scene, session: AsyncSession) -> None:
     await add_people(session, 4)
     created = await admin_create_broadcast(scene.api)

@@ -143,18 +143,22 @@ class OutboxService:
 
     async def cancel_broadcast(self, broadcast_id: UUID) -> BotBroadcast:
         """Ждущие строки закрываются, выданные боту доходят. Повторная отмена ничего не меняет."""
-        broadcast = await self.outbox.get_broadcast(broadcast_id, lock=True)
+        broadcast = await self.outbox.get_broadcast(broadcast_id)
         if broadcast is None:
             raise NotFoundError(f"Broadcast '{broadcast_id}' not found")
+        if broadcast.cancelled_at is not None or broadcast.finished_at is not None:
+            return broadcast  # уже отменена или завершена: отменять нечего
+        now = _now()
+        # Порядок блокировок как у claim и ack: сначала строки очереди, потом рассылка (иначе взаимная блокировка).
+        cancelled = await self.outbox.cancel_waiting(broadcast.id, now)
+        broadcast = await self.outbox.get_broadcast(broadcast_id, lock=True) or broadcast
+        broadcast.cancelled += cancelled
         if broadcast.cancelled_at is None:
-            now = _now()
-            cancelled = await self.outbox.cancel_waiting(broadcast.id, now)
             broadcast.cancelled_at = now
-            broadcast.cancelled += cancelled
             self.audit.record(
                 AuditAction.BOT_BROADCAST_CANCELLED, AuditEntity.BOT_BROADCAST, broadcast.id, {"cancelled": cancelled}
             )
-            await self.outbox.finish_if_done([broadcast.id], now)
+        await self.outbox.finish_if_done([broadcast.id], now)
         await self.session.commit()
         return broadcast
 

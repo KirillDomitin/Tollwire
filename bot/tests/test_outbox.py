@@ -324,6 +324,45 @@ async def test_a_network_or_server_error_is_a_retry_and_the_message_goes_out_onc
     assert sender.panel.outbox[0].attempts == 1  # повтор посчитан
 
 
+async def test_a_rejected_token_returns_the_batch_and_does_not_close_the_messages(sender: SenderWorld) -> None:
+    from aiogram.exceptions import TelegramUnauthorizedError
+
+    queue_news_for(sender, chats(3))
+    method = SendMessage(chat_id=1, text="x")
+    sender.telegram.fail(SendMessage, TelegramUnauthorizedError(method=method, message="Unauthorized"), times=100)
+
+    sender.start()
+    await wait_until(lambda: len(first_results(sender)) == 3, what="the results")
+
+    results = first_results(sender).values()
+    assert {result["status"] for result in results} == {"retry"} and {result["error"] for result in results} == {
+        "flood"
+    }
+    assert sender.panel.in_status("failed") == [] and sender.telegram.deliveries == []
+
+
+async def test_a_failure_inside_a_cycle_does_not_kill_the_sender(
+    sender: SenderWorld, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sender.panel.lease_seconds = 10
+    queue_news_for(sender, chats(2))
+    original = sender.storage.journal_by_ids
+    calls = {"count": 0}
+
+    async def flaky(ids: list[str]) -> Any:
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise RuntimeError("disk is full")
+        return await original(ids)
+
+    monkeypatch.setattr(sender.storage, "journal_by_ids", flaky)
+
+    sender.start()
+    await all_done(sender, timeout=60)
+
+    assert sender.alive() and len(sender.panel.in_status("sent")) == 2
+
+
 # --- сбои панели ---------------------------------------------------------------------------------------------------
 
 
