@@ -84,4 +84,6 @@
 
 ## Маркер `slow`
 
-Тесты, каждый из которых запускает bash-скрипт или alembic в подпроцессе (`test_install_*`, `test_panel*`, `test_letsencrypt`, `test_migrations`; ~430 шт., 10–30 с на тест на Windows), помечаются в `conftest.py` (`pytest_collection_modifyitems`). Локально — `-m "not slow"` (~4 мин вместо ~12+); полный набор — при изменении `install.sh`, `panel`, `deploy/`, `alembic/` и перед слиянием. Postgres в `docker-compose.yml` запущен с `fsync=off` (только dev/тесты).
+Тесты, где каждый запускает bash-скрипт (`test_install_*`, `test_panel*`, `test_letsencrypt`) или гоняет миграции вниз-вверх (`test_migrations`); ~430 шт., 5–25 с на тест на Windows, помечаются в `conftest.py` (`pytest_collection_modifyitems`). Локально — `-m "not slow"` (~4 мин вместо ~12+); полный набор — при изменении `install.sh`, `panel`, `deploy/`, `alembic/` и перед слиянием. Postgres в `docker-compose.yml` запущен с `fsync=off` (только dev/тесты).
+
+`run_alembic` (`conftest.py`) вызывает alembic в том же процессе, в потоке (`Config()` без `alembic.ini`, чтобы `env.py` не трогал логирование): подпроцесс стоил ~4 с на вызов, теперь тесты миграций вдвое быстрее. Нужна новая команда alembic — `getattr(command, имя)`.

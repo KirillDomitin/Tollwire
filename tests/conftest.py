@@ -7,8 +7,6 @@
 
 import asyncio
 import os
-import subprocess
-import sys
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from types import SimpleNamespace
@@ -95,12 +93,25 @@ def no_geoip_network(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def run_alembic(*args: str) -> None:
-    """Alembic в отдельном процессе: его env.py сам делает asyncio.run, а внутри нашего цикла так нельзя."""
-    result = subprocess.run(
-        [sys.executable, "-m", "alembic", *args], cwd=ROOT, env=os.environ.copy(), capture_output=True, text=True
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"alembic {' '.join(args)} failed:\n{result.stdout}\n{result.stderr}")
+    """Alembic в том же процессе, в отдельном потоке: env.py сам делает asyncio.run, а в нашем цикле так нельзя.
+
+    Подпроцесс стоил ~4 с на каждый вызов (запуск Python и импорт всех моделей) и в сумме давал большую часть времени
+    тестов миграций. Config без alembic.ini: так env.py не вызывает fileConfig и не ломает логирование остальных тестов.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    from alembic.config import Config
+
+    from alembic import command
+
+    config = Config()
+    config.set_main_option("script_location", str(ROOT / "alembic"))
+    action, rest = getattr(command, args[0]), args[1:]
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            pool.submit(action, config, *rest).result()
+    except Exception as error:
+        raise RuntimeError(f"alembic {' '.join(args)} failed: {error!r}") from error
 
 
 @pytest.fixture(scope="session")
