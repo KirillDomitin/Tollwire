@@ -18,3 +18,7 @@
   и грант одной транзакцией. `create` = `stage_create` + commit. `get_by_telegram_id` — поиск по Telegram.
   `get_by_email_ignore_case` — почта без учёта регистра, только для пути бота; обычное создание сравнивает
   почту с учётом регистра.
+
+## Известные проблемы
+
+Ведутся в GitHub Issues (метка `tech-debt`): `status` пользователя не влияет на доступ ([#2](https://github.com/KirillDomitin/Tollwire/issues/2)), нет профиля пользователя — имя, фамилия, телефон, Telegram ([#3](https://github.com/KirillDomitin/Tollwire/issues/3)), тарифов ([#4](https://github.com/KirillDomitin/Tollwire/issues/4)) и лимита устройств ([#5](https://github.com/KirillDomitin/Tollwire/issues/5)).
