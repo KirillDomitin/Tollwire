@@ -49,7 +49,7 @@ export function RuPanel({ serverId, manage, jobs }: { serverId: string; manage: 
         {manage && (
           <div className={styles.row}>
             <Button
-              variant="quiet"
+              variant="secondary"
               busy={update.isPending || (updateJob.data !== undefined && !updateDone)}
               busyLabel={t("gateway.ru.updating")}
               onClick={() => {
@@ -59,7 +59,7 @@ export function RuPanel({ serverId, manage, jobs }: { serverId: string; manage: 
             >
               {t("gateway.ru.update")}
             </Button>
-            <Button variant="quiet" onClick={() => setUploadOpen(true)}>
+            <Button variant="secondary" onClick={() => setUploadOpen(true)}>
               {t("gateway.ru.upload.trigger")}
             </Button>
             <Button
@@ -205,7 +205,7 @@ function Overrides({
       <div className={styles.blockHead}>
         <h4 className={styles.blockTitle}>{t("gateway.ru.overrides.title")}</h4>
         {manage && (
-          <Button variant="quiet" onClick={onAdd}>
+          <Button variant="secondary" onClick={onAdd}>
             {t("gateway.ru.overrides.add.trigger")}
           </Button>
         )}
@@ -242,7 +242,7 @@ function Overrides({
                       <ConfirmDialog
                         trigger={
                           <Button
-                            variant="quiet"
+                            variant="secondary"
                             aria-label={t("gateway.ru.overrides.remove.trigger", { network: item.network })}
                           >
                             {t("gateway.ru.overrides.remove.button")}

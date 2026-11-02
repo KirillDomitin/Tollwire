@@ -4,8 +4,8 @@
   padding: var(--space-3) var(--space-4);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  background: var(--paper);
-  border: 1px solid var(--rule);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: var(--radius-control);
 }
 
@@ -13,7 +13,7 @@
 .preview pre {
   font-family: var(--font-mono);
   font-size: var(--text-meta);
-  background: var(--fog);
+  background: var(--bg);
   border-radius: var(--radius-control);
 }
 .preview code {
@@ -42,7 +42,7 @@
 /* Спойлер: закрашен, пока на него не навели или не встали фокусом. */
 .spoiler {
   color: transparent;
-  background: var(--rule-strong);
+  background: var(--border-strong);
   border-radius: 3px;
 }
 .spoiler:hover,

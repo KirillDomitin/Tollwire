@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { api, unwrap, type VPNUser } from "../../api/client";
 import { Button } from "../../components/Button";
 import { Dialog, DialogActions } from "../../components/Dialog";
+import { PencilIcon } from "../../components/icons";
 import { Notice } from "../../components/Notice";
 import { TextField } from "../../components/TextField";
 import styles from "./UserPage.module.css";
@@ -52,7 +53,7 @@ export function EditUserDialog({ user }: { user: VPNUser }) {
 
   return (
     <>
-      <Button variant="quiet" onClick={() => setOpen(true)}>
+      <Button icon={<PencilIcon size={16} />} onClick={() => setOpen(true)}>
         {t("users.edit.trigger")}
       </Button>
       <Dialog
@@ -87,7 +88,7 @@ export function EditUserDialog({ user }: { user: VPNUser }) {
           />
           {save.isError && <Notice>{save.error.message}</Notice>}
           <DialogActions>
-            <Button variant="quiet" onClick={() => close(false)}>
+            <Button variant="secondary" onClick={() => close(false)}>
               {t("common.cancel")}
             </Button>
             <Button type="submit" busy={save.isPending} busyLabel={t("users.edit.busy")}>

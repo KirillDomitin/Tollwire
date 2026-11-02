@@ -98,7 +98,7 @@ export function UploadListDialog({
         </div>
         {upload.isError && <Notice>{upload.error.message}</Notice>}
         <DialogActions>
-          <Button variant="quiet" onClick={() => close(false)}>
+          <Button variant="secondary" onClick={() => close(false)}>
             {t("common.cancel")}
           </Button>
           <Button type="submit" busy={upload.isPending} busyLabel={t("gateway.ru.upload.busy")}>

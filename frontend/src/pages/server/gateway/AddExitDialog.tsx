@@ -142,7 +142,7 @@ export function AddExitDialog({
         <p className={styles.hint}>{t("gateway.exits.add.hint")}</p>
         {add.isError && <Notice>{add.error.message}</Notice>}
         <DialogActions>
-          <Button variant="quiet" onClick={() => close(false)}>
+          <Button variant="secondary" onClick={() => close(false)}>
             {t("common.cancel")}
           </Button>
           <Button

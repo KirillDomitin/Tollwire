@@ -6,6 +6,7 @@ import { useNavigate } from "react-router";
 import { api, unwrap } from "../../api/client";
 import { Button } from "../../components/Button";
 import { Dialog, DialogActions } from "../../components/Dialog";
+import { PlusIcon } from "../../components/icons";
 import { Notice } from "../../components/Notice";
 import { TextField } from "../../components/TextField";
 import styles from "./UserPage.module.css";
@@ -43,7 +44,9 @@ export function AddUserDialog() {
 
   return (
     <>
-      <Button onClick={() => setOpen(true)}>{t("users.add.trigger")}</Button>
+      <Button icon={<PlusIcon size={18} />} onClick={() => setOpen(true)}>
+        {t("users.add.trigger")}
+      </Button>
       <Dialog
         open={open}
         onOpenChange={(next) => {
@@ -72,7 +75,7 @@ export function AddUserDialog() {
           <TextField label={t("users.add.note")} name="description" maxLength={300} />
           {create.isError && <Notice>{create.error.message}</Notice>}
           <DialogActions>
-            <Button variant="quiet" onClick={() => setOpen(false)}>
+            <Button variant="secondary" onClick={() => setOpen(false)}>
               {t("common.cancel")}
             </Button>
             <Button type="submit" busy={create.isPending} busyLabel={t("users.add.busy")}>

@@ -1,4 +1,12 @@
-import { COUNTRY_CODES, countryOptions, flagEmoji, splitFlag, withFlag } from "./flags";
+import {
+  COUNTRY_CODES,
+  countryOptions,
+  flagCode,
+  flagCountryName,
+  flagEmoji,
+  splitFlag,
+  withFlag,
+} from "./flags";
 
 describe("flags", () => {
   it("builds a flag emoji from a country code", () => {
@@ -16,6 +24,15 @@ describe("flags", () => {
     expect(splitFlag("🇩🇪frankfurt-1")).toEqual({ flag: "🇩🇪", rest: "frankfurt-1" });
     expect(splitFlag("frankfurt-1 🇩🇪")).toEqual({ flag: "", rest: "frankfurt-1 🇩🇪" });
     expect(splitFlag("US2")).toEqual({ flag: "", rest: "US2" });
+  });
+
+  it("reads the country back from a flag", () => {
+    expect(flagCode("🇩🇪")).toBe("DE");
+    expect(flagCode("DE")).toBeNull();
+    expect(flagCode("")).toBeNull();
+    expect(flagCountryName("🇩🇪", "ru")).toBe("Германия");
+    expect(flagCountryName("🇩🇪", "en")).toBe("Germany");
+    expect(flagCountryName("", "ru")).toBeNull();
   });
 
   it("has unique two-letter codes", () => {

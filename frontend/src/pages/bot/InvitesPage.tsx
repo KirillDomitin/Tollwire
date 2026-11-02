@@ -73,7 +73,7 @@ export function InvitesPage() {
       {invites.hasNextPage && (
         <div>
           <Button
-            variant="quiet"
+            variant="ghost"
             busy={invites.isFetchingNextPage}
             onClick={() => void invites.fetchNextPage()}
           >
@@ -135,7 +135,7 @@ function InviteRow({
       </div>
       {invite.status === "valid" && onRevoke && (
         <div className={styles.row}>
-          <Button variant="quiet" disabled={revoking} onClick={onRevoke}>
+          <Button variant="ghost" disabled={revoking} onClick={onRevoke}>
             {t("bot.invites.revoke")}
           </Button>
         </div>
@@ -335,7 +335,7 @@ function InviteForm({
       </div>
       {error && <Notice>{error}</Notice>}
       <DialogActions>
-        <Button variant="quiet" onClick={onCancel}>
+        <Button variant="ghost" onClick={onCancel}>
           {t("common.cancel")}
         </Button>
         <Button type="submit" busy={busy} busyLabel={t("bot.invites.create.busy")} disabled={!valid}>

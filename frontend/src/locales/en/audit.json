@@ -180,7 +180,8 @@
     "event": "Event",
     "who": "Who",
     "object": "Object",
-    "when": "When"
+    "when": "When",
+    "group": "Type"
   },
   "loadingMore": "Loading…",
   "more": "Show more",
@@ -224,5 +225,6 @@
       "selected": "selected people",
       "protocol": "by protocol"
     }
-  }
+  },
+  "subtitle": "Log of panel and server events"
 }

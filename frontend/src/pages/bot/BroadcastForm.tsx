@@ -273,7 +273,7 @@ export function BroadcastForm() {
       <div className={styles.row}>
         {news && can("bot:manage") && me.data?.linked && !me.data.blocked_at && (
           <Button
-            variant="quiet"
+            variant="ghost"
             busy={selfTest.isPending}
             disabled={!check.ok}
             onClick={() => selfTest.mutate(text)}

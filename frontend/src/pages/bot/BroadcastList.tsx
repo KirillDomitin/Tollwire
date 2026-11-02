@@ -60,7 +60,7 @@ export function BroadcastList() {
       {broadcasts.hasNextPage && (
         <div>
           <Button
-            variant="quiet"
+            variant="ghost"
             busy={broadcasts.isFetchingNextPage}
             onClick={() => void broadcasts.fetchNextPage()}
           >
@@ -122,7 +122,7 @@ function BroadcastRow({
       </ul>
       {item.state === "running" && onCancel && (
         <div className={styles.row}>
-          <Button variant="quiet" disabled={cancelling} onClick={onCancel}>
+          <Button variant="ghost" disabled={cancelling} onClick={onCancel}>
             {t("bot.broadcasts.cancel")}
           </Button>
         </div>

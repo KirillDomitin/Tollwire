@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in Tollwire. Bug reports, ideas and pull requests are welcome.
+Thanks for your interest in WirePilot. Bug reports, ideas and pull requests are welcome.
 
 ## Before you start
 

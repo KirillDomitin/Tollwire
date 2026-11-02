@@ -54,7 +54,10 @@ const outboxIs =
     json({ id: OUTBOX_ID, status: statuses[Math.min(n, statuses.length - 1)], error: null });
 
 async function card() {
-  await screen.findByRole("heading", { level: 1, name: "alice" });
+  await screen.findByRole("heading", {
+    level: 1,
+    name: i18n.t("users.card.title", { name: "alice" }),
+  });
 }
 
 async function tick(ms: number) {

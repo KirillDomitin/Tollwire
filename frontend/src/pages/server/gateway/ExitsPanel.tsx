@@ -106,7 +106,7 @@ export function ExitsPanel({
                         <div className={styles.actions}>
                           {view.stalled === "add" ? (
                             <Button
-                              variant="quiet"
+                              variant="secondary"
                               busy={retry.isPending}
                               busyLabel={t("servers.card.queueBusy")}
                               onClick={() =>
@@ -157,7 +157,7 @@ function RemoveExitButton({ serverId, exit }: { serverId: string; exit: GatewayE
     <ConfirmDialog
       trigger={
         <Button
-          variant="quiet"
+          variant="secondary"
           aria-label={t("gateway.exits.remove.trigger", { name: exit.exit_server_name })}
         >
           {t("gateway.exits.remove.button")}

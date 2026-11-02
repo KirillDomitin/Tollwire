@@ -6,9 +6,15 @@
     "empty": "No users yet. Add a person who needs a VPN — access and the config are issued on their page.",
     "columns": {
       "user": "User",
-      "access": "Access",
-      "note": "Note"
-    }
+      "access": "Subscription",
+      "note": "Note",
+      "until": "Valid until"
+    },
+    "subtitle": "Manage users and their subscriptions",
+    "search": "Search by name or email",
+    "noMatches": "Nothing found. Change the search.",
+    "shown": "Showing {{shown}} of {{total}}",
+    "disabled": "Disabled"
   },
   "summary": {
     "total_one": "{{count}} user",
@@ -23,7 +29,17 @@
     "expired": "Expired {{date}}",
     "from": "From {{date}}",
     "ending": "Ends {{date}}",
-    "until": "Until {{date}}"
+    "until": "Until {{date}}",
+    "pill": {
+      "active": "Active",
+      "ending": "Ending soon",
+      "pending": "Not started",
+      "expired": "Expired",
+      "revoked": "Revoked",
+      "none": "No access"
+    },
+    "daysLeft_one": "{{count}} day left",
+    "daysLeft_other": "{{count}} days left"
   },
   "add": {
     "trigger": "Add user",
@@ -54,7 +70,6 @@
   "card": {
     "loading": "Loading the user…",
     "toList": "Back to the users list",
-    "allUsers": "All users",
     "notFound": "User not found — they may have been deleted.",
     "access": "Access",
     "noAccessExpired": "No access right now — the last one expired on {{date}}.",
@@ -83,7 +98,33 @@
       "action": "Delete user",
       "busy": "Deleting…",
       "conflict": "The user has working configs. Revoke the access first and wait until the clients are removed."
-    }
+    },
+    "backToList": "Back to list",
+    "title": "User: {{name}}",
+    "tabs": {
+      "label": "User sections",
+      "main": "General",
+      "subscription": "Subscription",
+      "access": "Access"
+    },
+    "tiles": {
+      "label": "User summary",
+      "created": "Created",
+      "until": "Subscription until",
+      "servers": "Servers in access"
+    },
+    "details": {
+      "title": "User details",
+      "note": "Note",
+      "noNote": "not set",
+      "created": "Created",
+      "status": "User status",
+      "active": "active",
+      "disabled": "disabled"
+    },
+    "subscription": "Subscription",
+    "subscriptionPeriod": "Period",
+    "subscriptionLeft": "Until the end"
   },
   "grant": {
     "serverDeleted": "Server deleted",

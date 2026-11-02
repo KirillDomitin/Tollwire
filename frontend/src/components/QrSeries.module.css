@@ -15,7 +15,7 @@
 
 .hint {
   margin: 0;
-  color: var(--pine-soft);
+  color: var(--text-soft);
 }
 
 /* QR всегда тёмный на белом, в любой теме: так его читают камеры телефонов. */

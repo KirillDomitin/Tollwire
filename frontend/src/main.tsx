@@ -8,9 +8,13 @@ import { RouterProvider } from "react-router";
 
 import { router } from "./App";
 import "./i18n";
-import { applyTheme, loadTheme } from "./lib/theme";
 
-applyTheme(loadTheme());
+// Раньше у панели был выбор темы; теперь тема одна — ключ в браузере больше не нужен.
+try {
+  localStorage.removeItem("vpn-panel-theme");
+} catch {
+  /* приватный режим и т.п. — нечего чистить */
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {

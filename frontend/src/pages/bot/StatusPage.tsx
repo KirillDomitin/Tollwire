@@ -124,7 +124,7 @@ function KeyRow({ botKey, canRevoke }: { botKey: BotKey; canRevoke: boolean }) {
         ) : (
           canRevoke && (
             <ConfirmDialog
-              trigger={<Button variant="quiet">{t("bot.keys.revoke.trigger")}</Button>}
+              trigger={<Button variant="ghost">{t("bot.keys.revoke.trigger")}</Button>}
               title={t("bot.keys.revoke.title", { name: botKey.name })}
               consequences={t("bot.keys.revoke.consequences")}
               actionLabel={t("bot.keys.revoke.action")}
@@ -244,7 +244,7 @@ function CreateKeyForm({
       </div>
       {error && <Notice>{error}</Notice>}
       <DialogActions>
-        <Button variant="quiet" onClick={onCancel}>
+        <Button variant="ghost" onClick={onCancel}>
           {t("common.cancel")}
         </Button>
         <Button type="submit" busy={busy} busyLabel={t("bot.keys.create.busy")}>

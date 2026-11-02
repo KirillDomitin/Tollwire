@@ -41,6 +41,8 @@ interface Backend {
   protocols?: unknown[];
   jobs?: unknown[];
   patchStatus?: number;
+  /** Ответ /monitoring/latest — последние замеры по серверам (для плиток карточки). */
+  latest?: unknown[];
 }
 
 /** Подменный API: отвечает по методу и пути, запоминает все запросы. */
@@ -50,6 +52,7 @@ function mockApi({
   protocols = [],
   jobs = [],
   patchStatus = 200,
+  latest = [],
 }: Backend = {}) {
   const calls: string[] = [];
   let current: Record<string, unknown> = { ...baseServer, ...server };
@@ -68,6 +71,7 @@ function mockApi({
     if (path === `${base}/credentials`) return cred ? json(cred) : json({ detail: "not set" }, 404);
     if (path === `${base}/protocols`) return json(protocols);
     if (path === "/api/v1/jobs") return json(jobs);
+    if (path === "/api/v1/monitoring/latest") return json(latest);
     if (request.method === "DELETE" && path === base) return new Response(null, { status: 204 });
     return json({ detail: "unexpected" }, 500);
   });
@@ -75,9 +79,10 @@ function mockApi({
   return calls;
 }
 
-function renderCard(permissions: string[] | "all" = "all") {
+/** tab — вкладка карточки в адресе (?tab=…): по умолчанию рабочий сервер открывается на графиках, а тесты проверяют остальное. */
+function renderCard(permissions: string[] | "all" = "all", tab?: string) {
   return renderWithProviders(<ServerPage />, {
-    route: `/servers/${ID}`,
+    route: `/servers/${ID}${tab ? `?tab=${tab}` : ""}`,
     path: "/servers/:serverId",
     permissions,
   });
@@ -140,7 +145,7 @@ describe("ServerPage setup checklist", () => {
       credential,
       protocols: [protocol],
     });
-    renderCard();
+    renderCard("all", "config");
 
     expect(await screen.findByRole("heading", { name: "Обслуживание" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Подготовка сервера" })).not.toBeInTheDocument();
@@ -155,12 +160,13 @@ describe("ServerPage permissions and dangerous actions", () => {
       credential,
       protocols: [protocol],
     });
-    renderCard(["servers:read"]);
+    renderCard(["servers:read"], "config");
 
     expect(await screen.findByRole("heading", { name: "Обслуживание" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Проверить состояние" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Заменить" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Опасные действия" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Настройки" })).not.toBeInTheDocument();
   });
 
   it("renames a server and shows the new name", async () => {
@@ -175,7 +181,7 @@ describe("ServerPage permissions and dangerous actions", () => {
     await userEvent.type(name, "frankfurt-1");
     await userEvent.click(within(dialog).getByRole("button", { name: "Сохранить" }));
 
-    expect(await screen.findByRole("heading", { level: 1, name: "frankfurt-1" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Сервер: frankfurt-1" })).toBeInTheDocument();
     expect(calls).toContain('PATCH body {"name":"frankfurt-1","description":null}');
   });
 
@@ -193,7 +199,7 @@ describe("ServerPage permissions and dangerous actions", () => {
     await userEvent.type(name, "  lab-2  ");
     await userEvent.click(within(dialog).getByRole("button", { name: "Сохранить" }));
 
-    expect(await screen.findByRole("heading", { level: 1, name: "lab-2" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "Сервер: lab-2" })).toBeInTheDocument();
     expect(calls).toContain('PATCH body {"name":"lab-2","description":null}');
   });
 
@@ -209,7 +215,9 @@ describe("ServerPage permissions and dangerous actions", () => {
     await userEvent.selectOptions(country, "🇳🇱");
     await userEvent.click(within(dialog).getByRole("button", { name: "Сохранить" }));
 
-    expect(await screen.findByRole("heading", { level: 1, name: "🇳🇱 frankfurt-1" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Сервер: 🇳🇱 frankfurt-1" }),
+    ).toBeInTheDocument();
     expect(calls).toContain('PATCH body {"name":"🇳🇱 frankfurt-1","description":null}');
   });
 
@@ -244,13 +252,13 @@ describe("ServerPage permissions and dangerous actions", () => {
     mockApi();
     renderCard(["servers:read"]);
 
-    await screen.findByRole("heading", { level: 1, name: "lab-1" });
+    await screen.findByRole("heading", { level: 1, name: "Сервер: lab-1" });
     expect(screen.queryByRole("button", { name: "Изменить" })).not.toBeInTheDocument();
   });
 
   it("deletes a server only after its name is typed, then returns to the list", async () => {
     const calls = mockApi();
-    renderCard();
+    renderCard("all", "settings");
 
     await userEvent.click(await screen.findByRole("button", { name: "Удалить сервер" }));
     const dialog = await screen.findByRole("alertdialog");
@@ -280,6 +288,97 @@ describe("ServerPage setup checklist without SSH access", () => {
   });
 });
 
+describe("ServerPage layout: header, tiles and tabs", () => {
+  const ready = {
+    server: {
+      status: "ready",
+      health_status: "ok",
+      ssh_host_key_fingerprint: "SHA256:abc",
+      name: "🇩🇪 frankfurt-1",
+    },
+    credential,
+    protocols: [protocol],
+  };
+  const title = "Сервер: 🇩🇪 frankfurt-1";
+
+  it("shows the title with the status pill, the country from the flag and the facts", async () => {
+    mockApi(ready);
+    renderCard("all", "config");
+
+    const heading = await screen.findByRole("heading", { level: 1, name: title });
+    expect(heading.parentElement).toHaveTextContent("В работе");
+    expect(screen.getByRole("link", { name: "Назад к списку" })).toHaveAttribute("href", "/servers");
+    const facts = screen.getByText("Страна", { selector: "dt" }).closest("dl")!;
+    expect(within(facts).getByText("Германия")).toBeInTheDocument();
+    expect(within(facts).getByText("AmneziaWG")).toBeInTheDocument();
+    expect(within(facts).getByText("закреплён")).toBeInTheDocument();
+  });
+
+  it("opens a working server on the charts and an unprepared one on the setup", async () => {
+    mockApi(ready);
+    const { unmount } = renderCard();
+    expect(await screen.findByRole("tab", { name: "Графики" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Конфигурация" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Задачи" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Настройки" })).toBeInTheDocument();
+    unmount();
+
+    mockApi();
+    renderCard();
+    expect(await screen.findByRole("tab", { name: "Конфигурация" })).toHaveAttribute("aria-selected", "true");
+    // Без SSH-доступа замеров нет — вкладки «Графики» тоже.
+    expect(screen.queryByRole("tab", { name: "Графики" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Подготовка сервера" })).toBeInTheDocument();
+  });
+
+  it("switches between tabs and renders only the active panel", async () => {
+    mockApi(ready);
+    renderCard();
+
+    await userEvent.click(await screen.findByRole("tab", { name: "Настройки" }));
+    expect(await screen.findByRole("heading", { name: "Опасные действия" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Настройки" })).toHaveAttribute("aria-selected", "true");
+
+    await userEvent.click(screen.getByRole("tab", { name: "Задачи" }));
+    expect(await screen.findByText("Задач по этому серверу ещё не было.")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Опасные действия" })).not.toBeInTheDocument();
+  });
+
+  it("shows the metric tiles from the latest sample and omits them without a sample", async () => {
+    mockApi({
+      ...ready,
+      latest: [
+        {
+          server_id: ID,
+          ts: new Date().toISOString(),
+          cpu_percent: 32,
+          mem_used_bytes: 400,
+          mem_total_bytes: 1000,
+          disk_used_bytes: 280,
+          disk_total_bytes: 1000,
+          net_rx_bytes_per_s: 1,
+          net_tx_bytes_per_s: 1,
+          clients_total: 120,
+          clients_online: 78,
+        },
+      ],
+    });
+    const { unmount } = renderCard("all", "config");
+
+    const tiles = within(await screen.findByRole("group", { name: "Состояние сервера" }));
+    expect(tiles.getByRole("group", { name: "Клиенты онлайн" })).toHaveTextContent("78/ 120");
+    expect(tiles.getByRole("group", { name: "Нагрузка CPU" })).toHaveTextContent("32 %");
+    expect(tiles.getByRole("group", { name: "Память" })).toHaveTextContent("40 %");
+    expect(tiles.getByRole("group", { name: "Диск" })).toHaveTextContent("28 %");
+    unmount();
+
+    mockApi(ready);
+    renderCard("all", "config");
+    await screen.findByRole("heading", { level: 1, name: title });
+    expect(screen.queryByRole("group", { name: "Состояние сервера" })).not.toBeInTheDocument();
+  });
+});
+
 describe("ServerPage audit link", () => {
   it("links to the events of this server for those who may read the journal", async () => {
     mockApi();
@@ -293,7 +392,7 @@ describe("ServerPage audit link", () => {
     mockApi();
     renderCard(["servers:read"]);
 
-    await screen.findByRole("heading", { name: "lab-1" });
+    await screen.findByRole("heading", { name: "Сервер: lab-1" });
     expect(screen.queryByRole("link", { name: "События сервера" })).not.toBeInTheDocument();
   });
 });
@@ -307,13 +406,14 @@ describe("ServerPage in English", () => {
     mockApi({ server: { ssh_host_key_fingerprint: "SHA256:abc" }, credential });
     renderCard();
 
-    expect(await screen.findByRole("link", { name: "All servers" })).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "Back to list" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Server setup" })).toBeInTheDocument();
     expect(step("Pin the server key").mark).toBe("done");
     expect(step("Install Docker and Amnezia").item).toHaveTextContent("next step");
     expect(step("Install AmneziaWG").item).toHaveTextContent("not available yet");
     expect(screen.getByText("not checked yet")).toBeInTheDocument();
 
+    await userEvent.click(screen.getByRole("tab", { name: "Settings" }));
     await userEvent.click(screen.getByRole("button", { name: "Delete server" }));
     const dialog = await screen.findByRole("alertdialog");
     expect(within(dialog).getByText("Delete server “lab-1”?")).toBeInTheDocument();
@@ -327,7 +427,7 @@ describe("ServerPage in English", () => {
       credential: { ...credential, managed_key: true, key_fingerprint: "SHA256:key" },
       protocols: [protocol],
     });
-    renderCard();
+    renderCard("all", "config");
 
     expect(await screen.findByRole("heading", { name: "Maintenance" })).toBeInTheDocument();
     expect(screen.getByText("port 51820, UDP")).toBeInTheDocument();

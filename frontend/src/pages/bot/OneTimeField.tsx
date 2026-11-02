@@ -43,7 +43,7 @@ export function OneTimeField({ label, value }: { label: string; value: string })
         onFocus={(event) => event.currentTarget.select()}
       />
       <div className={styles.row}>
-        <Button variant="quiet" onClick={() => void copy()}>
+        <Button variant="ghost" onClick={() => void copy()}>
           {copied ? t("bot.copied") : t("bot.copy")}
         </Button>
         {failed && (

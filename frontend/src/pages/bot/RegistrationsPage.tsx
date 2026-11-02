@@ -88,7 +88,7 @@ export function RegistrationsPage() {
       {registrations.hasNextPage && (
         <div>
           <Button
-            variant="quiet"
+            variant="ghost"
             busy={registrations.isFetchingNextPage}
             onClick={() => void registrations.fetchNextPage()}
           >
@@ -141,7 +141,7 @@ function RegistrationRow({
           )}
           {onRetry && (
             <div className={styles.row}>
-              <Button variant="quiet" disabled={retrying} onClick={onRetry}>
+              <Button variant="ghost" disabled={retrying} onClick={onRetry}>
                 {t("bot.registrations.retry")}
               </Button>
             </div>

@@ -65,7 +65,7 @@ export function HostKeyDialog({
         <>
           {scanKey.isError && <Notice>{scanKey.error.message}</Notice>}
           <DialogActions>
-            <Button variant="quiet" onClick={() => close(false)}>
+            <Button variant="secondary" onClick={() => close(false)}>
               {t("common.cancel")}
             </Button>
             <Button
@@ -93,7 +93,7 @@ export function HostKeyDialog({
           </p>
           {pin.isError && <Notice>{pin.error.message}</Notice>}
           <DialogActions>
-            <Button variant="quiet" onClick={() => close(false)}>
+            <Button variant="secondary" onClick={() => close(false)}>
               {t("servers.hostKey.notMatching")}
             </Button>
             <Button

@@ -31,12 +31,12 @@
 }
 
 .quiet {
-  color: var(--pine-soft);
+  color: var(--text-soft);
 }
 
 .hint {
   font-size: var(--text-meta);
-  color: var(--pine-soft);
+  color: var(--text-soft);
 }
 
 .good {
@@ -49,22 +49,22 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1) var(--space-4);
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid var(--border);
 }
 .navLink {
   padding: var(--space-2) 0;
   margin-bottom: -1px;
-  color: var(--pine-soft);
+  color: var(--text-soft);
   text-decoration: none;
   border-bottom: 2px solid transparent;
 }
 .navLink:hover {
-  color: var(--pine);
+  color: var(--text);
 }
 .navLink[aria-current="page"] {
-  color: var(--pine);
+  color: var(--text);
   font-weight: 600;
-  border-bottom-color: var(--pine);
+  border-bottom-color: var(--text);
 }
 
 /* Сведения парами «что / значение». */
@@ -72,16 +72,16 @@
   display: grid;
   grid-template-columns: max-content 1fr;
   margin: 0;
-  background: var(--paper);
+  background: var(--surface);
 }
 .facts dt,
 .facts dd {
   margin: 0;
   padding: var(--space-2) var(--space-4);
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid var(--border);
 }
 .facts dt {
-  color: var(--pine-soft);
+  color: var(--text-soft);
 }
 .facts > :nth-last-child(-n + 2) {
   border-bottom: 0;
@@ -92,13 +92,13 @@
   list-style: none;
   margin: 0;
   padding: 0;
-  background: var(--paper);
+  background: var(--surface);
 }
 .item {
   display: grid;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid var(--border);
   border-left: var(--rule-width) solid var(--signal-idle);
 }
 .item:last-child {
@@ -133,7 +133,7 @@
   flex-wrap: wrap;
   gap: var(--space-1) var(--space-4);
   font-size: var(--text-meta);
-  color: var(--pine-soft);
+  color: var(--text-soft);
 }
 .state {
   font-weight: 550;
@@ -149,7 +149,7 @@
 }
 .state[data-signal="idle"] {
   font-weight: 400;
-  color: var(--pine-soft);
+  color: var(--text-soft);
 }
 .mono {
   font-family: var(--font-mono);
@@ -157,7 +157,7 @@
 }
 .link {
   color: inherit;
-  text-decoration-color: var(--rule-strong);
+  text-decoration-color: var(--border-strong);
   text-underline-offset: 3px;
 }
 .link:hover {
@@ -176,7 +176,7 @@
 }
 .details summary {
   cursor: pointer;
-  color: var(--pine-soft);
+  color: var(--text-soft);
 }
 .details p {
   margin-top: var(--space-1);
@@ -197,13 +197,13 @@
 .label {
   font-size: var(--text-meta);
   font-weight: 550;
-  color: var(--pine-soft);
+  color: var(--text-soft);
 }
 .control {
   min-height: 42px;
   padding: 0 var(--space-3);
-  background: var(--paper);
-  border: 1px solid var(--rule-strong);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-control);
 }
 .control:focus-visible {
@@ -215,7 +215,7 @@
   border-color: var(--signal-down);
 }
 .control:disabled {
-  color: var(--pine-soft);
+  color: var(--text-soft);
 }
 .textarea {
   min-height: 160px;
@@ -231,7 +231,7 @@
 .counter {
   font-size: var(--text-meta);
   font-variant-numeric: tabular-nums;
-  color: var(--pine-soft);
+  color: var(--text-soft);
 }
 .counter[data-over="true"] {
   color: var(--signal-down);
@@ -250,7 +250,7 @@
   padding: 0;
   font-size: var(--text-meta);
   font-weight: 550;
-  color: var(--pine-soft);
+  color: var(--text-soft);
 }
 .choice label {
   display: flex;
@@ -265,12 +265,12 @@
   display: grid;
   max-height: 260px;
   overflow-y: auto;
-  background: var(--paper);
-  border: 1px solid var(--rule);
+  background: var(--surface);
+  border: 1px solid var(--border);
 }
 .people li {
   padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid var(--border);
 }
 .people li:last-child {
   border-bottom: 0;
@@ -293,8 +293,8 @@
   padding: 0 var(--space-3);
   font-family: var(--font-mono);
   font-size: var(--text-meta);
-  background: var(--fog);
-  border: 1px solid var(--rule-strong);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-control);
 }
 
@@ -312,9 +312,9 @@
   padding: 0;
   list-style: none;
   font-size: var(--text-meta);
-  color: var(--pine-soft);
+  color: var(--text-soft);
 }
 .excerpt {
-  color: var(--pine-soft);
+  color: var(--text-soft);
   overflow-wrap: anywhere;
 }

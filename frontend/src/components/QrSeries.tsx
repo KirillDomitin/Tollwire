@@ -38,11 +38,11 @@ export function QrSeries({ codes }: { codes: string[] }) {
           </span>
           <span className={styles.controls}>
             {!reducedMotion && (
-              <Button variant="quiet" onClick={() => setPaused((value) => !value)} aria-pressed={paused}>
+              <Button variant="ghost" onClick={() => setPaused((value) => !value)} aria-pressed={paused}>
                 {paused ? t("common.qr.resume") : t("common.qr.pause")}
               </Button>
             )}
-            <Button variant="quiet" onClick={() => setIndex(current + 1)}>
+            <Button variant="ghost" onClick={() => setIndex(current + 1)}>
               {t("common.qr.next")}
             </Button>
           </span>

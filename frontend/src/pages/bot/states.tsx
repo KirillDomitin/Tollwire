@@ -23,7 +23,7 @@ export function Problem({ error, onRetry }: { error: unknown; onRetry?: () => vo
     <Notice
       action={
         onRetry && (
-          <Button variant="quiet" onClick={onRetry}>
+          <Button variant="ghost" onClick={onRetry}>
             {t("bot.reload")}
           </Button>
         )

@@ -19,8 +19,8 @@
   width: min(100%, 560px);
   margin: 0 auto;
   padding: var(--space-5);
-  background: var(--paper);
-  border-top: var(--rule-width) solid var(--pine);
+  background: var(--surface);
+  border-top: var(--rule-width) solid var(--text);
 }
 
 .title {
@@ -31,7 +31,7 @@
   display: grid;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
-  background: var(--danger-bg);
+  background: var(--down-soft);
   border-left: var(--rule-width) solid var(--signal-down);
 }
 
@@ -46,7 +46,7 @@
 }
 
 .facts dt {
-  color: var(--pine-faint);
+  color: var(--text-muted);
   font-size: var(--text-meta);
 }
 
@@ -66,16 +66,16 @@
 .field {
   display: grid;
   gap: var(--space-1);
-  color: var(--pine-faint);
+  color: var(--text-muted);
   font-size: var(--text-meta);
 }
 
 .input {
   width: 100%;
   padding: var(--space-2) var(--space-3);
-  background: var(--fog);
-  color: var(--pine);
-  border: 1px solid var(--rule-strong);
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-control);
   font-family: var(--font-mono);
   font-size: var(--text-meta);
@@ -88,11 +88,11 @@
 }
 
 .hint {
-  color: var(--pine-soft);
+  color: var(--text-soft);
 }
 
 .details {
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid var(--border);
   padding: var(--space-2) 0;
 }
 
@@ -103,7 +103,7 @@
 
 .details p {
   margin-top: var(--space-2);
-  color: var(--pine-soft);
+  color: var(--text-soft);
 }
 
 .warning {

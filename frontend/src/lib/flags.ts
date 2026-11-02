@@ -77,3 +77,17 @@ export function countryOptions(language: string): { flag: string; name: string }
     a.name.localeCompare(b.name, language),
   );
 }
+
+/** "🇩🇪" → "DE"; не флаг — null. */
+export function flagCode(flag: string): string | null {
+  const letters = [...flag].map((char) => char.codePointAt(0)! - REGIONAL_INDICATOR_A);
+  if (letters.length !== 2 || letters.some((value) => value < 0 || value > 25)) return null;
+  return letters.map((value) => String.fromCharCode(65 + value)).join("");
+}
+
+/** Название страны по флагу на языке интерфейса; нет флага или код незнаком — null. */
+export function flagCountryName(flag: string, language: string): string | null {
+  const code = flagCode(flag);
+  if (!code) return null;
+  return new Intl.DisplayNames(language, { type: "region" }).of(code) ?? null;
+}

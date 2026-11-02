@@ -148,6 +148,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Changed
 
 - Password-change attempts and events (`password_changed`, `password_change_failed`) appear in the audit log.
+- WirePilot redesign. The product is renamed to WirePilot (interface, page title, icon, documentation). The web
+  interface gets a new dark-blue design system: tokens, buttons, fields, dialogs, status pills, summary tiles, tabs and
+  one table style. The interface is dark only: the theme switch is gone. The sidebar is fixed to the window height and does not
+  scroll with the page; below 768px it becomes a top bar with a "Menu" button. The language switch, "Change password" and
+  "Sign out" moved into the user menu at the bottom of the sidebar. New sign-in page with a password reveal button. The
+  servers list has summary tiles (total, online, offline, clients), search and a table with load bars. The server card has a
+  header with the status, a details card, metric tiles and tabs (Charts, Configuration, Tasks, Settings); the users list has
+  search, subscription pills and days left; the user card has tiles and tabs (General, Subscription, Access); the audit log
+  shows the event group as a coloured pill. The active tab is kept in the address (`?tab=`). Charts are recoloured for the dark
+  palette; the gateway section, dialogs, 404 and the temporary-password screen follow the same style.
+
 - The panel needs Docker Compose 2.24 or newer. `install.sh` and `./panel` stop with a message on an older version.
 
 ### Security

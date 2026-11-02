@@ -133,7 +133,7 @@ export function CredentialsDialog({
         )}
         {save.isError && <Notice>{save.error.message}</Notice>}
         <DialogActions>
-          <Button variant="quiet" onClick={() => onOpenChange(false)}>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>
             {t("common.cancel")}
           </Button>
           <Button type="submit" busy={save.isPending} busyLabel={t("servers.credentials.busy")}>

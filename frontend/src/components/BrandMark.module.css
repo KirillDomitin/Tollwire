@@ -2,36 +2,16 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-3);
+  color: var(--text);
 }
 
-.mark {
-  display: inline-flex;
-  align-items: flex-end;
-  gap: 3px;
-  height: 20px;
-}
-
-.mark > span {
-  width: var(--rule-width);
-  border-radius: 1px;
-}
-
-.ok {
-  height: 100%;
-  background: var(--signal-ok);
-}
-
-.warn {
-  height: 70%;
-  background: var(--signal-warn);
-}
-
-.down {
-  height: 40%;
-  background: var(--signal-down);
+.shield {
+  flex: none;
+  filter: drop-shadow(0 0 8px rgb(26 115 255 / 45%));
 }
 
 .name {
+  font-size: 1.25rem;
   font-weight: 650;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
 }

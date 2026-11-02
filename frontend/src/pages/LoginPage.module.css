@@ -1,20 +1,111 @@
 .page {
+  position: relative;
   display: grid;
   place-items: center;
-  min-height: 100%;
-  padding: var(--space-5) var(--space-4);
+  min-height: 100vh;
+  padding: var(--space-6) var(--space-4);
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse 70% 50% at 50% 18%, rgb(26 115 255 / 16%), transparent 70%),
+    linear-gradient(180deg, #0c1530 0%, #0a1020 55%, #070c18 100%);
 }
 
-.form {
+/* Горы — абстрактный силуэт внизу страницы, под формой. */
+.landscape {
+  position: absolute;
+  inset: auto 0 0;
+  width: 100%;
+  height: 62%;
+  pointer-events: none;
+}
+
+.language {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  z-index: 2;
+}
+
+.column {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: var(--space-5);
+  justify-items: center;
+  width: min(100%, 420px);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.name {
+  font-size: 2.25rem;
+  font-weight: 650;
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+}
+
+.tagline {
+  margin-top: var(--space-1);
+  font-size: var(--text-meta);
+  color: var(--text-soft);
+}
+
+.card {
   display: grid;
   gap: var(--space-4);
-  width: min(100%, 360px);
+  width: 100%;
   padding: var(--space-6);
-  background: var(--paper);
-  border-top: var(--rule-width) solid var(--pine);
+  background: rgb(11 19 37 / 82%);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-pop);
 }
 
 .title {
   font-size: var(--text-title);
-  margin-top: var(--space-2);
+  text-align: center;
+}
+
+.lead {
+  margin-top: calc(-1 * var(--space-2));
+  font-size: var(--text-meta);
+  text-align: center;
+  color: var(--text-soft);
+}
+
+.reveal {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-control);
+  color: var(--text-soft);
+  cursor: pointer;
+}
+
+.reveal:hover {
+  color: var(--text);
+}
+
+.secure {
+  font-size: 0.75rem;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+@media (max-width: 480px) {
+  .card {
+    padding: var(--space-5) var(--space-4);
+  }
+
+  .name {
+    font-size: 1.75rem;
+  }
 }

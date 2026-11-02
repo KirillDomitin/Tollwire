@@ -1,6 +1,6 @@
 <div align="center">
 
-# Tollwire
+# WirePilot
 
 **A self-hosted control panel for AmneziaWG VPN servers.**
 Add servers, install the VPN over SSH, issue access to people with an expiry date, watch server health, and keep an audit trail of everything.
@@ -18,9 +18,9 @@ English · [Русский](README.ru.md)
 
 ---
 
-## Why Tollwire
+## Why WirePilot
 
-Running a handful of VPN servers by hand means SSH sessions, copied configs and no record of who has access to what. Tollwire puts that behind one web panel and one REST API:
+Running a handful of VPN servers by hand means SSH sessions, copied configs and no record of who has access to what. WirePilot puts that behind one web panel and one REST API:
 
 - **You connect a server once.** The panel pins its SSH host key, installs the VPN in Docker and keeps the SSH credentials encrypted.
 - **You give people access, not files.** A person gets a subscription with an expiry date; the panel creates, rotates and revokes their clients on the servers for you.
@@ -122,7 +122,7 @@ Found a vulnerability? Please do not open a public issue — see [SECURITY.md](S
 
 ## Disclaimer
 
-Tollwire is an independent project. It is not affiliated with, endorsed by or sponsored by Amnezia or the AmneziaVPN project. It manages servers that you own or are authorised to administer.
+WirePilot is an independent project. It is not affiliated with, endorsed by or sponsored by Amnezia or the AmneziaVPN project. It manages servers that you own or are authorised to administer.
 
 ## License
 

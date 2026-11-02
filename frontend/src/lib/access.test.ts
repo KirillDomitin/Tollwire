@@ -1,5 +1,5 @@
 import { endOfDay, newPeriod } from "../pages/user/GrantAccessDialog";
-import { accessSignal, formatDay } from "./access";
+import { accessPill, accessSignal, daysLeft, formatDay } from "./access";
 
 const NOW = new Date("2026-10-04T12:00:00Z");
 const days = (n: number) => new Date(NOW.getTime() + n * 24 * 60 * 60 * 1000).toISOString();
@@ -64,5 +64,25 @@ describe("dates", () => {
       2026, 10, 3, 23,
     ]);
     expect(newPeriod("date", "2026-11-03", NOW).valid_until).toBe(endOfDay("2026-11-03"));
+  });
+});
+
+describe("accessPill and daysLeft", () => {
+  it("names the subscription state for the pill", () => {
+    expect(accessPill(null, NOW)).toEqual({ tone: "neutral", label: "Нет доступа" });
+    expect(accessPill(period("active", -10, 30), NOW)).toEqual({ tone: "online", label: "Действует" });
+    expect(accessPill(period("active", -20, 3), NOW)).toEqual({ tone: "warning", label: "Кончается" });
+    expect(accessPill(period("pending", 2, 32), NOW)).toEqual({ tone: "process", label: "Ожидает начала" });
+    expect(accessPill(period("active", -40, -1), NOW)).toEqual({ tone: "offline", label: "Истёк" });
+    expect(accessPill(period("revoked", -40, 30), NOW)).toEqual({ tone: "neutral", label: "Отозван" });
+  });
+
+  it("counts the days left, with the right plural, and only for a live period", () => {
+    expect(daysLeft(period("active", -10, 30), NOW)).toBe("осталось 30 дней");
+    expect(daysLeft(period("active", -10, 1), NOW)).toBe("остался 1 день");
+    expect(daysLeft(period("active", -10, 3), NOW)).toBe("осталось 3 дня");
+    expect(daysLeft(period("active", -40, -1), NOW)).toBeNull();
+    expect(daysLeft(period("revoked", -10, 30), NOW)).toBeNull();
+    expect(daysLeft(null, NOW)).toBeNull();
   });
 });

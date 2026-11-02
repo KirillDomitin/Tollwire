@@ -43,7 +43,7 @@ export function EditExitDialog({ serverId, exit }: { serverId: string; exit: Gat
   return (
     <>
       <Button
-        variant="quiet"
+        variant="secondary"
         onClick={() => setOpen(true)}
         aria-label={t("gateway.exits.edit.trigger", { name: exit.exit_server_name })}
       >
@@ -75,7 +75,7 @@ export function EditExitDialog({ serverId, exit }: { serverId: string; exit: Gat
           />
           {update.isError && <Notice>{update.error.message}</Notice>}
           <DialogActions>
-            <Button variant="quiet" onClick={() => close(false)}>
+            <Button variant="secondary" onClick={() => close(false)}>
               {t("common.cancel")}
             </Button>
             <Button type="submit" busy={update.isPending} busyLabel={t("servers.edit.busy")}>

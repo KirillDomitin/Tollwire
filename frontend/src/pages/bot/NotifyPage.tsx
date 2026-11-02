@@ -104,7 +104,7 @@ function Notifications() {
                     {t("bot.notify.test")}
                   </Button>
                   <ConfirmDialog
-                    trigger={<Button variant="quiet">{t("bot.notify.unlink")}</Button>}
+                    trigger={<Button variant="ghost">{t("bot.notify.unlink")}</Button>}
                     title={t("bot.notify.unlinkTitle")}
                     consequences={t("bot.notify.unlinkConsequences")}
                     actionLabel={t("bot.notify.unlink")}
@@ -236,7 +236,7 @@ function BindingDialog({
         )}
       </div>
       <DialogActions>
-        <Button variant="quiet" onClick={onClose}>
+        <Button variant="ghost" onClick={onClose}>
           {t("bot.notify.close")}
         </Button>
       </DialogActions>

@@ -81,7 +81,7 @@ export function ConfigDialog({
         <>
           {reveal.isError && <Notice>{reveal.error.message}</Notice>}
           <DialogActions>
-            <Button variant="quiet" onClick={() => close(false)}>
+            <Button variant="ghost" onClick={() => close(false)}>
               {t("common.cancel")}
             </Button>
             <Button
@@ -105,14 +105,14 @@ export function ConfigDialog({
             {shareLink ? t("users.config.hintLink") : t("users.config.hintPlain")}
           </p>
           <DialogActions>
-            <Button variant="quiet" onClick={() => void copy()}>
+            <Button variant="ghost" onClick={() => void copy()}>
               {copied
                 ? t("users.config.copied")
                 : shareLink
                   ? t("users.config.copyLink")
                   : t("users.config.copy")}
             </Button>
-            <Button variant="quiet" onClick={download}>
+            <Button variant="ghost" onClick={download}>
               {t("users.config.download")}
             </Button>
             <Button onClick={() => close(false)}>{t("users.config.done")}</Button>

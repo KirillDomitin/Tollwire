@@ -51,33 +51,39 @@
 .warning {
   margin: 0;
   padding: var(--space-3) var(--space-4);
-  background: var(--paper);
+  background: var(--warn-soft);
+  border: 1px solid color-mix(in srgb, var(--signal-warn) 35%, transparent);
   border-left: var(--rule-width) solid var(--signal-warn);
+  border-radius: var(--radius-control);
 }
 .warning[data-tone="down"] {
+  background: var(--down-soft);
+  border-color: color-mix(in srgb, var(--signal-down) 35%, transparent);
   border-left-color: var(--signal-down);
 }
 
 /* Таблицы выходов, назначений и исключений. На средней ширине таблица прокручивается внутри обёртки, а не растягивает страницу. */
 .tableWrap {
   overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
 }
 .table {
   width: 100%;
   border-collapse: collapse;
-  background: var(--paper);
 }
 .table thead th {
-  padding: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: rgb(255 255 255 / 2%);
   font-size: var(--text-meta);
   font-weight: 550;
-  color: var(--pine-faint);
+  color: var(--text-muted);
   text-align: left;
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid var(--border);
 }
 .table tbody > tr > * {
-  padding: var(--space-3) var(--space-2);
-  border-bottom: 1px solid var(--rule);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border);
   vertical-align: middle;
   text-align: left;
   font-weight: 400;
@@ -120,24 +126,36 @@
 .sub {
   font-size: var(--text-meta);
   font-weight: 400;
-  color: var(--pine-soft);
+  color: var(--text-soft);
 }
 
+/* Состояние — пилюлей, как StatusPill: цвет дублируется текстом. */
 .badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-meta);
   font-weight: 550;
+  white-space: nowrap;
+  background: var(--ok-soft);
+  color: var(--signal-ok);
 }
 .badge[data-tone="down"] {
+  background: var(--down-soft);
   color: var(--signal-down);
 }
 .badge[data-tone="warn"] {
+  background: var(--warn-soft);
   color: var(--signal-warn-text);
 }
 .badge[data-tone="process"] {
-  color: var(--signal-process);
+  background: var(--process-soft);
+  color: var(--accent-text);
 }
 .badge[data-tone="idle"] {
+  background: var(--idle-soft);
   font-weight: 400;
-  color: var(--pine-soft);
+  color: var(--text-soft);
 }
 
 .actions {
@@ -148,7 +166,7 @@
 
 .link {
   color: inherit;
-  text-decoration-color: var(--rule-strong);
+  text-decoration-color: var(--border-strong);
   text-underline-offset: 3px;
 }
 .link:hover {
@@ -160,14 +178,15 @@
   min-height: 42px;
   padding: 0 var(--space-3);
   font: inherit;
-  color: var(--pine);
-  background: var(--paper);
-  border: 1px solid var(--rule-strong);
+  color: var(--text);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-control);
 }
 .select:focus-visible {
-  outline: 2px solid var(--focus);
-  border-color: var(--focus);
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .field {
   display: grid;
@@ -176,7 +195,7 @@
 .fieldLabel {
   font-size: var(--text-meta);
   font-weight: 550;
-  color: var(--pine-soft);
+  color: var(--text-soft);
 }
 .fieldError {
   margin: 0;
@@ -207,7 +226,7 @@
   .table tbody > tr {
     padding: var(--space-2) 0;
     border-left: var(--rule-width) solid var(--signal-idle);
-    border-bottom: 1px solid var(--rule);
+    border-bottom: 1px solid var(--border);
   }
   .table tbody > tr:last-child {
     border-bottom: 0;
@@ -240,7 +259,7 @@
   .table td[data-label]::before {
     content: attr(data-label);
     font-size: var(--text-meta);
-    color: var(--pine-faint);
+    color: var(--text-muted);
   }
   .table td[data-label] > * {
     text-align: right;

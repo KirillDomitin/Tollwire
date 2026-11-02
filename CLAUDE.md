@@ -2,9 +2,9 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-# VPN Control Panel
+# VPN Control Panel (WirePilot)
 
-REST API + веб-интерфейс для управления VPN-серверами AmneziaWG: серверы, VPN-пользователи, доступы, выдача
+REST API + веб-интерфейс (продукт называется WirePilot; интерфейс только тёмный, сайдбар закреплён) для управления VPN-серверами AmneziaWG: серверы, VPN-пользователи, доступы, выдача
 конфигов, установка по SSH, фоновые задачи, мониторинг, аудит. Детали — в `CLAUDE.md` каждой папки; запуск и
 деплой — `INSTALL.md`.
 

@@ -54,7 +54,7 @@ export function MoveClientDialog({
   return (
     <>
       <Button
-        variant="quiet"
+        variant="secondary"
         onClick={() => setOpen(true)}
         aria-label={t(
           assignment ? "gateway.assignments.move.trigger" : "gateway.assignments.move.assignTrigger",
@@ -104,7 +104,7 @@ export function MoveClientDialog({
           </div>
           {move.isError && <Notice>{move.error.message}</Notice>}
           <DialogActions>
-            <Button variant="quiet" onClick={() => close(false)}>
+            <Button variant="secondary" onClick={() => close(false)}>
               {t("common.cancel")}
             </Button>
             <Button

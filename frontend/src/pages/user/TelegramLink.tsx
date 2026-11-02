@@ -81,7 +81,7 @@ export function TelegramLink({ user }: { user: VPNUser }) {
         <>
           <div className={styles.row}>
             <Button
-              variant="quiet"
+              variant="ghost"
               disabled={blocked || inProgress}
               aria-describedby={blocked ? hintId : undefined}
               onClick={() => send.mutate()}
