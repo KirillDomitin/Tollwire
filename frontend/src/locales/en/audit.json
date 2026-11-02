@@ -106,7 +106,9 @@
     "bot_admin_link_created": "Admin Telegram linked",
     "bot_admin_link_removed": "Admin Telegram unlinked",
     "bot_admin_link_events_updated": "Notification events updated",
-    "bot_notify_test_queued": "Test notification queued"
+    "bot_notify_test_queued": "Test notification queued",
+    "bot_key_deleted": "Telegram bot key deleted",
+    "bot_invite_deleted": "Bot invite deleted"
   },
   "details": {
     "reason": "Reason",

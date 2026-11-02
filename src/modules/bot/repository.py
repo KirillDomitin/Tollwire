@@ -52,6 +52,9 @@ class BotKeyRepository:
     async def list_all(self) -> Sequence[BotKey]:
         return (await self.session.execute(select(BotKey).order_by(BotKey.created_at.desc()))).scalars().all()
 
+    async def delete(self, key: BotKey) -> None:
+        await self.session.delete(key)
+
     async def latest_bot_username(self) -> str | None:
         """Имя бота, которое сообщил последний замеченный действующий ключ: для ссылки t.me в приглашении."""
         query = (
@@ -72,8 +75,15 @@ class BotInviteRepository:
         await self.session.flush()
         return invite
 
-    async def get_by_id(self, invite_id: UUID) -> BotInvite | None:
-        return await self.session.get(BotInvite, invite_id)
+    async def get_by_id(self, invite_id: UUID, *, lock: bool = False) -> BotInvite | None:
+        return await self.session.get(BotInvite, invite_id, with_for_update=lock, populate_existing=lock)
+
+    async def has_registration(self, invite_id: UUID) -> bool:
+        query = select(BotRegistration.id).where(BotRegistration.invite_id == invite_id).limit(1)
+        return (await self.session.execute(query)).scalar_one_or_none() is not None
+
+    async def delete(self, invite: BotInvite) -> None:
+        await self.session.delete(invite)
 
     async def get_by_hash(self, code_hash: str, *, lock: bool = False) -> BotInvite | None:
         """lock=True: строка блокируется до конца транзакции (свежие данные из БД): приглашение занимает один запрос."""
@@ -510,8 +520,12 @@ class BotPageRepository:
         pending, claimed = (await self.session.execute(query)).one()
         return int(pending), int(claimed)
 
-    async def recipients(self, search: str | None, limit: int) -> Sequence[VPNUser]:
+    async def recipients(
+        self, search: str | None, limit: int, after: tuple[str, UUID] | None = None
+    ) -> Sequence[VPNUser]:
         query = select(VPNUser).where(VPNUser.telegram_id.is_not(None))
+        if after is not None:
+            query = query.where(tuple_(VPNUser.username, VPNUser.id) > tuple_(literal(after[0]), literal(after[1])))
         if search:
             # autoescape: «%» и «_» в поиске - обычные символы, а не шаблон
             query = query.where(

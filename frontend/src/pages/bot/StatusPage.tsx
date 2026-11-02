@@ -142,6 +142,24 @@ function KeyRow({ botKey, canRevoke }: { botKey: BotKey; canRevoke: boolean }) {
           )
         )}
       </div>
+      {revoked && canRevoke && (
+        <ConfirmDialog
+          trigger={<Button variant="ghost">{t("bot.keys.delete.trigger")}</Button>}
+          title={t("bot.keys.delete.title", { name: botKey.name })}
+          consequences={t("bot.keys.delete.consequences")}
+          actionLabel={t("bot.keys.delete.action")}
+          busyLabel={t("bot.keys.delete.busy")}
+          onConfirm={async () => {
+            await botUnwrap(
+              api.DELETE("/api/v1/bot-admin/keys/{key_id}", {
+                params: { path: { key_id: botKey.id } },
+              }),
+            );
+            await queryClient.invalidateQueries({ queryKey: botKeys.keys });
+            await queryClient.invalidateQueries({ queryKey: botKeys.status });
+          }}
+        />
+      )}
       <div className={styles.itemMeta}>
         <code className={styles.mono}>{botKey.key_prefix}</code>
         {botKey.bot_username && <span>{botName(botKey.bot_username)}</span>}

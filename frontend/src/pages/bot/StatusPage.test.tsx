@@ -41,6 +41,34 @@ import { StatusPage } from "./StatusPage";
 
 const OLD_KEY = botKey({ id: KEY2_ID, name: "old bot", key_prefix: "twb_OldK", revoked_at: ago(86400) });
 
+it("deletes a revoked key only after confirmation and removes it from the list", async () => {
+  const user = userEvent.setup();
+  const path = `/api/v1/bot-admin/keys/${KEY2_ID}`;
+  const { api } = setup(SUPERADMIN, {
+    keys: [botKey(), OLD_KEY],
+    respond: {
+      [`DELETE ${path}`]: () => {
+        api.world.keys = api.world.keys.filter((key) => key.id !== KEY2_ID);
+        return new Response(null, { status: 204 });
+      },
+    },
+  });
+  const active = (await screen.findByText("prod bot")).closest("li") as HTMLElement;
+  expect(within(active).queryByRole("button", { name: /Удалить/ })).not.toBeInTheDocument();
+  const revoked = (await screen.findByText("old bot")).closest("li") as HTMLElement;
+  await user.click(within(revoked).getByRole("button", { name: /Удалить/ }));
+  expect(api.count("DELETE", path)).toBe(0);
+  await user.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: /^Удалить/ }));
+  await waitFor(() => expect(api.count("DELETE", path)).toBe(1));
+  await waitFor(() => expect(screen.queryByText("old bot")).not.toBeInTheDocument());
+});
+
+it.each([[OPERATOR], [VIEWER]])("does not offer key deletion without bot:keys", async (permissions) => {
+  setup(permissions, { keys: [OLD_KEY] });
+  await screen.findByText("old bot");
+  expect(screen.queryByRole("button", { name: /Удалить/ })).not.toBeInTheDocument();
+});
+
 function setup(permissions: string[] = SUPERADMIN, backend: BotBackend = {}) {
   const api = mockBot({ permissions, ...backend });
   const rendered = renderWithProviders(<StatusPage />, { permissions });

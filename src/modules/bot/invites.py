@@ -15,7 +15,7 @@ from modules.audit.models.audit_log import AuditAction, AuditEntity
 from modules.audit.service import AuditService
 from modules.bot.models.invite import BotInvite
 from modules.bot.repository import BotInviteRepository, BotKeyRepository, BotSettingsRepository
-from modules.bot.schemas import InviteCreate
+from modules.bot.schemas import InviteBatchCreate, InviteCreate
 from modules.protocols.repository import ProtocolRepository
 
 # 18 байт = 24 символа из A-Za-z0-9_-: укладывается в параметр start ссылки Telegram (до 64 символов).
@@ -59,6 +59,23 @@ class BotInviteService:
         """Новое приглашение и его открытый код: показывается один раз, в БД остаётся только хеш.
 
         source - откуда выпущено (cli - консоль на сервере панели); попадает в аудит."""
+        parameters = await self._parameters(data)
+        result = await self._stage_create(*parameters, source=source)
+        await self.session.commit()
+        return result
+
+    async def create_batch(self, data: InviteBatchCreate) -> list[tuple[BotInvite, str]]:
+        """Весь пакет и его аудит фиксируются вместе; открытые коды существуют только в ответе."""
+        try:
+            parameters = await self._parameters(data)
+            result = [await self._stage_create(*parameters) for _ in range(data.count)]
+            await self.session.commit()
+        except Exception:
+            await self.session.rollback()
+            raise
+        return result
+
+    async def _parameters(self, data: InviteCreate) -> tuple[UUID, int, datetime, str | None]:
         now = datetime.now(timezone.utc)
         defaults = None
         if data.protocol_id is None or data.days is None or data.expires_at is None:
@@ -74,6 +91,17 @@ class BotInviteService:
             raise NotFoundError(f"Protocol '{protocol_id}' not found")
         if expires_at <= now:
             raise InvalidDataError("Invite deadline must be in the future")
+        return protocol_id, days, expires_at, data.note
+
+    async def _stage_create(
+        self,
+        protocol_id: UUID,
+        days: int,
+        expires_at: datetime,
+        note: str | None,
+        *,
+        source: str | None = None,
+    ) -> tuple[BotInvite, str]:
         code = generate_code()
         invite = await self.invites.create(
             BotInvite(
@@ -81,7 +109,7 @@ class BotInviteService:
                 protocol_id=protocol_id,
                 days=days,
                 expires_at=expires_at,
-                note=data.note,
+                note=note,
                 created_by=self.actor.admin_id,
             )
         )
@@ -96,11 +124,10 @@ class BotInviteService:
                 **({"source": source} if source else {}),
             },
         )
-        await self.session.commit()
         return invite, code
 
     async def revoke(self, invite_id: UUID) -> BotInvite:
-        invite = await self.invites.get_by_id(invite_id)
+        invite = await self.invites.get_by_id(invite_id, lock=True)
         if invite is None:
             raise NotFoundError(f"Invite '{invite_id}' not found")
         if invite.revoked_at is None:
@@ -111,6 +138,19 @@ class BotInviteService:
 
     async def list(self) -> Sequence[BotInvite]:
         return await self.invites.list_all()
+
+    async def delete(self, invite_id: UUID) -> None:
+        # Та же блокировка строки, что при регистрации: проверка не устареет перед DELETE.
+        invite = await self.invites.get_by_id(invite_id, lock=True)
+        if invite is None:
+            raise NotFoundError(f"Invite '{invite_id}' not found")
+        if invite.revoked_at is None:
+            raise ReasonConflictError("invite_not_revoked")
+        if invite.used_at is not None or await self.invites.has_registration(invite.id):
+            raise ReasonConflictError("invite_used")
+        self.audit.record(AuditAction.BOT_INVITE_DELETED, AuditEntity.BOT_INVITE, invite.id)
+        await self.invites.delete(invite)
+        await self.session.commit()
 
     async def check(self, code: str) -> InviteStatus:
         """Состояние приглашения для бота. Ничего не меняет и никаких подробностей приглашения не раскрывает."""

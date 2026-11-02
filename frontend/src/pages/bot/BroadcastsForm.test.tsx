@@ -8,6 +8,7 @@ import {
   OPERATOR,
   PROTO2_ID,
   PROTO_ID,
+  RECIPIENTS,
   SECRET_DETAIL,
   USER_ID,
   VIEWER,
@@ -307,6 +308,46 @@ describe("broadcast form: choosing people", () => {
     );
     expect(await screen.findByRole("checkbox", { name: /Ivan Petrov/ })).not.toBeChecked();
     expect(screen.queryByRole("checkbox", { name: /Anna Blocked/ })).not.toBeInTheDocument();
+  });
+
+  it("shows the recipient list before a search is entered", async () => {
+    const user = userEvent.setup();
+    const { api } = await openSelected(user);
+
+    expect(await screen.findByRole("checkbox", { name: /Ivan Petrov/ })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /Anna Blocked/ })).toHaveAccessibleName(/заблокировал/i);
+    expect(api.of("GET", "/api/v1/bot-admin/recipients").some((call) => !call.query.get("search"))).toBe(
+      true,
+    );
+  });
+
+  it("keeps selected recipients when loading more people and changing the search", async () => {
+    const user = userEvent.setup();
+    const first = Array.from({ length: 50 }, (_, index) => ({
+      ...RECIPIENTS[0],
+      id: `person-${index}`,
+      username: `Person ${String(index).padStart(2, "0")}`,
+    }));
+    const { api } = await openSelected(user, {
+      respond: {
+        "GET /api/v1/bot-admin/recipients": (call, n) =>
+          json(call.query.get("search") ? [RECIPIENTS[2]] : n === 0 ? first : [RECIPIENTS[1]]),
+        [`POST ${BROADCASTS}/audience`]: audienceOf(2),
+      },
+    });
+    await user.click(await screen.findByRole("checkbox", { name: /Person 00/ }));
+    await user.click(screen.getByRole("button", { name: /Показать ещё|Загрузить ещё/ }));
+    await user.click(await screen.findByRole("checkbox", { name: /Anna Blocked/ }));
+    await user.type(screen.getByLabelText(/Поиск получателей/), "Olga");
+    await screen.findByRole("checkbox", { name: /Olga Smith/ });
+    expect(screen.getByRole("checkbox", { name: /Person 00/ })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /Anna Blocked/ })).toBeChecked();
+    await waitFor(() =>
+      expect(api.last("POST", `${BROADCASTS}/audience`)?.body).toMatchObject({
+        target: "selected",
+        user_ids: expect.arrayContaining(["person-0", RECIPIENTS[1]!.id]),
+      }),
+    );
   });
 
   it("marks those who blocked the bot", async () => {

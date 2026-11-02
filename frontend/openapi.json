@@ -4241,6 +4241,47 @@
         }
       }
     },
+    "/api/v1/bot-admin/keys/{key_id}": {
+      "delete": {
+        "tags": [
+          "bot-admin"
+        ],
+        "summary": "Delete Key",
+        "operationId": "delete_key_api_v1_bot_admin_keys__key_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "key_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Key Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/bot-admin/invites": {
       "get": {
         "tags": [
@@ -4375,6 +4416,52 @@
         }
       }
     },
+    "/api/v1/bot-admin/invites/batch": {
+      "post": {
+        "tags": [
+          "bot-admin"
+        ],
+        "summary": "Create Invite Batch",
+        "operationId": "create_invite_batch_api_v1_bot_admin_invites_batch_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteBatchCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteBatchCreated"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/bot-admin/invites/{invite_id}/revoke": {
       "post": {
         "tags": [
@@ -4409,6 +4496,47 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bot-admin/invites/{invite_id}": {
+      "delete": {
+        "tags": [
+          "bot-admin"
+        ],
+        "summary": "Delete Invite",
+        "operationId": "delete_invite_api_v1_bot_admin_invites__invite_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "invite_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Invite Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
           },
           "422": {
             "description": "Validation Error",
@@ -4994,6 +5122,40 @@
               "minimum": 1,
               "default": 20,
               "title": "Limit"
+            }
+          },
+          {
+            "name": "after_username",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "After Username"
+            }
+          },
+          {
+            "name": "after_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "After Id"
             }
           }
         ],
@@ -6173,8 +6335,10 @@
           "gateway_container_recreated",
           "bot_key_created",
           "bot_key_revoked",
+          "bot_key_deleted",
           "bot_invite_created",
           "bot_invite_revoked",
+          "bot_invite_deleted",
           "bot_registration_created",
           "bot_registration_activated",
           "bot_registration_failed",
@@ -7826,6 +7990,86 @@
         ],
         "title": "ImportClient",
         "description": "Один клиент установки AmneziaVPN для переноса в панель. Пользователь: существующий (user_id) или новый\n(username и, если известен, email). PSK и прочие секреты в запросе не принимаются и в параметры задачи не идут."
+      },
+      "InviteBatchCreate": {
+        "properties": {
+          "protocol_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol Id"
+          },
+          "days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 3650.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "count": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "count"
+        ],
+        "title": "InviteBatchCreate"
+      },
+      "InviteBatchCreated": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/InviteCreated"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "InviteBatchCreated"
       },
       "InviteCheckRequest": {
         "properties": {

@@ -100,8 +100,10 @@ export const AUDIT_ACTIONS: Record<AuditAction, ActionInfo> = {
   geoip_override_removed: { group: "gateway" },
   // Telegram-бот: ключи, приглашения, регистрации. Красным — выдача не удалась (человек остался без доступа).
   bot_key_created: { group: "bot" },
+  bot_key_deleted: { group: "bot" },
   bot_key_revoked: { group: "bot", tone: "warn" },
   bot_invite_created: { group: "bot" },
+  bot_invite_deleted: { group: "bot" },
   bot_invite_revoked: { group: "bot" },
   bot_registration_created: { group: "bot" },
   bot_registration_activated: { group: "bot" },

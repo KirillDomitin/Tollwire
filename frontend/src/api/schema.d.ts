@@ -1192,6 +1192,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/bot-admin/keys/{key_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Key */
+        delete: operations["delete_key_api_v1_bot_admin_keys__key_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/bot-admin/invites": {
         parameters: {
             query?: never;
@@ -1216,6 +1233,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/bot-admin/invites/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Invite Batch */
+        post: operations["create_invite_batch_api_v1_bot_admin_invites_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/bot-admin/invites/{invite_id}/revoke": {
         parameters: {
             query?: never;
@@ -1228,6 +1262,23 @@ export interface paths {
         /** Revoke Invite */
         post: operations["revoke_invite_api_v1_bot_admin_invites__invite_id__revoke_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot-admin/invites/{invite_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Invite */
+        delete: operations["delete_invite_api_v1_bot_admin_invites__invite_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1892,7 +1943,7 @@ export interface components {
          * AuditAction
          * @enum {string}
          */
-        AuditAction: "login" | "login_failed" | "login_locked" | "logout" | "password_changed" | "password_change_failed" | "admin_created" | "admin_updated" | "server_created" | "server_updated" | "server_deleted" | "server_credentials_set" | "server_credentials_deleted" | "server_host_key_pinned" | "server_host_key_reset" | "server_host_key_mismatch" | "server_health_changed" | "server_install_started" | "server_install_completed" | "server_install_failed" | "server_sync_started" | "server_sync_completed" | "server_sync_failed" | "server_discover_started" | "server_discover_completed" | "server_discover_failed" | "server_ssh_key_install_started" | "server_ssh_key_install_completed" | "server_ssh_key_install_failed" | "protocol_install_started" | "protocol_install_completed" | "protocol_install_failed" | "protocol_remove_started" | "protocol_remove_completed" | "protocol_remove_failed" | "vpn_user_created" | "vpn_user_updated" | "vpn_user_deleted" | "subscription_created" | "subscription_updated" | "subscription_activated" | "subscription_revoked" | "subscription_expired" | "subscription_deleted" | "access_granted" | "access_updated" | "access_revoked" | "access_expired" | "access_deleted" | "credential_issued" | "credential_imported" | "credential_issue_failed" | "credential_revoked" | "credential_revoke_failed" | "config_viewed" | "clients_import_started" | "clients_import_completed" | "clients_import_failed" | "gateway_exit_add_started" | "gateway_exit_add_completed" | "gateway_exit_add_failed" | "gateway_exit_remove_started" | "gateway_exit_remove_completed" | "gateway_exit_remove_failed" | "gateway_exit_updated" | "gateway_client_assigned" | "gateway_client_unassigned" | "geoip_list_updated" | "geoip_list_activated" | "geoip_override_added" | "geoip_override_removed" | "gateway_ru_applied" | "gateway_ru_apply_failed" | "gateway_client_moved" | "gateway_failover" | "gateway_all_exits_down" | "gateway_exit_recovered" | "gateway_container_recreated" | "bot_key_created" | "bot_key_revoked" | "bot_invite_created" | "bot_invite_revoked" | "bot_registration_created" | "bot_registration_activated" | "bot_registration_failed" | "bot_registration_retried" | "config_link_created" | "bot_broadcast_created" | "bot_broadcast_cancelled" | "bot_config_link_queued" | "bot_settings_updated" | "bot_admin_link_code_created" | "bot_admin_link_created" | "bot_admin_link_removed" | "bot_admin_link_events_updated" | "bot_notify_test_queued";
+        AuditAction: "login" | "login_failed" | "login_locked" | "logout" | "password_changed" | "password_change_failed" | "admin_created" | "admin_updated" | "server_created" | "server_updated" | "server_deleted" | "server_credentials_set" | "server_credentials_deleted" | "server_host_key_pinned" | "server_host_key_reset" | "server_host_key_mismatch" | "server_health_changed" | "server_install_started" | "server_install_completed" | "server_install_failed" | "server_sync_started" | "server_sync_completed" | "server_sync_failed" | "server_discover_started" | "server_discover_completed" | "server_discover_failed" | "server_ssh_key_install_started" | "server_ssh_key_install_completed" | "server_ssh_key_install_failed" | "protocol_install_started" | "protocol_install_completed" | "protocol_install_failed" | "protocol_remove_started" | "protocol_remove_completed" | "protocol_remove_failed" | "vpn_user_created" | "vpn_user_updated" | "vpn_user_deleted" | "subscription_created" | "subscription_updated" | "subscription_activated" | "subscription_revoked" | "subscription_expired" | "subscription_deleted" | "access_granted" | "access_updated" | "access_revoked" | "access_expired" | "access_deleted" | "credential_issued" | "credential_imported" | "credential_issue_failed" | "credential_revoked" | "credential_revoke_failed" | "config_viewed" | "clients_import_started" | "clients_import_completed" | "clients_import_failed" | "gateway_exit_add_started" | "gateway_exit_add_completed" | "gateway_exit_add_failed" | "gateway_exit_remove_started" | "gateway_exit_remove_completed" | "gateway_exit_remove_failed" | "gateway_exit_updated" | "gateway_client_assigned" | "gateway_client_unassigned" | "geoip_list_updated" | "geoip_list_activated" | "geoip_override_added" | "geoip_override_removed" | "gateway_ru_applied" | "gateway_ru_apply_failed" | "gateway_client_moved" | "gateway_failover" | "gateway_all_exits_down" | "gateway_exit_recovered" | "gateway_container_recreated" | "bot_key_created" | "bot_key_revoked" | "bot_key_deleted" | "bot_invite_created" | "bot_invite_revoked" | "bot_invite_deleted" | "bot_registration_created" | "bot_registration_activated" | "bot_registration_failed" | "bot_registration_retried" | "config_link_created" | "bot_broadcast_created" | "bot_broadcast_cancelled" | "bot_config_link_queued" | "bot_settings_updated" | "bot_admin_link_code_created" | "bot_admin_link_created" | "bot_admin_link_removed" | "bot_admin_link_events_updated" | "bot_notify_test_queued";
         /** AuditActorRead */
         AuditActorRead: {
             /**
@@ -2526,6 +2577,24 @@ export interface components {
             email?: string | null;
             /** User Id */
             user_id?: string | null;
+        };
+        /** InviteBatchCreate */
+        InviteBatchCreate: {
+            /** Protocol Id */
+            protocol_id?: string | null;
+            /** Days */
+            days?: number | null;
+            /** Expires At */
+            expires_at?: string | null;
+            /** Note */
+            note?: string | null;
+            /** Count */
+            count: number;
+        };
+        /** InviteBatchCreated */
+        InviteBatchCreated: {
+            /** Items */
+            items: components["schemas"]["InviteCreated"][];
         };
         /** InviteCheckRequest */
         InviteCheckRequest: {
@@ -5956,6 +6025,35 @@ export interface operations {
             };
         };
     };
+    delete_key_api_v1_bot_admin_keys__key_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_invites_api_v1_bot_admin_invites_get: {
         parameters: {
             query?: {
@@ -6022,6 +6120,39 @@ export interface operations {
             };
         };
     };
+    create_invite_batch_api_v1_bot_admin_invites_batch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteBatchCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteBatchCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     revoke_invite_api_v1_bot_admin_invites__invite_id__revoke_post: {
         parameters: {
             query?: never;
@@ -6041,6 +6172,35 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["InviteRead"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_invite_api_v1_bot_admin_invites__invite_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invite_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -6398,6 +6558,8 @@ export interface operations {
             query?: {
                 search?: string | null;
                 limit?: number;
+                after_username?: string | null;
+                after_id?: string | null;
             };
             header?: never;
             path?: never;

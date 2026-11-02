@@ -17,8 +17,8 @@
 | `models/config_link.py` | `ConfigLink` (`config_links`): хеш токена, клиент (CASCADE), `revoked_at`, `last_opened_at`; частичный уникальный индекс «одна живая ссылка на клиента» |
 | `repository.py` | Репозитории трёх моделей; у приглашений `get_by_hash(lock=True)`, у ключей `get_by_hash` (в том числе отозванный, для `revoke` из консоли), `get_active_by_hash` (для `seen`), `list_provisioning` (`SKIP LOCKED`). `ConfigLinkRepository`: клиенты человека, блокировка клиента, открытие по хешу токена |
 | `config_links.py` | `ConfigLinkService`: `issue_for_telegram` (выпуск), `open` (открытие по токену), `url_of` (ответ бота); коды причин `CONFIG_UNAVAILABLE`, `NOT_READY`, `NO_ACCESS`, `NOT_CONFIGURED`; `file_name_of` |
-| `keys.py` | `BotKeyService`: выпуск (`twb_` + 43 символа), список, отзыв, `heartbeat`; `create` и `revoke` принимают `source` |
-| `invites.py` | `BotInviteService`: создание (код 24 символа, `source`), список, отзыв, `check`, `link`; `invite_status` |
+| `keys.py` | `BotKeyService`: выпуск (`twb_` + 43 символа), список, отзыв, удаление отозванного ключа, `heartbeat`; `create` и `revoke` принимают `source` |
+| `invites.py` | `BotInviteService`: одиночный и атомарный пакетный выпуск (код 24 символа), список, отзыв, удаление отозванного неиспользованного приглашения, `check`, `link`; `invite_status` |
 | `registrations.py` | `BotRegistrationService`: `register`, `get`, `by_telegram`, `retry`, `on_issue_finished` (хук воркера), `reconcile` (правило `stale_jobs`) |
 | `payment.py` | `PaymentPolicy` и `InviteFree` (всегда `PAID`) |
 | `dependencies.py` | `require_bot_key`, `BotContext`, метка `bot_key_required` (её читает тест RBAC) |
@@ -41,11 +41,14 @@
 
 | Право | Маршруты |
 |---|---|
-| `bot:read` (viewer и выше) | `GET /keys`, `GET /invites`, `GET /registrations[?status=]`, `GET /registrations/{id}` |
-| `bot:manage` (operator и выше) | `POST /invites`, `POST /invites/{id}/revoke`, `POST /registrations/{id}/retry` (202) |
-| `bot:keys` (только superadmin) | `POST /keys`, `POST /keys/{id}/revoke` |
+| `bot:read` (viewer и выше) | `GET /keys`, `GET /invites`, `GET /registrations[?status=]`, `GET /registrations/{id}`, `GET /recipients` |
+| `bot:manage` (operator и выше) | `POST /invites`, `POST /invites/batch`, `POST /invites/{id}/revoke`, `DELETE /invites/{id}`, `POST /registrations/{id}/retry` (202) |
+| `bot:keys` (только superadmin) | `POST /keys`, `POST /keys/{id}/revoke`, `DELETE /keys/{id}` |
 
 `POST /keys` и `POST /invites` отдают открытый `key` / `code` (и `link` для приглашения) один раз.
+Пакетный выпуск 1–100 приглашений также выдаёт коды/ссылки один раз. Удаление не затрагивает регистрации:
+ключевые ссылки становятся NULL, приглашения со связанной регистрацией удалять нельзя. Контракт и причины
+отказа — [api.md](api.md). Получатели рассылки читаются страницами с курсором `(username, id)`.
 
 ## Консольные скрипты (`src/scripts`)
 
@@ -58,7 +61,7 @@
 
 ## Аудит
 
-`bot_key_created/revoked`, `bot_invite_created/revoked`, `bot_registration_created/activated/failed/retried`,
+`bot_key_created/revoked/deleted`, `bot_invite_created/revoked/deleted`, `bot_registration_created/activated/failed/retried`,
 `config_link_created`; сущности `bot_key`, `bot_invite`, `bot_registration`, `config_link`. Актор бота — без админа,
 только IP. В `meta` нет кодов, ключей, почты и `telegram_id`; у `config_link_created` — `{credential_id, user_id,
 source: bot, replaced}`, без токена и хеша. Пользователь, созданный ботом, — `vpn_user_created` с `{source: bot}`. Ключ и приглашение,

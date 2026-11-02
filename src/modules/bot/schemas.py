@@ -90,9 +90,17 @@ class InviteRead(BaseModel):
     used_by_name: str | None = None
 
 
+class InviteBatchCreate(InviteCreate):
+    count: Annotated[int, Field(ge=1, le=100, strict=True)]
+
+
 class InviteCreated(InviteRead):
     code: str = Field(repr=False)  # показывается один раз
     link: str | None = Field(repr=False)  # t.me/<бот>?start=<код>, если известно имя бота (из heartbeat)
+
+
+class InviteBatchCreated(BaseModel):
+    items: list[InviteCreated] = Field(repr=False)
 
 
 class InviteCheckRequest(BaseModel):

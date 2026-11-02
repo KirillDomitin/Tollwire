@@ -6,6 +6,7 @@ import { Link } from "react-router";
 import { api } from "../../api/client";
 import { useAuth } from "../../auth/AuthContext";
 import { Button } from "../../components/Button";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { Dialog, DialogActions } from "../../components/Dialog";
 import { Notice } from "../../components/Notice";
 import { addDays, endOfLocalDay, exactTime, isValidDay, localDay, timeAgo } from "../../lib/time";
@@ -64,6 +65,7 @@ export function InvitesPage() {
             <InviteRow
               key={invite.id}
               invite={invite}
+              canDelete={manage}
               onRevoke={manage ? () => revoke.mutate(invite.id) : undefined}
               revoking={revoke.isPending && revoke.variables === invite.id}
             />
@@ -89,12 +91,15 @@ function InviteRow({
   invite,
   onRevoke,
   revoking,
+  canDelete,
 }: {
   invite: Invite;
   onRevoke?: () => void;
   revoking: boolean;
+  canDelete: boolean;
 }) {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const known = ["valid", "used", "expired", "revoked"].includes(invite.status);
   return (
     <li className={styles.item} data-signal={SIGNAL[invite.status] ?? "idle"}>
@@ -133,6 +138,23 @@ function InviteRow({
           </span>
         )}
       </div>
+      {canDelete && invite.status === "revoked" && !invite.used_at && !invite.used_by_user_id && (
+        <ConfirmDialog
+          trigger={<Button variant="ghost">{t("bot.invites.delete.trigger")}</Button>}
+          title={t("bot.invites.delete.title")}
+          consequences={t("bot.invites.delete.consequences")}
+          actionLabel={t("bot.invites.delete.action")}
+          busyLabel={t("bot.invites.delete.busy")}
+          onConfirm={async () => {
+            await botUnwrap(
+              api.DELETE("/api/v1/bot-admin/invites/{invite_id}", {
+                params: { path: { invite_id: invite.id } },
+              }),
+            );
+            await queryClient.invalidateQueries({ queryKey: botKeys.invites });
+          }}
+        />
+      )}
       {invite.status === "valid" && onRevoke && (
         <div className={styles.row}>
           <Button variant="ghost" disabled={revoking} onClick={onRevoke}>
@@ -148,6 +170,8 @@ function InviteRow({
  * «Создать приглашение». Ответ с кодом и ссылкой живёт только в состоянии мутации (`gcTime: 0`) и стирается, когда
  * окно закрывают: после этого ссылку не достать (в списке её нет).
  */
+type InviteFormBody = { protocol_id: string; days: number; expires_at: string; note?: string; count: number };
+
 function CreateInviteDialog() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -155,13 +179,25 @@ function CreateInviteDialog() {
   const settings = useBotSettings();
   const protocols = useBotProtocols();
   const create = useMutation({
-    mutationFn: (body: { protocol_id: string; days: number; expires_at: string; note?: string }) =>
-      botUnwrap(api.POST("/api/v1/bot-admin/invites", { body })),
+    mutationFn: async ({ count, ...body }: InviteFormBody) => {
+      if (count === 1) {
+        return [await botUnwrap(api.POST("/api/v1/bot-admin/invites", { body, cache: "no-store" }))];
+      }
+      const result = await botUnwrap(
+        api.POST("/api/v1/bot-admin/invites/batch", {
+          body: { ...body, count },
+          cache: "no-store",
+        }),
+      );
+      return result.items;
+    },
     gcTime: 0,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: botKeys.invites }),
+    retry: false,
+    onSettled: () => queryClient.invalidateQueries({ queryKey: botKeys.invites }),
   });
 
   function close(next: boolean) {
+    if (create.isPending) return;
     if (!next) create.reset();
     setOpen(next);
   }
@@ -180,11 +216,21 @@ function CreateInviteDialog() {
         {created ? (
           <>
             <OneTimeField
-              label={created.link ? t("bot.invites.create.linkLabel") : t("bot.invites.create.codeLabel")}
-              value={created.link ?? created.code}
+              label={
+                created.every((item) => item.link)
+                  ? t("bot.invites.create.linkLabel")
+                  : t("bot.invites.create.codeLabel")
+              }
+              value={created.map((item) => item.link ?? item.code).join("\n")}
+              multiline={created.length > 1}
+              copyLabel={created.length > 1 ? t("bot.copyAll") : undefined}
             />
             <p className={styles.hint}>
-              {created.link ? t("bot.invites.create.onceLink") : t("bot.invites.create.onceCode")}
+              {created.length > 1
+                ? t("bot.invites.create.onceBatch")
+                : created[0]?.link
+                  ? t("bot.invites.create.onceLink")
+                  : t("bot.invites.create.onceCode")}
             </p>
             <DialogActions>
               <Button onClick={() => close(false)}>{t("bot.done")}</Button>
@@ -221,7 +267,7 @@ function InviteForm({
   protocols: BotProtocol[];
   busy: boolean;
   error: string | null;
-  onSubmit: (body: { protocol_id: string; days: number; expires_at: string; note?: string }) => void;
+  onSubmit: (body: InviteFormBody) => void;
   onCancel: () => void;
 }) {
   const { t } = useTranslation();
@@ -232,17 +278,26 @@ function InviteForm({
   const [validity, setValidity] = useState(preset ? String(settings.invite_valid_days) : CUSTOM);
   const [day, setDay] = useState(() => localDay(addDays(new Date(), settings.invite_valid_days)));
   const [note, setNote] = useState("");
+  const [count, setCount] = useState("1");
 
+  const countNumber = Number(count);
   const daysNumber = Number(days);
   const custom = validity === CUSTOM;
   const valid =
-    protocolId !== "" && Number.isInteger(daysNumber) && daysNumber >= 1 && (!custom || isValidDay(day));
+    Number.isInteger(countNumber) &&
+    countNumber >= 1 &&
+    countNumber <= 100 &&
+    protocolId !== "" &&
+    Number.isInteger(daysNumber) &&
+    daysNumber >= 1 &&
+    (!custom || isValidDay(day));
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!valid) return;
+    if (!valid || busy) return;
     const expires = custom ? endOfLocalDay(day) : addDays(new Date(), Number(validity)).toISOString();
     onSubmit({
+      count: countNumber,
       protocol_id: protocolId,
       days: daysNumber,
       expires_at: expires,
@@ -252,6 +307,22 @@ function InviteForm({
 
   return (
     <form className={styles.form} onSubmit={submit}>
+      <div className={styles.field}>
+        <label htmlFor="invite-count" className={styles.label}>
+          {t("bot.invites.create.count")}
+        </label>
+        <input
+          id="invite-count"
+          type="number"
+          className={styles.control}
+          value={count}
+          onChange={(event) => setCount(event.target.value)}
+          min={1}
+          max={100}
+          step={1}
+          required
+        />
+      </div>
       <div className={styles.field}>
         <label htmlFor="invite-protocol" className={styles.label}>
           {t("bot.invites.create.protocol")}
@@ -335,7 +406,7 @@ function InviteForm({
       </div>
       {error && <Notice>{error}</Notice>}
       <DialogActions>
-        <Button variant="ghost" onClick={onCancel}>
+        <Button variant="ghost" onClick={onCancel} disabled={busy}>
           {t("common.cancel")}
         </Button>
         <Button type="submit" busy={busy} busyLabel={t("bot.invites.create.busy")} disabled={!valid}>

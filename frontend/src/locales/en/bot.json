@@ -79,6 +79,13 @@
       "nameHint": "For example, \"main bot\".",
       "busy": "Creating…",
       "submit": "Create"
+    },
+    "delete": {
+      "trigger": "Delete",
+      "title": "Delete key “{{name}}”?",
+      "consequences": "The revoked key will be removed from the list. Audit history is retained.",
+      "action": "Delete key",
+      "busy": "Deleting…"
     }
   },
   "invites": {
@@ -114,7 +121,16 @@
       "linkLabel": "Invite link",
       "codeLabel": "Invite code",
       "onceLink": "The link is shown once: after the window is closed it cannot be retrieved, and the list does not have it. Send it to the person.",
-      "onceCode": "The code is shown once. The bot name is not known yet (the bot has not been in touch), so there is no ready link: send the code to the person and ask them to open the bot and send it /start with this code."
+      "onceCode": "The code is shown once. The bot name is not known yet (the bot has not been in touch), so there is no ready link: send the code to the person and ask them to open the bot and send it /start with this code.",
+      "count": "Number of links",
+      "onceBatch": "Copy all links or codes now: they cannot be displayed again after closing this window."
+    },
+    "delete": {
+      "trigger": "Delete",
+      "title": "Delete invite?",
+      "consequences": "The revoked unused invite will be deleted. Audit history is retained.",
+      "action": "Delete invite",
+      "busy": "Deleting…"
     }
   },
   "registrations": {
@@ -201,7 +217,8 @@
     },
     "cancel": "Cancel",
     "selfTest": "Send a test to myself",
-    "selfTestQueued": "Test queued"
+    "selfTestQueued": "Test queued",
+    "selectedCount": "Selected: {{count}} of 1000"
   },
   "notify": {
     "title": "My notifications",
@@ -248,5 +265,6 @@
       "login_locked": "Login locked",
       "panel_down": "Panel unavailable"
     }
-  }
+  },
+  "copyAll": "Copy all"
 }

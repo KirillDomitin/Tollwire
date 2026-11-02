@@ -8,10 +8,20 @@ import styles from "./Bot.module.css";
  * Секрет, который показывают один раз (ключ бота, ссылка-приглашение): поле только для чтения и «Скопировать».
  * Не вышло скопировать (во встроенных браузерах буфера может не быть) - поле выделяется и просят скопировать вручную.
  */
-export function OneTimeField({ label, value }: { label: string; value: string }) {
+export function OneTimeField({
+  label,
+  value,
+  multiline = false,
+  copyLabel,
+}: {
+  label: string;
+  value: string;
+  multiline?: boolean;
+  copyLabel?: string;
+}) {
   const { t } = useTranslation();
   const id = useId();
-  const field = useRef<HTMLInputElement>(null);
+  const field = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
   const [copied, setCopied] = useState(false);
   const [failed, setFailed] = useState(false);
 
@@ -32,19 +42,37 @@ export function OneTimeField({ label, value }: { label: string; value: string })
       <label htmlFor={id} className={styles.label}>
         {label}
       </label>
-      <input
-        id={id}
-        ref={field}
-        readOnly
-        value={value}
-        className={styles.secret}
-        autoComplete="off"
-        spellCheck={false}
-        onFocus={(event) => event.currentTarget.select()}
-      />
+      {multiline ? (
+        <textarea
+          id={id}
+          ref={(node) => {
+            field.current = node;
+          }}
+          readOnly
+          value={value}
+          rows={Math.min(value.split("\n").length, 8)}
+          className={`${styles.secret} ${styles.textarea}`}
+          autoComplete="off"
+          spellCheck={false}
+          onFocus={(event) => event.currentTarget.select()}
+        />
+      ) : (
+        <input
+          id={id}
+          ref={(node) => {
+            field.current = node;
+          }}
+          readOnly
+          value={value}
+          className={styles.secret}
+          autoComplete="off"
+          spellCheck={false}
+          onFocus={(event) => event.currentTarget.select()}
+        />
+      )}
       <div className={styles.row}>
         <Button variant="ghost" onClick={() => void copy()}>
-          {copied ? t("bot.copied") : t("bot.copy")}
+          {copied ? t("bot.copied") : (copyLabel ?? t("bot.copy"))}
         </Button>
         {failed && (
           <p role="status" className={styles.hint}>

@@ -108,8 +108,10 @@ class AuditAction(enum.Enum):
     # Telegram-бот (25.1): ключи, приглашения, регистрации. В meta нет ключей, кодов, почты и telegram_id.
     BOT_KEY_CREATED = "bot_key_created"
     BOT_KEY_REVOKED = "bot_key_revoked"
+    BOT_KEY_DELETED = "bot_key_deleted"
     BOT_INVITE_CREATED = "bot_invite_created"
     BOT_INVITE_REVOKED = "bot_invite_revoked"
+    BOT_INVITE_DELETED = "bot_invite_deleted"
     BOT_REGISTRATION_CREATED = "bot_registration_created"  # приглашение занято, доступ выдаётся
     BOT_REGISTRATION_ACTIVATED = "bot_registration_activated"
     BOT_REGISTRATION_FAILED = "bot_registration_failed"  # выдача не удалась: источник уведомления админу (25.5)

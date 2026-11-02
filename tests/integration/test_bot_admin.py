@@ -312,6 +312,54 @@ async def test_recipients_respect_the_limit(api: httpx.AsyncClient, session: Asy
     assert len(await get_json(api, RECIPIENTS_URL, limit=2)) == 2
 
 
+async def test_recipients_cursor_pages_equal_names_without_gaps_or_duplicates(
+    api: httpx.AsyncClient, session: AsyncSession
+) -> None:
+    people = [
+        await add_person(session, 5550000100 + index, name)
+        for index, name in enumerate(["Zulu", "Same", "Alpha", "Same", "Same", "Omega"])
+    ]
+    expected = [str(person.id) for person in sorted(people, key=lambda person: (person.username, person.id))]
+    seen: list[str] = []
+    after: dict[str, str] = {}
+    for _ in range(4):
+        page = await get_json(api, RECIPIENTS_URL, limit=2, **after)
+        if not page:
+            break
+        seen.extend(item["id"] for item in page)
+        after = {"after_username": page[-1]["username"], "after_id": page[-1]["id"]}
+
+    assert page == []
+    assert seen == expected
+
+
+async def test_recipients_cursor_keeps_the_search_filter_on_later_pages(
+    api: httpx.AsyncClient, session: AsyncSession
+) -> None:
+    first = await add_person(session, 5550000100, "Alpha", telegram_username="needle_tg")
+    await add_person(session, 5550000101, "Beta", telegram_username="unrelated")
+    second = await add_person(session, 5550000102, "Needle Person")
+    third = await add_person(session, 5550000103, "Zulu", telegram_username="other_NEEDLE")
+    seen: list[str] = []
+    after: dict[str, str] = {}
+    for _ in range(4):
+        page = await get_json(api, RECIPIENTS_URL, search="NEEDLE", limit=1, **after)
+        if not page:
+            break
+        seen.extend(item["id"] for item in page)
+        after = {"after_username": page[-1]["username"], "after_id": page[-1]["id"]}
+
+    assert page == []
+    assert seen == [str(first.id), str(second.id), str(third.id)]
+
+
+@pytest.mark.parametrize("half", [{"after_username": "Person"}, {"after_id": str(uuid4())}])
+async def test_recipients_cursor_requires_both_halves(api: httpx.AsyncClient, half: dict[str, str]) -> None:
+    response = await api.get(RECIPIENTS_URL, params=half)
+
+    assert response.status_code == 422, response.text
+
+
 async def test_a_search_with_sql_wildcards_matches_them_literally(
     api: httpx.AsyncClient, session: AsyncSession
 ) -> None:

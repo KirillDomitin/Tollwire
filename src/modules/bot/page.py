@@ -134,7 +134,9 @@ class BotPageService:
             if link.linked_at is not None
         ]
 
-    async def recipients(self, search: str | None, limit: int) -> list[RecipientRead]:
+    async def recipients(
+        self, search: str | None, limit: int, after: tuple[str, UUID] | None = None
+    ) -> list[RecipientRead]:
         return [
             RecipientRead(
                 id=user.id,
@@ -142,7 +144,7 @@ class BotPageService:
                 telegram_username=user.telegram_username,
                 bot_blocked_at=user.bot_blocked_at,
             )
-            for user in await self.page.recipients(search.strip() if search else None, limit)
+            for user in await self.page.recipients(search.strip() if search else None, limit, after)
         ]
 
     async def protocols(self) -> list[BotProtocolRead]:

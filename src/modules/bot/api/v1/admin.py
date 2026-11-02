@@ -52,6 +52,8 @@ from modules.bot.schemas import (
     BroadcastRead,
     BroadcastTestRequest,
     ConfigLinkQueued,
+    InviteBatchCreate,
+    InviteBatchCreated,
     InviteCreate,
     InviteCreated,
     InviteRead,
@@ -119,6 +121,11 @@ async def revoke_key(key_id: UUID, session: Session, actor: Actor) -> BotKeyRead
     return BotKeyRead.model_validate(await BotKeyService(session, actor).revoke(key_id))
 
 
+@router.delete("/keys/{key_id}", dependencies=[Depends(require(Permission.BOT_KEYS))], status_code=204)
+async def delete_key(key_id: UUID, session: Session, actor: Actor) -> None:
+    await BotKeyService(session, actor).delete(key_id)
+
+
 # --- приглашения ---------------------------------------------------------------------------------------------------
 
 
@@ -145,10 +152,35 @@ async def create_invite(data: InviteCreate, session: Session, actor: Actor) -> I
 
 
 @router.post(
+    "/invites/batch",
+    dependencies=[Depends(require(Permission.BOT_MANAGE))],
+    response_model=InviteBatchCreated,
+    status_code=201,
+)
+async def create_invite_batch(
+    data: InviteBatchCreate, session: Session, actor: Actor, response: Response
+) -> InviteBatchCreated:
+    response.headers["Cache-Control"] = "no-store"
+    service = BotInviteService(session, actor)
+    created = await service.create_batch(data)
+    return InviteBatchCreated(
+        items=[
+            InviteCreated(**invite_read(invite).model_dump(), code=code, link=await service.link(code))
+            for invite, code in created
+        ]
+    )
+
+
+@router.post(
     "/invites/{invite_id}/revoke", dependencies=[Depends(require(Permission.BOT_MANAGE))], response_model=InviteRead
 )
 async def revoke_invite(invite_id: UUID, session: Session, actor: Actor) -> InviteRead:
     return invite_read(await BotInviteService(session, actor).revoke(invite_id))
+
+
+@router.delete("/invites/{invite_id}", dependencies=[Depends(require(Permission.BOT_MANAGE))], status_code=204)
+async def delete_invite(invite_id: UUID, session: Session, actor: Actor) -> None:
+    await BotInviteService(session, actor).delete(invite_id)
 
 
 # --- регистрации ---------------------------------------------------------------------------------------------------
@@ -278,9 +310,14 @@ async def list_recipients(
     session: Session,
     search: str | None = Query(default=None, max_length=100),
     limit: int = Query(default=20, ge=1, le=100),
+    after_username: str | None = Query(default=None, max_length=100),
+    after_id: UUID | None = None,
 ) -> list[RecipientRead]:
     """Люди с привязанным Telegram для выбора получателей: поиск по имени и по имени в Telegram."""
-    return await BotPageService(session).recipients(search, limit)
+    if (after_username is None) != (after_id is None):
+        raise HTTPException(status_code=422, detail="after_username and after_id go together")
+    after = (after_username, after_id) if after_username is not None and after_id is not None else None
+    return await BotPageService(session).recipients(search, limit, after)
 
 
 # --- рассылки ------------------------------------------------------------------------------------------------------

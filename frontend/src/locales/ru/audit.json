@@ -106,7 +106,9 @@
     "bot_admin_link_created": "Telegram администратора привязан",
     "bot_admin_link_removed": "Telegram администратора отвязан",
     "bot_admin_link_events_updated": "События уведомлений изменены",
-    "bot_notify_test_queued": "Пробное уведомление поставлено в очередь"
+    "bot_notify_test_queued": "Пробное уведомление поставлено в очередь",
+    "bot_key_deleted": "Удалён ключ Telegram-бота",
+    "bot_invite_deleted": "Удалено приглашение в бота"
   },
   "details": {
     "reason": "Причина",

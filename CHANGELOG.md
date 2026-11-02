@@ -17,6 +17,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- Bot panel: delete revoked keys and unused revoked invitations, create up to 100 invitations at once and copy
+  all links, and choose broadcast recipients from a searchable paginated list.
+
 - Personal Telegram notifications: link an administrator with a one-time code, choose events and test delivery
   on the Bot page; receive server, gateway, job and security alerts. Bot 0.3.0 also reports panel outages and recovery.
 

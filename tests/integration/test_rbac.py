@@ -177,6 +177,9 @@ def test_the_bot_page_routes_exist_with_the_agreed_permissions() -> None:
         ("GET", "protocols"): read,
         ("GET", "recipients"): read,
         ("GET", "invites"): read,
+        ("DELETE", "keys/{}"): Permission.BOT_KEYS,
+        ("DELETE", "invites/{}"): manage,
+        ("POST", "invites/batch"): manage,
         ("GET", "registrations"): read,
         ("GET", "broadcasts"): read,
         ("POST", "broadcasts"): manage,
@@ -422,6 +425,9 @@ def bot_critical() -> dict[str, Permission]:
     """Опасные действия бота. Функция, а не словарь рядом с CRITICAL: Permission.BOT_KEYS читается при вызове."""
     return {
         "POST /api/v1/bot-admin/keys": Permission.BOT_KEYS,  # выпуск ключа: им бот входит в панель
+        "DELETE /api/v1/bot-admin/keys/{key_id}": Permission.BOT_KEYS,
+        "DELETE /api/v1/bot-admin/invites/{invite_id}": Permission.BOT_MANAGE,
+        "POST /api/v1/bot-admin/invites/batch": Permission.BOT_MANAGE,
         "POST /api/v1/bot-admin/broadcasts": Permission.BOT_MANAGE,  # сообщения настоящим людям от имени сервиса
         "POST /api/v1/bot-admin/users/{user_id}/config-link": Permission.BOT_MANAGE,  # выпуск ссылки на конфиг
         "POST /api/v1/bot-admin/me/telegram/code": Permission.BOT_NOTIFY,  # код привязки Telegram к админу

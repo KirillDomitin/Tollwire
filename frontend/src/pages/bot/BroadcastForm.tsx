@@ -1,4 +1,4 @@
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -61,16 +61,28 @@ export function BroadcastForm() {
   }, [search]);
 
   const protocols = useBotProtocols(target === "protocol");
-  const people = useQuery({
+  const people = useInfiniteQuery({
     queryKey: botKeys.recipients(query),
-    queryFn: () =>
+    initialPageParam: null as { username: string; id: string } | null,
+    queryFn: ({ pageParam, signal }) =>
       botUnwrap(
         api.GET("/api/v1/bot-admin/recipients", {
-          params: { query: { search: query, limit: PEOPLE_LIMIT } },
+          params: {
+            query: {
+              search: query,
+              limit: PEOPLE_LIMIT,
+              after_username: pageParam?.username,
+              after_id: pageParam?.id,
+            },
+          },
+          signal,
         }),
       ),
-    enabled: target === "selected" && query !== "",
-    placeholderData: keepPreviousData,
+    enabled: target === "selected",
+    getNextPageParam: (last) => {
+      const tail = last.at(-1);
+      return last.length === PEOPLE_LIMIT && tail ? { username: tail.username, id: tail.id } : undefined;
+    },
   });
 
   // Кому: один и тот же набор полей уходит и в подсчёт получателей, и в саму рассылку.
@@ -115,13 +127,13 @@ export function BroadcastForm() {
   function toggle(person: Recipient, on: boolean) {
     setPicked((current) => {
       const next = new Map(current);
-      if (on) next.set(person.id, person);
+      if (on && next.size < 1000) next.set(person.id, person);
       else next.delete(person.id);
       return next;
     });
   }
 
-  const shown = query === "" ? [] : (people.data ?? []);
+  const shown = people.data?.pages.flat() ?? [];
   const listed = [...shown, ...[...picked.values()].filter((p) => !shown.some((s) => s.id === p.id))];
   const describedBy = [ids.counter, htmlError ? ids.error : null].filter(Boolean).join(" ");
 
@@ -228,9 +240,8 @@ export function BroadcastForm() {
             onChange={(event) => setSearch(event.target.value)}
             autoComplete="off"
           />
-          {query === "" && picked.size === 0 && (
-            <p className={styles.hint}>{t("bot.broadcasts.searchHint")}</p>
-          )}
+          <p className={styles.hint}>{t("bot.broadcasts.selectedCount", { count: picked.size })}</p>
+          {people.isPending && <p role="status">{t("bot.loading")}</p>}
           {people.isError && <p className={styles.fieldError}>{people.error.message}</p>}
           {listed.length > 0 && (
             <ul className={styles.people}>
@@ -240,6 +251,7 @@ export function BroadcastForm() {
                     <input
                       type="checkbox"
                       checked={picked.has(person.id)}
+                      disabled={!picked.has(person.id) && picked.size >= 1000}
                       onChange={(event) => toggle(person, event.target.checked)}
                     />
                     <span>{person.username}</span>{" "}
@@ -254,9 +266,17 @@ export function BroadcastForm() {
               ))}
             </ul>
           )}
-          {query !== "" && people.data && people.data.length === 0 && (
-            <p className={styles.hint}>{t("bot.broadcasts.nobody")}</p>
+          {people.hasNextPage && (
+            <Button
+              variant="ghost"
+              busy={people.isFetchingNextPage}
+              disabled={people.isFetching}
+              onClick={() => void people.fetchNextPage()}
+            >
+              {t("bot.more")}
+            </Button>
           )}
+          {people.data && shown.length === 0 && <p className={styles.hint}>{t("bot.broadcasts.nobody")}</p>}
         </div>
       )}
 

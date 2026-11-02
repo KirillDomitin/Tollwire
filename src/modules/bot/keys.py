@@ -6,7 +6,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.exceptions import NotFoundError
+from core.exceptions import NotFoundError, ReasonConflictError
 from core.security import generate_token, hash_token
 from modules.audit.actor import AuditActor
 from modules.audit.models.audit_log import AuditAction, AuditEntity
@@ -64,6 +64,16 @@ class BotKeyService:
 
     async def list(self) -> Sequence[BotKey]:
         return await self.keys.list_all()
+
+    async def delete(self, key_id: UUID) -> None:
+        key = await self.keys.get_by_id(key_id, lock=True)
+        if key is None:
+            raise NotFoundError(f"Bot key '{key_id}' not found")
+        if key.revoked_at is None:
+            raise ReasonConflictError("key_not_revoked")
+        self.audit.record(AuditAction.BOT_KEY_DELETED, AuditEntity.BOT_KEY, key.id, _meta(key, None))
+        await self.keys.delete(key)
+        await self.session.commit()
 
     async def heartbeat(self, key_id: UUID, data: HeartbeatRequest) -> HeartbeatResponse:
         """Бот сообщает, что жив: имя бота и версия видны админу на странице «Бот»."""

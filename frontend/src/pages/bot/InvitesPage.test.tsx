@@ -350,3 +350,87 @@ describe("bot invites in English", () => {
     expect(screen.getByRole("dialog").textContent).not.toMatch(/[А-Яа-яЁё]/);
   });
 });
+
+describe("bot invites: deletion and batch creation", () => {
+  it("deletes only a revoked unused invite after confirmation and refreshes the list", async () => {
+    const user = userEvent.setup();
+    const path = "/api/v1/bot-admin/invites/i-revoked";
+    const { api } = setup(OPERATOR, {
+      respond: {
+        [`DELETE ${path}`]: () => {
+          api.world.invites = api.world.invites.filter((item) => item.id !== "i-revoked");
+          return new Response(null, { status: 204 });
+        },
+      },
+    });
+    for (const note of ["n valid", "n used", "n expired"]) {
+      expect(within(await rowOf(note)).queryByRole("button", { name: /Удалить/ })).not.toBeInTheDocument();
+    }
+    await user.click(within(await rowOf("n revoked")).getByRole("button", { name: /Удалить/ }));
+    expect(api.count("DELETE", path)).toBe(0);
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: /^Удалить/ }));
+
+    await waitFor(() => expect(api.count("DELETE", path)).toBe(1));
+    await waitFor(() => expect(screen.queryByText("n revoked")).not.toBeInTheDocument());
+  });
+
+  it("gives a viewer no delete action even for revoked invites", async () => {
+    setup(VIEWER);
+    expect(
+      within(await rowOf("n revoked")).queryByRole("button", { name: /Удалить/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("creates the requested number in one request, copies all links and erases the result on close", async () => {
+    const user = userEvent.setup();
+    const copy = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
+    const links = ["one", "two", "three"].map((code) => `https://t.me/tollwire_bot?start=batch-${code}`);
+    const { api, queryClient } = setup(OPERATOR, {
+      respond: {
+        "POST /api/v1/bot-admin/invites/batch": () =>
+          json(
+            {
+              items: links.map((link, index) => ({
+                ...invite({ id: `batch-${index}` }),
+                code: `batch-code-${index}`,
+                link,
+              })),
+            },
+            201,
+          ),
+      },
+    });
+    const dialog = await openForm(user);
+    const count = within(dialog).getByRole("spinbutton", { name: /Количество/ });
+    expect(count).toHaveValue(1);
+    await user.clear(count);
+    await user.type(count, "3");
+    await user.click(within(dialog).getByRole("button", { name: /^Создать$/ }));
+
+    const copyAll = await within(dialog).findByRole("button", { name: /Копировать все|Скопировать все/ });
+    expect(api.count("POST", "/api/v1/bot-admin/invites/batch")).toBe(1);
+    expect(api.last("POST", "/api/v1/bot-admin/invites/batch")?.body).toMatchObject({
+      count: 3,
+      protocol_id: PROTO_ID,
+      days: 30,
+    });
+    expect(api.count("POST", "/api/v1/bot-admin/invites")).toBe(0);
+    await user.click(copyAll);
+    expect(copy).toHaveBeenCalledWith(links.join("\n"));
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await waitFor(() => expect(cachedText(queryClient)).not.toContain("batch-code-"));
+    for (const link of links) expect(screen.queryByDisplayValue(link)).not.toBeInTheDocument();
+  });
+
+  it.each(["0", "101", "1.5"])("blocks an invalid batch count %s before sending", async (value) => {
+    const user = userEvent.setup();
+    const { api } = setup();
+    const dialog = await openForm(user);
+    const count = within(dialog).getByRole("spinbutton", { name: /Количество/ });
+    fireEvent.change(count, { target: { value } });
+    expect(within(dialog).getByRole("button", { name: /^Создать$/ })).toBeDisabled();
+    expect(api.count("POST", "/api/v1/bot-admin/invites/batch")).toBe(0);
+  });
+});
