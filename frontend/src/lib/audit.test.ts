@@ -615,3 +615,78 @@ describe("broadcast and bot settings events (stage 25.4)", () => {
     expect(subject).toEqual({ label: "anna", to: `/users/${USER_ID}` });
   });
 });
+
+describe("notification events (stage 25.5)", () => {
+  const BOT_EVENTS = [
+    "bot_admin_link_code_created",
+    "bot_admin_link_created",
+    "bot_admin_link_removed",
+    "bot_admin_link_events_updated",
+    "bot_notify_test_queued",
+  ] as const;
+  // До перегенерации схемы этих действий нет в AuditAction: читаем таблицу как обычную карту.
+  const info = (action: string) =>
+    (AUDIT_ACTIONS as Record<string, { group: string; tone?: string | null } | undefined>)[action];
+  const text = (action: string) => auditActionText(action as unknown as AuditAction);
+  const asLog = (action: string, extra: Record<string, unknown> = {}) => log({ action, ...extra });
+
+  it("knows server_health_changed in the servers group and the admin link events in the bot group", () => {
+    expect(info("server_health_changed")?.group).toBe("servers");
+    for (const action of BOT_EVENTS) expect(info(action)?.group, action).toBe("bot");
+  });
+
+  it("offers them in the journal filter", () => {
+    expect(actionsOfGroup("servers")).toContain("server_health_changed");
+    for (const action of BOT_EVENTS) expect(actionsOfGroup("bot")).toContain(action);
+  });
+
+  it("has a text in every language, English without Cyrillic", async () => {
+    for (const language of ["ru", "en"]) {
+      await i18n.changeLanguage(language);
+      for (const action of [...BOT_EVENTS, "server_health_changed"]) {
+        expect(text(action), `${language} ${action}`).not.toBe(`audit.actions.${action}`);
+        if (language === "en") expect(text(action)).not.toMatch(/[А-Яа-яЁё]/);
+      }
+    }
+  });
+
+  it("shows from, to and reason of a health change with translated labels", () => {
+    const details = auditDetails(
+      asLog("server_health_changed", { metadata: { from: "ok", to: "down", reason: "unreachable" } }),
+    );
+
+    expect(details).toHaveLength(3);
+    for (const detail of details) expect(detail.label).not.toContain("audit.details");
+    const shown = JSON.stringify(details);
+    expect(shown).toMatch(/ok/);
+    expect(shown).toMatch(/down/);
+  });
+
+  it("shows a health change that has no reason and a first check from nothing without crashing", () => {
+    expect(() =>
+      auditDetails(asLog("server_health_changed", { metadata: { from: null, to: "ok" } })),
+    ).not.toThrow();
+    expect(auditDetails(asLog("server_health_changed", { metadata: { from: "down", to: "ok" } }))).toHaveLength(2);
+  });
+
+  it("shows whether a Telegram was replaced and never the admin id, the code, the Telegram id or the name", () => {
+    const shown = JSON.stringify(
+      auditDetails(
+        asLog("bot_admin_link_created", {
+          metadata: {
+            admin_id: "SECRET-ADMIN-ID",
+            replaced: true,
+            code: "SECRET-CODE",
+            telegram_id: 666000123,
+            telegram_username: "SECRET-NAME",
+          },
+        }),
+      ),
+    );
+
+    expect(auditDetails(asLog("bot_admin_link_created", { metadata: { replaced: true } }))).toHaveLength(1);
+    for (const secret of ["SECRET-ADMIN-ID", "SECRET-CODE", "666000123", "SECRET-NAME"]) {
+      expect(shown).not.toContain(secret);
+    }
+  });
+});

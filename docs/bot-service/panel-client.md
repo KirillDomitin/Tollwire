@@ -21,7 +21,7 @@
 
 | Метод клиента | Запрос | Результат |
 |---|---|---|
-| `heartbeat(bot_username, version)` | `POST /heartbeat` | ответ отбрасывается |
+| `heartbeat(bot_username, version, local=False)` | `POST /heartbeat` | NotifyConfig; старое `{}` не стирает настройки; notify_updated отмечает корректную новую конфигурацию |
 | `check_invite(code)` | `POST /invites/check` | строка `status` |
 | `register(code, telegram_id, telegram_username, name, email)` | `POST /registrations` | `Registration(registration_id, status)` |
 | `registration(registration_id)` | `GET /registrations/{id}` | `Registration` или `None` (404) |
@@ -32,6 +32,11 @@
 непустой `config_url`), — `PanelUnexpected`. `ConfigLink` в `repr` адрес не показывает: в нём токен.
 
 ## Повторы
+
+`admin_link(code, telegram_id, telegram_username)` возвращает `AdminLinkResult(admin_name)`;
+`claim(limit, kinds)` получает notify при явном выборе; ack подтверждает аренду.
+Наблюдатель получает результаты heartbeat/claim: 401/429 означают живую панель, но не восстановление.
+Подробно — [panel-watch.md](panel-watch.md).
 
 - Сбой сети (`httpx.TransportError`), 502, 503, 504 — пауза 0.5, 1, 2, 4 с и повтор. После последней паузы —
   `PanelUnavailable`. Повтор безопасен для `POST /registrations`: он идемпотентен на стороне панели. `config-link` при повторе выпускает новую

@@ -14,6 +14,7 @@ _KEY_SHAPE = re.compile(r"twb_[A-Za-z0-9_-]+")  # ключ бота в пане�
 # Адрес страницы конфига: токен во фрагменте открывает ключ любому, у кого он есть. Маскируется адрес целиком,
 # в том числе когда его окружают скобки, кавычки или угловые скобки.
 _PAGE_URL_SHAPE = re.compile(r"(?:https?://[^\s<>()\[\]'\"]*)?/c#[A-Za-z0-9_-]+")
+_ADMIN_CODE = re.compile(r"((?:start|code)=|/(?:admin|start)\s+)[A-Za-z0-9_-]{32}(?![A-Za-z0-9_-])")
 _MASK = "***"
 
 
@@ -27,6 +28,7 @@ class RedactingFormatter(logging.Formatter):
         text = super().format(record)  # вместе с traceback
         for secret in self._secrets:
             text = text.replace(secret, _MASK)
+        text = _ADMIN_CODE.sub(lambda match: match[1] + _MASK, text)
         return _PAGE_URL_SHAPE.sub(_MASK, _KEY_SHAPE.sub(_MASK, _TOKEN_SHAPE.sub(_MASK, text)))
 
 

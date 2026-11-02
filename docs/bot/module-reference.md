@@ -2,10 +2,17 @@
 
 Описательные части: карта файлов, модели, API, операции. Инварианты и грабли остались в CLAUDE.md.
 
+Инварианты для агентов — также `src/modules/bot/AGENTS.md`. Уведомления во всех слоях —
+[notify.md](notify.md), HTTP — [api.md](api.md).
+
 ## Файлы
 
 | Путь | Что |
 |---|---|
+| `admin_links.py`, `admin_link_repository.py` | `AdminLinkService`, `AdminLinkRepository`: одноразовый код, привязка, события, отвязка, живые чаты |
+| `notify_catalog.py`, `notify_texts.py`, `notify.py` | Каталог, безопасный plain-текст, транзакционный `NotifyCollector` из аудита в outbox |
+| `models/admin_link.py`, `models/notify.py` | `AdminTelegramLink`, единственный `BotNotifyCursor`, дедупликация `BotNotifySeen` |
+| `outbox.py` | `OutboxService`: `claim(kinds)` с opt-in для notify, текущий Telegram привязки, TTL, `ack blocked` по типу получателя |
 | `models/key.py`, `invite.py`, `registration.py` | `BotKey` (`bot_keys`), `BotInvite` (`bot_invites`), `BotRegistration` (`bot_registrations`), `RegistrationStatus`, `OPEN_STATUSES` |
 | `models/config_link.py` | `ConfigLink` (`config_links`): хеш токена, клиент (CASCADE), `revoked_at`, `last_opened_at`; частичный уникальный индекс «одна живая ссылка на клиента» |
 | `repository.py` | Репозитории трёх моделей; у приглашений `get_by_hash(lock=True)`, у ключей `get_by_hash` (в том числе отозванный, для `revoke` из консоли), `get_active_by_hash` (для `seen`), `list_provisioning` (`SKIP LOCKED`). `ConfigLinkRepository`: клиенты человека, блокировка клиента, открытие по хешу токена |
@@ -59,7 +66,7 @@ source: bot, replaced}`, без токена и хеша. Пользовател
 
 ## Ограничения текущей версии
 
-- `heartbeat` отвечает `{}`.
-- Настроек бота по умолчанию нет: протокол и срок в приглашении обязательны.
-- Оплаты нет (`InviteFree`). Уведомлений админу, блокировки пользователя ботом и веб-интерфейса нет.
+- HTTP `heartbeat` возвращает `notify` с порогом и чатами (`no-store`).
+- Настройки бота задают протокол и срок по умолчанию, срок приглашения и порог недоступности панели.
+- Оплаты нет (`InviteFree`). Уведомления — в HTTP, боте 0.3.0 и `/bot/notify`.
 - Функционального индекса по `lower(email)` нет.

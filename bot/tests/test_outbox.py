@@ -151,7 +151,7 @@ async def test_the_claim_asks_for_the_batch_size_from_the_settings(sender: Sende
     sender.start(batch=10)
     await wait_until(lambda: sender.panel.count(OUTBOX_CLAIM) >= 1, what="a claim")
 
-    assert sender.panel.bodies(OUTBOX_CLAIM)[0] == {"limit": 10}
+    assert sender.panel.bodies(OUTBOX_CLAIM)[0] == {"limit": 10, "kinds": ["news", "config", "notify"]}
 
 
 async def test_a_full_batch_is_followed_by_the_next_claim_without_the_five_second_wait(sender: SenderWorld) -> None:

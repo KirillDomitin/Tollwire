@@ -20,6 +20,10 @@ from aiogram.fsm.storage.base import BaseStorage, StorageKey
 DAY = 24 * 60 * 60
 
 _SCHEMA = """
+CREATE TABLE IF NOT EXISTS panel_watch (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    data TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS fsm (
     key        TEXT PRIMARY KEY,
     state      TEXT,
@@ -235,3 +239,18 @@ class SqliteStorage(BaseStorage):
                     "DELETE FROM outbox_journal WHERE id = ?", [(i,) for i in ids]
                 )
             )
+
+    async def panel_watch_load(self) -> dict[str, Any] | None:
+        row = await self._run(
+            lambda connection: connection.execute("SELECT data FROM panel_watch WHERE id = 1").fetchone()
+        )
+        return None if row is None else json.loads(row[0])
+
+    async def panel_watch_save(self, data: dict[str, Any]) -> None:
+        value = json.dumps(data)
+        await self._run(
+            lambda connection: connection.execute(
+                "INSERT INTO panel_watch (id, data) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data",
+                (value,),
+            )
+        )

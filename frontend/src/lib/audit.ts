@@ -27,6 +27,7 @@ export const AUDIT_ACTIONS: Record<AuditAction, ActionInfo> = {
   admin_created: { group: "admins" },
   admin_updated: { group: "admins" },
   server_created: { group: "servers" },
+  server_health_changed: { group: "servers" },
   server_updated: { group: "servers" },
   server_deleted: { group: "servers" },
   server_credentials_set: { group: "servers" },
@@ -112,6 +113,11 @@ export const AUDIT_ACTIONS: Record<AuditAction, ActionInfo> = {
   bot_broadcast_cancelled: { group: "bot", tone: "warn" },
   bot_config_link_queued: { group: "bot" },
   bot_settings_updated: { group: "bot" },
+  bot_admin_link_code_created: { group: "bot" },
+  bot_admin_link_created: { group: "bot" },
+  bot_admin_link_removed: { group: "bot", tone: "warn" },
+  bot_admin_link_events_updated: { group: "bot" },
+  bot_notify_test_queued: { group: "bot" },
 };
 
 /** Безличная фраза о событии на языке интерфейса: кто действовал, показывается отдельно. */
@@ -204,6 +210,9 @@ export interface Detail {
 
 /** Ключи meta, которые показываем, и их подписи. Всё остальное не выводится: в журнал не должно просочиться лишнее. */
 const DETAIL_KEYS = [
+  "from",
+  "to",
+  "replaced",
   "reason",
   "error",
   "fingerprint",

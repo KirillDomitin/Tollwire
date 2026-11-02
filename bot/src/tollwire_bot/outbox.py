@@ -26,6 +26,7 @@ from aiogram.exceptions import (
     TelegramUnauthorizedError,
 )
 
+from tollwire_bot.pacing import MessagePacer
 from tollwire_bot.panel import Claim, OutboxItem, OutboxResult, PanelClient, PanelError, Rejected
 from tollwire_bot.storage import JournalRow, SqliteStorage
 from tollwire_bot.texts import format_date, t
@@ -62,6 +63,7 @@ class OutboxSender:
         *,
         rate_per_second: int = 20,
         batch: int = 50,
+        pacer: MessagePacer | None = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         clock: Callable[[], float] = time.time,
     ) -> None:
@@ -70,6 +72,7 @@ class OutboxSender:
         self._storage = storage
         self._rate = rate_per_second
         self._batch = batch
+        self._pacer = pacer
         self._sleep = sleep
         self._clock = clock
         self._window: deque[float] = deque()  # моменты последних отправок: не больше rate_per_second в секунду
@@ -109,7 +112,7 @@ class OutboxSender:
         """Один опрос панели и отправка пачки. True - пачка полная, следующий опрос без паузы."""
         await self._flush()
         try:
-            claim = await self._panel.claim(self._batch)
+            claim = await self._panel.claim(self._batch, kinds=["news", "config", "notify"])
         except PanelError as error:
             logger.warning("the panel did not give the queue: %s", type(error).__name__)
             return False
@@ -127,7 +130,7 @@ class OutboxSender:
         queue: list[OutboxItem] = []
         for item in claim.items:
             seen = journal.get(item.id)
-            if seen is not None and item.kind == "news" and seen.status in _FINAL:
+            if seen is not None and item.kind in ("news", "notify") and seen.status in _FINAL:
                 # Telegram это уже принял, подтверждение потерялось: подтверждаем из журнала, заново не отправляем.
                 self._add_result(claim.lease_id, OutboxResult(item.id, seen.status, seen.error))
             else:
@@ -222,6 +225,11 @@ class OutboxSender:
                 return OutboxResult(item.id, "failed", "bad_request")  # ссылки нет: отправлять нечего
             text = t("broadcast_config", url=item.config_url, until=format_date(item.valid_until))
             parse_mode = None
+        elif item.kind == "notify":
+            if not item.text or item.format not in ("plain", "html"):
+                return OutboxResult(item.id, "failed", "bad_request")
+            text = item.text
+            parse_mode = "HTML" if item.format == "html" else None
         elif item.kind == "news":
             text = claim.texts.get(item.broadcast_id or "", "")
             parse_mode = "HTML"
@@ -230,9 +238,17 @@ class OutboxSender:
             return OutboxResult(item.id, "retry", "flood", UNKNOWN_KIND_PAUSE)
         while True:
             try:
-                await self._bot.send_message(item.telegram_id, text, parse_mode=parse_mode)
+                if self._pacer is not None:
+                    await self._pacer.acquire(item.telegram_id)
+                    if self._clock() > lease_until - LEASE_MARGIN:
+                        return OutboxResult(item.id, "retry", "flood")
+                await self._bot.send_message(
+                    item.telegram_id, text, parse_mode=parse_mode, disable_web_page_preview=True
+                )
             except TelegramRetryAfter as flood:
                 seconds = int(flood.retry_after)
+                if self._pacer is not None:
+                    self._pacer.pause(seconds)
                 if self._clock() + seconds > lease_until - LEASE_MARGIN + 1e-3:
                     raise _FloodTooLong(seconds) from None
                 self._window.clear()  # после паузы окно в секунду пустое: в паузу не уходило ничего

@@ -417,7 +417,8 @@ async def test_key_and_invite_lists_never_show_secrets(api: httpx.AsyncClient, s
 
 async def test_key_list_shows_what_the_bot_reported(api: httpx.AsyncClient, scene: Scene) -> None:
     heartbeat = await scene.bot.post("/api/v1/bot/heartbeat", json={"bot_username": "tollwire_bot", "version": "0.1.0"})
-    assert heartbeat.status_code == 200 and heartbeat.json() == {}
+    assert heartbeat.status_code == 200
+    assert heartbeat.json() == {"notify": {"chats": [], "panel_down_after_seconds": 300}}
     (item,) = (await api.get(KEYS_URL)).json()
     assert item["bot_username"] == "tollwire_bot" and item["last_seen_version"] == "0.1.0"
     assert item["last_seen_at"] is not None and item["revoked_at"] is None

@@ -30,7 +30,7 @@ class OutboxStatus(enum.StrEnum):
 OPEN_STATUSES = (OutboxStatus.PENDING, OutboxStatus.CLAIMED)
 
 PRIORITY_NOTIFY = 0
-PRIORITY_INDIVIDUAL = 0 # «Отправить ссылку в Telegram» из карточки не ждёт большую рассылку
+PRIORITY_INDIVIDUAL = 0  # «Отправить ссылку в Telegram» из карточки не ждёт большую рассылку
 PRIORITY_BROADCAST = 10
 
 

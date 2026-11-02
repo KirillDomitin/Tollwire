@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,7 +21,9 @@ from core.exceptions import InvalidDataError, NotFoundError, ReasonConflictError
 from modules.audit.actor import AuditActor
 from modules.audit.models.audit_log import AuditAction, AuditEntity
 from modules.audit.service import AuditService
+from modules.auth.models.admin import Admin
 from modules.bot.config_links import CONFIG_UNAVAILABLE, NO_ACCESS, NOT_CONFIGURED, NOT_READY, ConfigLinkService
+from modules.bot.models.admin_link import AdminTelegramLink
 from modules.bot.models.broadcast import BotBroadcast
 from modules.bot.models.outbox import PRIORITY_INDIVIDUAL, BotOutbox, OutboxKind, OutboxStatus
 from modules.bot.repository import OutboxRepository
@@ -53,6 +56,8 @@ class ClaimItem:
     # Адрес с токеном: в repr и лог не попадает.
     config_url: str | None = field(default=None, repr=False)
     valid_until: datetime | None = None
+    text: str | None = field(default=None, repr=False)
+    format: str | None = None
 
 
 @dataclass(frozen=True)
@@ -76,10 +81,12 @@ class _Handed:
     id: UUID
     kind: str
     telegram_id: int
-    user_id: UUID
+    user_id: UUID | None
     grant_id: UUID | None
     broadcast_id: UUID | None
     created_at: datetime
+    text: str | None = field(default=None, repr=False)
+    format: str | None = None
 
 
 def _now() -> datetime:
@@ -204,28 +211,58 @@ class OutboxService:
 
     # --- выдача пачки боту -----------------------------------------------------------------------------------------
 
-    async def claim(self, key_id: UUID, limit: int) -> ClaimResult:
+    async def claim(self, key_id: UUID, limit: int, kinds: list[str] | None = None) -> ClaimResult:
         now = _now()
         lease_id = uuid4()
         lease_until = now + timedelta(seconds=settings.bot_outbox_lease_seconds)
         await self._touch_key(key_id, now)
-        rows = await self.outbox.lease_candidates(now, limit)
-        users = await self.outbox.users_by_ids({row.user_id for row in rows})
+        rows = await self.outbox.lease_candidates(now, limit, kinds if kinds is not None else ["news", "config"])
+        users = await self.outbox.users_by_ids({row.user_id for row in rows if row.user_id is not None})
+        admin_links = {
+            link.id: link
+            for link in (
+                await self.session.scalars(
+                    select(AdminTelegramLink)
+                    .join(Admin, Admin.id == AdminTelegramLink.admin_id)
+                    .where(
+                        AdminTelegramLink.id.in_({row.admin_link_id for row in rows if row.admin_link_id is not None}),
+                        Admin.is_active.is_(True),
+                    )
+                    .execution_options(populate_existing=True)
+                )
+            )
+        }
         broadcasts = await self.outbox.broadcasts({row.broadcast_id for row in rows if row.broadcast_id})
 
         closed: defaultdict[UUID, defaultdict[str, int]] = defaultdict(lambda: defaultdict(int))
-        handed: list[BotOutbox] = []
+        plan: list[_Handed] = []
         for row in rows:
-            user = users.get(row.user_id)
+            user = users.get(row.user_id) if row.user_id is not None else None
+            admin_link = admin_links.get(row.admin_link_id) if row.admin_link_id is not None else None
+            is_notify = row.kind == OutboxKind.NOTIFY.value
+            telegram_id = (
+                admin_link.telegram_id
+                if is_notify and admin_link is not None
+                else (user.telegram_id if user is not None else None)
+            )
             broadcast = broadcasts.get(row.broadcast_id) if row.broadcast_id else None
             attempts = row.attempts + (1 if row.status == OutboxStatus.CLAIMED.value else 0)
-            if broadcast is not None and broadcast.cancelled_at is not None:
-                verdict: tuple[str, str | None] | None = (OutboxStatus.CANCELLED.value, None)
+            if is_notify and row.expires_at is not None and row.expires_at <= now:
+                verdict: tuple[str, str | None] | None = (OutboxStatus.SKIPPED.value, "expired")
+            elif is_notify and (
+                admin_link is None
+                or admin_link.telegram_id is None
+                or admin_link.blocked_at is not None
+                or (row.notify_key is not None and not admin_link.events.get(row.notify_key, False))
+            ):
+                verdict = (OutboxStatus.SKIPPED.value, "no_recipient")
+            elif broadcast is not None and broadcast.cancelled_at is not None:
+                verdict = (OutboxStatus.CANCELLED.value, None)
             elif attempts >= settings.bot_outbox_max_attempts:
                 verdict = (OutboxStatus.FAILED.value, TOO_MANY_ATTEMPTS)
-            elif user is None or user.telegram_id is None:
+            elif not is_notify and (user is None or user.telegram_id is None):
                 verdict = (OutboxStatus.SKIPPED.value, NO_TELEGRAM)
-            elif user.bot_blocked_at is not None:
+            elif not is_notify and user is not None and user.bot_blocked_at is not None:
                 verdict = (OutboxStatus.BLOCKED.value, "blocked")
             else:
                 verdict = None
@@ -241,31 +278,48 @@ class OutboxService:
             row.claimed_until = lease_until
             row.claimed_by_key_id = key_id
             row.attempts = attempts
-            handed.append(row)
+            # Lease timestamp, not PostgreSQL now() (the transaction may have started earlier).
+            # A relink visible to this claim belongs to this lease even if it happened after `now`.
+            row.updated_at = (
+                max(now, admin_link.linked_at)
+                if is_notify and admin_link is not None and admin_link.linked_at is not None
+                else now
+            )
+            assert telegram_id is not None
+            plan.append(
+                _Handed(
+                    row.id,
+                    row.kind,
+                    telegram_id,
+                    row.user_id,
+                    row.access_grant_id,
+                    row.broadcast_id,
+                    row.created_at,
+                    row.text,
+                    row.format,
+                )
+            )
         for broadcast_id, counts in closed.items():
             await self.outbox.add_counts(broadcast_id, **counts)
         await self.outbox.finish_if_done(closed, now)
         # Всё нужное - простыми значениями до commit: дальше возможны rollback'и отказавших строк, после которых
         # объекты сессии обновляются из БД и в async-коде читаться не должны.
-        plan = [
-            _Handed(
-                row.id,
-                row.kind,
-                users[row.user_id].telegram_id or 0,
-                row.user_id,
-                row.access_grant_id,
-                row.broadcast_id,
-                row.created_at,
-            )
-            for row in handed
-        ]
         all_texts = {broadcast_id: broadcast.text or "" for broadcast_id, broadcast in broadcasts.items()}
         await self.session.commit()
 
         items: list[ClaimItem] = []
         for entry in plan:
             if entry.kind != OutboxKind.CONFIG.value:
-                items.append(ClaimItem(entry.id, entry.kind, entry.telegram_id, entry.broadcast_id))
+                items.append(
+                    ClaimItem(
+                        entry.id,
+                        entry.kind,
+                        entry.telegram_id,
+                        entry.broadcast_id,
+                        text=entry.text,
+                        format=entry.format,
+                    )
+                )
                 continue
             item = await self._issue_config(entry)
             if item is not None:
@@ -286,6 +340,8 @@ class OutboxService:
 
     async def _issue_config(self, entry: "_Handed") -> ClaimItem | None:
         """Новая ссылка для строки `config`, в собственной транзакции: отказ одной строки не держит остальные."""
+        if entry.user_id is None:
+            raise InvalidDataError("A config outbox row needs a user")
         try:
             link, token = await self.links.stage_issue(
                 entry.user_id,
@@ -347,6 +403,24 @@ class OutboxService:
         wanted: dict[UUID, OutboxAckItem] = {}
         for item in items:
             wanted.setdefault(item.id, item)
+        # Unlink locks the link before CASCADE locks its outbox rows. Discover recipients without
+        # locking outbox, then take link locks in a stable order before leased_rows does FOR UPDATE.
+        link_ids = select(BotOutbox.admin_link_id).where(
+            BotOutbox.id.in_(wanted),
+            BotOutbox.lease_id == lease_id,
+            BotOutbox.status == OutboxStatus.CLAIMED.value,
+            BotOutbox.admin_link_id.is_not(None),
+        )
+        admin_links = {
+            link.id: link
+            for link in await self.session.scalars(
+                select(AdminTelegramLink)
+                .where(AdminTelegramLink.id.in_(link_ids))
+                .order_by(AdminTelegramLink.id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        }
         rows = await self.outbox.leased_rows(lease_id, wanted)
         now = _now()
         counts: defaultdict[UUID, defaultdict[str, int]] = defaultdict(lambda: defaultdict(int))
@@ -358,7 +432,13 @@ class OutboxService:
                 outcome = "sent"
             elif item.status == "blocked":
                 row.status, row.error = OutboxStatus.BLOCKED.value, "blocked"
-                blocked_users.add(row.user_id)
+                if row.kind == OutboxKind.NOTIFY.value:
+                    link = admin_links.get(row.admin_link_id) if row.admin_link_id is not None else None
+                    # A late result for a previous Telegram must not block the replacement link.
+                    if link is not None and link.linked_at is not None and link.linked_at <= row.updated_at:
+                        link.blocked_at = now
+                elif row.user_id is not None:
+                    blocked_users.add(row.user_id)
                 outcome = "blocked"
             elif item.status == "failed":
                 row.status, row.error = OutboxStatus.FAILED.value, item.error or "bad_request"

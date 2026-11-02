@@ -5,7 +5,16 @@ from datetime import datetime
 from typing import Annotated, Literal, Self
 from uuid import UUID
 
-from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import (
+    AfterValidator,
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    StringConstraints,
+    model_validator,
+)
 from pydantic_core import PydanticCustomError
 
 from modules.bot.models.registration import RegistrationStatus
@@ -52,7 +61,7 @@ class BotKeyRead(BaseModel):
 
 
 class BotKeyCreated(BotKeyRead):
-    key: str
+    key: str = Field(repr=False)
 
 
 # --- приглашения ---------------------------------------------------------------------------------------------------
@@ -82,8 +91,8 @@ class InviteRead(BaseModel):
 
 
 class InviteCreated(InviteRead):
-    code: str  # показывается один раз
-    link: str | None  # t.me/<бот>?start=<код>, если известно имя бота (из heartbeat)
+    code: str = Field(repr=False)  # показывается один раз
+    link: str | None = Field(repr=False)  # t.me/<бот>?start=<код>, если известно имя бота (из heartbeat)
 
 
 class InviteCheckRequest(BaseModel):
@@ -164,17 +173,28 @@ class HeartbeatRequest(BaseModel):
     # Имя бота подставляется в ссылку t.me/<имя>?start=<код>: только символы имени Telegram (допускается @ в начале).
     bot_username: Annotated[str, StringConstraints(pattern=r"^@?[A-Za-z0-9_]{1,32}$")]
     version: Annotated[str, StringConstraints(min_length=1, max_length=32)]
+    local: bool | None = None
+
+
+class NotifyConfig(BaseModel):
+    panel_down_after_seconds: int
+    chats: list[int]
+
+
+class HeartbeatResponse(BaseModel):
+    notify: NotifyConfig
 
 
 # --- настройки -----------------------------------------------------------------------------------------------------
 
 
 class BotSettingsUpdate(BaseModel):
-    """Настройки, которые админ меняет из интерфейса. Порог «панель недоступна» появится в UI вместе с 25.5."""
+    """Обновляются только переданные поля; старые клиенты сохраняют порог уведомлений."""
 
-    default_protocol_id: UUID | None
-    default_days: Annotated[int, Field(ge=1, le=3650)]
-    invite_valid_days: Annotated[int, Field(ge=1, le=365)]
+    default_protocol_id: UUID | None = None
+    default_days: Annotated[int, Field(ge=1, le=3650)] = 30
+    invite_valid_days: Annotated[int, Field(ge=1, le=365)] = 7
+    panel_down_after_seconds: Annotated[int, Field(ge=60, le=86400, strict=True)] = 300
 
 
 # --- рассылки ------------------------------------------------------------------------------------------------------
@@ -188,6 +208,71 @@ def _telegram_html(value: str) -> str:
     except TelegramHtmlError as error:
         raise PydanticCustomError(error.code, "The text is not valid Telegram HTML", {"position": error.position})
     return value
+
+
+class BroadcastTestRequest(BaseModel):
+    text: Annotated[str, AfterValidator(_telegram_html)] = Field(repr=False)
+
+
+class AdminLinkRequest(BaseModel):
+    code: Annotated[str, Field(min_length=32, max_length=32, pattern=r"^[A-Za-z0-9_-]+$")] = Field(repr=False)
+    telegram_id: TelegramId
+    telegram_username: TelegramUsername | None = None
+
+
+class AdminLinkRead(BaseModel):
+    admin_name: str
+
+
+class AdminLinkCodeCreated(BaseModel):
+    code: str = Field(repr=False)
+    link: str | None = Field(repr=False)
+    expires_at: datetime
+
+
+class AdminTelegramRead(BaseModel):
+    linked: bool
+    telegram_username: str | None
+    linked_at: datetime | None
+    blocked_at: datetime | None
+    events: dict[str, bool]
+    code_pending_until: datetime | None
+
+
+class AdminEventsUpdate(BaseModel):
+    events: dict[str, StrictBool]
+
+    @model_validator(mode="after")
+    def _known_events(self) -> Self:
+        from modules.bot.notify_catalog import CATALOG
+
+        if any(key not in CATALOG for key in self.events):
+            raise ValueError("Unknown notification event")
+        return self
+
+
+class AdminEventsRead(BaseModel):
+    events: dict[str, bool]
+
+
+class NotifyEventRead(BaseModel):
+    key: str
+    title: str
+    group: str
+    default: bool
+
+
+class AdminRecipientRead(BaseModel):
+    admin_id: UUID
+    admin_email: str
+    telegram_username: str | None
+    linked_at: datetime
+    blocked_at: datetime | None
+    events: dict[str, bool]
+
+
+class NotifyTestQueued(BaseModel):
+    outbox_id: UUID
 
 
 class AudienceRequest(BaseModel):
@@ -275,6 +360,9 @@ class BotStatusRead(BaseModel):
     stale: bool  # бот давно не выходил на связь (или ещё ни разу)
     last_claim_at: datetime | None  # когда бот последний раз забирал очередь сообщений
     outbox: OutboxCounts
+    last_seen_local: bool | None = None
+    notify_capable: bool = False
+    admin_links: int = 0
 
 
 class BotSettingsRead(BaseModel):
@@ -320,6 +408,7 @@ class ConfigLinkQueued(BaseModel):
 
 class OutboxClaimRequest(BaseModel):
     limit: Annotated[int, Field(ge=1, le=100)] = 50
+    kinds: list[Literal["news", "config", "notify"]] | None = None
 
 
 class OutboxClaimItem(BaseModel):
@@ -331,6 +420,8 @@ class OutboxClaimItem(BaseModel):
     broadcast_id: UUID | None = None
     config_url: str | None = Field(default=None, repr=False)  # токен в адресе: в логи не попадает
     valid_until: datetime | None = None
+    text: str | None = Field(default=None, repr=False)
+    format: Literal["plain", "html"] | None = None
 
 
 class OutboxClaimResponse(BaseModel):

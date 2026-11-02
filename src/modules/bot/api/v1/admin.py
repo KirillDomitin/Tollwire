@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database.postgres import get_session
@@ -19,15 +19,26 @@ from modules.audit.dependencies import get_audit_actor
 from modules.auth.dependencies import get_current_admin, require
 from modules.auth.models.admin import Admin
 from modules.auth.permissions import Permission
+from modules.bot.admin_links import AdminLinkService
 from modules.bot.invites import BotInviteService, invite_status
 from modules.bot.keys import BotKeyService
 from modules.bot.models.invite import BotInvite
 from modules.bot.models.registration import BotRegistration, RegistrationStatus
 from modules.bot.outbox import OutboxService
 from modules.bot.page import BotPageService
-from modules.bot.rate_limits import BOT_BROADCASTS_BY_ADMIN, BOT_CONFIG_SENDS_BY_ADMIN
+from modules.bot.rate_limits import (
+    BOT_ADMIN_LINK_CODES_BY_ADMIN,
+    BOT_BROADCASTS_BY_ADMIN,
+    BOT_CONFIG_SENDS_BY_ADMIN,
+    BOT_NOTIFY_TESTS_BY_ADMIN,
+)
 from modules.bot.registrations import BotRegistrationService
 from modules.bot.schemas import (
+    AdminEventsRead,
+    AdminEventsUpdate,
+    AdminLinkCodeCreated,
+    AdminRecipientRead,
+    AdminTelegramRead,
     AudienceRead,
     AudienceRequest,
     BotKeyCreate,
@@ -39,10 +50,13 @@ from modules.bot.schemas import (
     BotStatusRead,
     BroadcastCreate,
     BroadcastRead,
+    BroadcastTestRequest,
     ConfigLinkQueued,
     InviteCreate,
     InviteCreated,
     InviteRead,
+    NotifyEventRead,
+    NotifyTestQueued,
     OutboxRowRead,
     RecipientRead,
     RegistrationRead,
@@ -53,6 +67,7 @@ router = APIRouter(prefix="/api/v1/bot-admin", tags=["bot-admin"], dependencies=
 
 Session = Annotated[AsyncSession, Depends(get_session)]
 Actor = Annotated[AuditActor, Depends(get_audit_actor)]
+CurrentAdmin = Annotated[Admin, Depends(get_current_admin)]
 
 
 Cursor = tuple[datetime, UUID] | None
@@ -175,6 +190,67 @@ async def retry_registration(registration_id: UUID, session: Session, actor: Act
 # --- состояние, настройки, справочники -----------------------------------------------------------------------------
 
 
+@router.get("/me/telegram", dependencies=[Depends(require(Permission.BOT_NOTIFY))], response_model=AdminTelegramRead)
+async def my_telegram(session: Session, admin: CurrentAdmin) -> AdminTelegramRead:
+    return await BotPageService(session).telegram(admin.id)
+
+
+@router.post(
+    "/me/telegram/code",
+    dependencies=[Depends(require(Permission.BOT_NOTIFY))],
+    response_model=AdminLinkCodeCreated,
+    status_code=201,
+)
+async def create_telegram_code(
+    session: Session, actor: Actor, admin: CurrentAdmin, response: Response
+) -> AdminLinkCodeCreated:
+    await RateLimiter().hit(BOT_ADMIN_LINK_CODES_BY_ADMIN, str(admin.id))
+    response.headers["Cache-Control"] = "no-store"
+    return await AdminLinkService(session, actor).create_code(admin.id)
+
+
+@router.put(
+    "/me/telegram/events", dependencies=[Depends(require(Permission.BOT_NOTIFY))], response_model=AdminEventsRead
+)
+async def update_my_events(
+    data: AdminEventsUpdate, session: Session, actor: Actor, admin: CurrentAdmin
+) -> AdminEventsRead:
+    await AdminLinkService(session, actor).set_events(admin.id, data.events)
+    state = await BotPageService(session).telegram(admin.id)
+    return AdminEventsRead(events=state.events)
+
+
+@router.delete("/me/telegram", dependencies=[Depends(require(Permission.BOT_NOTIFY))], status_code=204)
+async def unlink_my_telegram(session: Session, actor: Actor, admin: CurrentAdmin) -> None:
+    await AdminLinkService(session, actor).unlink(admin.id)
+
+
+@router.post(
+    "/me/telegram/test",
+    dependencies=[Depends(require(Permission.BOT_NOTIFY))],
+    response_model=NotifyTestQueued,
+    status_code=202,
+)
+async def test_my_notifications(session: Session, actor: Actor, admin: CurrentAdmin) -> NotifyTestQueued:
+    await RateLimiter().hit(BOT_NOTIFY_TESTS_BY_ADMIN, str(admin.id))
+    row = await AdminLinkService(session, actor).queue_test(admin.id)
+    return NotifyTestQueued(outbox_id=row.id)
+
+
+@router.get(
+    "/notify-events", dependencies=[Depends(require(Permission.BOT_READ))], response_model=list[NotifyEventRead]
+)
+async def notify_events(session: Session) -> list[NotifyEventRead]:
+    return BotPageService(session).notify_events()
+
+
+@router.get(
+    "/admin-links", dependencies=[Depends(require(Permission.BOT_READ))], response_model=list[AdminRecipientRead]
+)
+async def admin_links(session: Session) -> list[AdminRecipientRead]:
+    return await BotPageService(session).admin_links()
+
+
 @router.get("/status", dependencies=[Depends(require(Permission.BOT_READ))], response_model=BotStatusRead)
 async def bot_status(session: Session) -> BotStatusRead:
     """Бот: имя, версия, когда выходил на связь и забирал очередь; число сообщений в очереди."""
@@ -241,6 +317,20 @@ async def create_broadcast(
     422 с кодом telegram_html_*: текст не годится для Telegram; 409 not_configured: адрес панели не задан."""
     await RateLimiter().hit(BOT_BROADCASTS_BY_ADMIN, str(admin.id))
     return await BotPageService(session).read(await OutboxService(session, actor).create_broadcast(data))
+
+
+@router.post(
+    "/broadcasts/test",
+    dependencies=[Depends(require(Permission.BOT_MANAGE))],
+    response_model=NotifyTestQueued,
+    status_code=202,
+)
+async def test_broadcast(
+    data: BroadcastTestRequest, session: Session, actor: Actor, admin: CurrentAdmin
+) -> NotifyTestQueued:
+    await RateLimiter().hit(BOT_NOTIFY_TESTS_BY_ADMIN, str(admin.id))
+    row = await AdminLinkService(session, actor).queue_test(admin.id, data.text)
+    return NotifyTestQueued(outbox_id=row.id)
 
 
 @router.get(

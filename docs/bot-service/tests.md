@@ -1,5 +1,16 @@
 # bot — перечень тестов пакета
 
+## Уведомления, версия 0.3.0
+
+- `test_commands_admin.py` — `/admin`, 32-символьный `/start`, ошибки привязки, обычные приглашения.
+- `test_heartbeat_notify.py` — notify-конфигурация, local, совместимость со старой панелью.
+- `test_outbox_notify.py` — явный kinds, plain/HTML, повторы и журнал notify.
+- `test_panel_watch.py` — порог, повтор, восстановление по получателям, 401/429,
+  рестарт с SQLite, пустые/изменённые чаты, старый/неверный notify, flood, blocked, много чатов.
+- `test_log_admin_link.py`, `test_texts_notify.py` — маскировка кода, тексты и безопасные подстановки.
+
+Состояние наблюдения и общий pacing — [panel-watch.md](panel-watch.md).
+
 Запуск: из корня `uv run --project bot pytest`, из `bot/` — как в CI (`bot/CLAUDE.md`). Окружение бота отдельное:
 корневой `tests/` aiogram не видит. Тесты панели, которые касаются бота, — `docs/bot/tests.md`.
 

@@ -32,7 +32,7 @@ class BotSettingsService:
         if data.default_protocol_id is not None and not await self.protocols.get_by_id(data.default_protocol_id):
             raise NotFoundError(f"Protocol '{data.default_protocol_id}' not found")
         row = await self.settings.get_or_create()
-        new_values = data.model_dump()
+        new_values = data.model_dump(exclude_unset=True)
         changes = {
             field: [getattr(row, field), value] for field, value in new_values.items() if getattr(row, field) != value
         }

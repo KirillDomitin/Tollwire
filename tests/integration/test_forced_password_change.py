@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from main import app
 from modules.auth.models.admin import AdminRole
+from tests.bot_support import sql_rows
 from tests.integration.conftest import AdminLogin, login_client, make_admin
 from tests.integration.test_rbac import API_ROUTES
 
@@ -60,6 +61,17 @@ async def test_access_opens_after_password_change(session: AsyncSession) -> None
         http.headers["Authorization"] = f"Bearer {response.json()['access_token']}"
         assert (await http.get("/api/v1/servers")).status_code == 200
         assert (await http.get("/api/v1/auth/me")).json()["must_change_password"] is False
+
+
+@pytest.mark.parametrize("role", list(AdminRole))
+async def test_notification_routes_are_closed_until_password_is_changed(session: AsyncSession, role: AdminRole) -> None:
+    """Этап 25.5: код привязки Telegram нельзя получить с временным паролем (даже у viewer с `bot:notify`)."""
+    base = "/api/v1/bot-admin/me/telegram"
+    async with login_client(await temporary_admin(session, role)) as http:
+        for method, path in (("GET", base), ("POST", f"{base}/code"), ("DELETE", base), ("POST", f"{base}/test")):
+            response = await http.request(method, path, json={})
+            assert response.status_code == 403 and response.json().get("detail") == DETAIL, f"{method} {path}"
+    assert await sql_rows("SELECT id FROM admin_telegram_links") == []
 
 
 async def test_flag_set_while_logged_in_applies_immediately(

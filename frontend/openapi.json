@@ -3694,7 +3694,7 @@
           "bot"
         ],
         "summary": "Heartbeat",
-        "description": "Бот сообщает, что жив: имя и версия. Ответ пока пустой, поля появятся вместе с настройками бота.",
+        "description": "Бот сообщает имя и версию, получает чаты и порог наблюдения за панелью.",
         "operationId": "heartbeat_api_v1_bot_heartbeat_post",
         "requestBody": {
           "content": {
@@ -3712,9 +3712,53 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Heartbeat Api V1 Bot Heartbeat Post"
+                  "$ref": "#/components/schemas/HeartbeatResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/api/v1/bot/admin-links": {
+      "post": {
+        "tags": [
+          "bot"
+        ],
+        "summary": "Admin Link",
+        "operationId": "admin_link_api_v1_bot_admin_links_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminLinkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminLinkRead"
                 }
               }
             }
@@ -4580,6 +4624,207 @@
         }
       }
     },
+    "/api/v1/bot-admin/me/telegram": {
+      "get": {
+        "tags": [
+          "bot-admin"
+        ],
+        "summary": "My Telegram",
+        "operationId": "my_telegram_api_v1_bot_admin_me_telegram_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminTelegramRead"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "bot-admin"
+        ],
+        "summary": "Unlink My Telegram",
+        "operationId": "unlink_my_telegram_api_v1_bot_admin_me_telegram_delete",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/bot-admin/me/telegram/code": {
+      "post": {
+        "tags": [
+          "bot-admin"
+        ],
+        "summary": "Create Telegram Code",
+        "operationId": "create_telegram_code_api_v1_bot_admin_me_telegram_code_post",
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminLinkCodeCreated"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/bot-admin/me/telegram/events": {
+      "put": {
+        "tags": [
+          "bot-admin"
+        ],
+        "summary": "Update My Events",
+        "operationId": "update_my_events_api_v1_bot_admin_me_telegram_events_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminEventsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminEventsRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/bot-admin/me/telegram/test": {
+      "post": {
+        "tags": [
+          "bot-admin"
+        ],
+        "summary": "Test My Notifications",
+        "operationId": "test_my_notifications_api_v1_bot_admin_me_telegram_test_post",
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotifyTestQueued"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/bot-admin/notify-events": {
+      "get": {
+        "tags": [
+          "bot-admin"
+        ],
+        "summary": "Notify Events",
+        "operationId": "notify_events_api_v1_bot_admin_notify_events_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/NotifyEventRead"
+                  },
+                  "type": "array",
+                  "title": "Response Notify Events Api V1 Bot Admin Notify Events Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/bot-admin/admin-links": {
+      "get": {
+        "tags": [
+          "bot-admin"
+        ],
+        "summary": "Admin Links",
+        "operationId": "admin_links_api_v1_bot_admin_admin_links_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AdminRecipientRead"
+                  },
+                  "type": "array",
+                  "title": "Response Admin Links Api V1 Bot Admin Admin Links Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/bot-admin/status": {
       "get": {
         "tags": [
@@ -4938,6 +5183,52 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AudienceRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/bot-admin/broadcasts/test": {
+      "post": {
+        "tags": [
+          "bot-admin"
+        ],
+        "summary": "Test Broadcast",
+        "operationId": "test_broadcast_api_v1_bot_admin_broadcasts_test_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BroadcastTestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotifyTestQueued"
                 }
               }
             }
@@ -5362,6 +5653,117 @@
         ],
         "title": "AdminCreate"
       },
+      "AdminEventsRead": {
+        "properties": {
+          "events": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Events"
+          }
+        },
+        "type": "object",
+        "required": [
+          "events"
+        ],
+        "title": "AdminEventsRead"
+      },
+      "AdminEventsUpdate": {
+        "properties": {
+          "events": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Events"
+          }
+        },
+        "type": "object",
+        "required": [
+          "events"
+        ],
+        "title": "AdminEventsUpdate"
+      },
+      "AdminLinkCodeCreated": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "link": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Link"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "link",
+          "expires_at"
+        ],
+        "title": "AdminLinkCodeCreated"
+      },
+      "AdminLinkRead": {
+        "properties": {
+          "admin_name": {
+            "type": "string",
+            "title": "Admin Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "admin_name"
+        ],
+        "title": "AdminLinkRead"
+      },
+      "AdminLinkRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 32,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Code"
+          },
+          "telegram_id": {
+            "type": "integer",
+            "maximum": 9.223372036854776e+18,
+            "minimum": 1.0,
+            "title": "Telegram Id"
+          },
+          "telegram_username": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telegram Username"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "telegram_id"
+        ],
+        "title": "AdminLinkRequest"
+      },
       "AdminRead": {
         "properties": {
           "id": {
@@ -5429,6 +5831,64 @@
         ],
         "title": "AdminRead"
       },
+      "AdminRecipientRead": {
+        "properties": {
+          "admin_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Admin Id"
+          },
+          "admin_email": {
+            "type": "string",
+            "title": "Admin Email"
+          },
+          "telegram_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telegram Username"
+          },
+          "linked_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Linked At"
+          },
+          "blocked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocked At"
+          },
+          "events": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Events"
+          }
+        },
+        "type": "object",
+        "required": [
+          "admin_id",
+          "admin_email",
+          "telegram_username",
+          "linked_at",
+          "blocked_at",
+          "events"
+        ],
+        "title": "AdminRecipientRead"
+      },
       "AdminRole": {
         "type": "string",
         "enum": [
@@ -5438,6 +5898,78 @@
         ],
         "title": "AdminRole",
         "description": "Роли админов панели. Что разрешено каждой — в modules/auth/permissions.py."
+      },
+      "AdminTelegramRead": {
+        "properties": {
+          "linked": {
+            "type": "boolean",
+            "title": "Linked"
+          },
+          "telegram_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telegram Username"
+          },
+          "linked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linked At"
+          },
+          "blocked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocked At"
+          },
+          "events": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Events"
+          },
+          "code_pending_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code Pending Until"
+          }
+        },
+        "type": "object",
+        "required": [
+          "linked",
+          "telegram_username",
+          "linked_at",
+          "blocked_at",
+          "events",
+          "code_pending_until"
+        ],
+        "title": "AdminTelegramRead"
       },
       "AdminUpdate": {
         "properties": {
@@ -5577,6 +6109,7 @@
           "server_host_key_pinned",
           "server_host_key_reset",
           "server_host_key_mismatch",
+          "server_health_changed",
           "server_install_started",
           "server_install_completed",
           "server_install_failed",
@@ -5650,7 +6183,12 @@
           "bot_broadcast_created",
           "bot_broadcast_cancelled",
           "bot_config_link_queued",
-          "bot_settings_updated"
+          "bot_settings_updated",
+          "bot_admin_link_code_created",
+          "bot_admin_link_created",
+          "bot_admin_link_removed",
+          "bot_admin_link_events_updated",
+          "bot_notify_test_queued"
         ],
         "title": "AuditAction"
       },
@@ -6068,23 +6606,27 @@
             "type": "integer",
             "maximum": 3650.0,
             "minimum": 1.0,
-            "title": "Default Days"
+            "title": "Default Days",
+            "default": 30
           },
           "invite_valid_days": {
             "type": "integer",
             "maximum": 365.0,
             "minimum": 1.0,
-            "title": "Invite Valid Days"
+            "title": "Invite Valid Days",
+            "default": 7
+          },
+          "panel_down_after_seconds": {
+            "type": "integer",
+            "maximum": 86400.0,
+            "minimum": 60.0,
+            "title": "Panel Down After Seconds",
+            "default": 300
           }
         },
         "type": "object",
-        "required": [
-          "default_protocol_id",
-          "default_days",
-          "invite_valid_days"
-        ],
         "title": "BotSettingsUpdate",
-        "description": "Настройки, которые админ меняет из интерфейса. Порог «панель недоступна» появится в UI вместе с 25.5."
+        "description": "Обновляются только переданные поля; старые клиенты сохраняют порог уведомлений."
       },
       "BotStatusRead": {
         "properties": {
@@ -6148,6 +6690,27 @@
           },
           "outbox": {
             "$ref": "#/components/schemas/OutboxCounts"
+          },
+          "last_seen_local": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen Local"
+          },
+          "notify_capable": {
+            "type": "boolean",
+            "title": "Notify Capable",
+            "default": false
+          },
+          "admin_links": {
+            "type": "integer",
+            "title": "Admin Links",
+            "default": 0
           }
         },
         "type": "object",
@@ -6358,6 +6921,19 @@
           "state"
         ],
         "title": "BroadcastRead"
+      },
+      "BroadcastTestRequest": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "BroadcastTestRequest"
       },
       "ChangePasswordRequest": {
         "properties": {
@@ -7115,6 +7691,17 @@
             "maxLength": 32,
             "minLength": 1,
             "title": "Version"
+          },
+          "local": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local"
           }
         },
         "type": "object",
@@ -7123,6 +7710,18 @@
           "version"
         ],
         "title": "HeartbeatRequest"
+      },
+      "HeartbeatResponse": {
+        "properties": {
+          "notify": {
+            "$ref": "#/components/schemas/NotifyConfig"
+          }
+        },
+        "type": "object",
+        "required": [
+          "notify"
+        ],
+        "title": "HeartbeatResponse"
       },
       "HostKeyPin": {
         "properties": {
@@ -8071,6 +8670,69 @@
         ],
         "title": "MetricsSeries"
       },
+      "NotifyConfig": {
+        "properties": {
+          "panel_down_after_seconds": {
+            "type": "integer",
+            "title": "Panel Down After Seconds"
+          },
+          "chats": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Chats"
+          }
+        },
+        "type": "object",
+        "required": [
+          "panel_down_after_seconds",
+          "chats"
+        ],
+        "title": "NotifyConfig"
+      },
+      "NotifyEventRead": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "group": {
+            "type": "string",
+            "title": "Group"
+          },
+          "default": {
+            "type": "boolean",
+            "title": "Default"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "title",
+          "group",
+          "default"
+        ],
+        "title": "NotifyEventRead"
+      },
+      "NotifyTestQueued": {
+        "properties": {
+          "outbox_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Outbox Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "outbox_id"
+        ],
+        "title": "NotifyTestQueued"
+      },
       "OutboxAckItem": {
         "properties": {
           "id": {
@@ -8227,6 +8889,32 @@
               }
             ],
             "title": "Valid Until"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "format": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "plain",
+                  "html"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Format"
           }
         },
         "type": "object",
@@ -8246,6 +8934,25 @@
             "minimum": 1.0,
             "title": "Limit",
             "default": 50
+          },
+          "kinds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "news",
+                    "config",
+                    "notify"
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kinds"
           }
         },
         "type": "object",

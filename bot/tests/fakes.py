@@ -442,7 +442,8 @@ class Queued:
     kind: str  # news / config
     telegram_id: int
     broadcast_id: str | None = None
-    text: str | None = None  # текст новости (в панели он лежит у рассылки)
+    text: str | None = None  # текст новости (в панели он лежит у рассылки); у notify - сам текст уведомления
+    format: str = "plain"  # у notify: plain / html
     status: str = "pending"  # pending / claimed / sent / blocked / failed
     lease_id: str | None = None
     claimed_until: float = 0.0  # «настенные» секунды, как FakeClock.wall()
@@ -497,6 +498,15 @@ class FakePanel:
         self.registrations: dict[str, dict[str, Any]] = {}
         self.calls: list[Call] = []
         self.heartbeats: list[dict[str, Any]] = []
+        # Этап 25.5. Ответ heartbeat: None - панель старая, отвечает `{}`; иначе {"notify": {...}} с этими значениями.
+        self.notify_chats: list[int] | None = None
+        self.notify_threshold: int = 300
+        self.notify_raw: Any = None  # если задано, отдаётся как значение "notify" как есть (битый ответ)
+        # код привязки админа -> имя админа или причина отказа 409 (link_invalid / link_expired / telegram_taken)
+        self.admin_codes: dict[str, str] = {}
+        self.admin_refusals: dict[str, str] = {}
+        self.admin_links: list[dict[str, Any]] = []  # принятые привязки: {code, telegram_id, telegram_username}
+        self.claim_kinds: list[list[str]] = []  # `kinds` каждого принятого claim (по умолчанию news и config)
         self.outbox: list[Queued] = []
         self.lease_seconds = 60.0  # на сколько секунд панель отдаёт пачку в аренду
         self.acks: list[dict[str, Any]] = []  # тела принятых к разбору POST /outbox/ack, по порядку
@@ -529,6 +539,18 @@ class FakePanel:
         item = Queued(str(uuid.uuid4()), "news", telegram_id, broadcast_id or str(uuid.uuid4()), text)
         self.outbox.append(item)
         return item
+
+    def queue_notify(self, telegram_id: int, text: str = "Сервер alpha недоступен", fmt: str = "plain") -> Queued:
+        item = Queued(str(uuid.uuid4()), "notify", telegram_id, None, text, format=fmt)
+        self.outbox.append(item)
+        return item
+
+    def add_admin_code(self, code: str, admin_name: str = "Анна", refusal: str | None = None) -> str:
+        """Код привязки: отдаёт имя админа, с `refusal` отвечает 409 с этой причиной."""
+        self.admin_codes[code] = admin_name
+        if refusal is not None:
+            self.admin_refusals[code] = refusal
+        return code
 
     def queue_config(self, telegram_id: int) -> Queued:
         item = Queued(str(uuid.uuid4()), "config", telegram_id)
@@ -640,6 +662,8 @@ class FakePanel:
             return self._config_link(path.split("/")[-2])
         if route == "POST /heartbeat":
             return self._heartbeat(body)
+        if route == "POST /admin-links":
+            return self._admin_link(body)
         if route == OUTBOX_CLAIM:
             return self._outbox_claim(body)
         if route == OUTBOX_ACK:
@@ -690,11 +714,18 @@ class FakePanel:
         if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 100:
             return self._invalid("limit")
         now = self.clock.wall()
+        kinds = body.get("kinds") if isinstance(body, dict) and body.get("kinds") is not None else ["news", "config"]
+        if not isinstance(kinds, list) or not all(kind in ("news", "config", "notify") for kind in kinds):
+            return self._invalid("kinds")
+        self.claim_kinds.append(list(kinds))
         ready = [
             item
             for item in self.outbox
-            if (item.status == "pending" and item.not_before <= now)
-            or (item.status == "claimed" and item.claimed_until < now)
+            if item.kind in kinds
+            and (
+                (item.status == "pending" and item.not_before <= now)
+                or (item.status == "claimed" and item.claimed_until < now)
+            )
         ][:limit]
         lease_id, until = str(uuid.uuid4()), now + self.lease_seconds
         items: list[dict[str, Any]] = []
@@ -718,6 +749,16 @@ class FakePanel:
                         "telegram_id": item.telegram_id,
                         "config_url": link.url,
                         "valid_until": _FAR_DATE,
+                    }
+                )
+            elif item.kind == "notify":
+                items.append(
+                    {
+                        "id": item.id,
+                        "kind": "notify",
+                        "telegram_id": item.telegram_id,
+                        "text": item.text,
+                        "format": item.format,
                     }
                 )
             else:
@@ -775,8 +816,34 @@ class FakePanel:
             return self._invalid("bot_username")
         if not 1 <= len(version) <= 32:
             return self._invalid("version")
-        self.heartbeats.append({"bot_username": username, "version": version, "at": self.clock.now})
-        return httpx.Response(200, json={})
+        self.heartbeats.append(
+            {"bot_username": username, "version": version, "at": self.clock.now, "local": body.get("local")}
+        )
+        if self.notify_raw is not None:
+            return httpx.Response(200, json={"notify": self.notify_raw})
+        if self.notify_chats is None:
+            return httpx.Response(200, json={})
+        return httpx.Response(
+            200,
+            json={
+                "notify": {"panel_down_after_seconds": self.notify_threshold, "chats": list(self.notify_chats)},
+            },
+        )
+
+    def _admin_link(self, body: Any) -> httpx.Response:
+        code = str(body.get("code", "")) if isinstance(body, dict) else ""
+        telegram_id = body.get("telegram_id") if isinstance(body, dict) else None
+        if not isinstance(telegram_id, int) or isinstance(telegram_id, bool) or telegram_id < 1:
+            return self._invalid("telegram_id")
+        if code not in self.admin_codes:
+            return self._conflict("link_invalid")
+        if code in self.admin_refusals:
+            return self._conflict(self.admin_refusals[code])
+        self.admin_links.append(
+            {"code": code, "telegram_id": telegram_id, "telegram_username": body.get("telegram_username")}
+        )
+        admin_name = self.admin_codes.pop(code)  # одноразовый
+        return httpx.Response(200, json={"admin_name": admin_name})
 
     def _register(self, body: Any) -> httpx.Response:
         name = str(body.get("name", "")).strip()

@@ -984,9 +984,26 @@ export interface paths {
         put?: never;
         /**
          * Heartbeat
-         * @description Бот сообщает, что жив: имя и версия. Ответ пока пустой, поля появятся вместе с настройками бота.
+         * @description Бот сообщает имя и версию, получает чаты и порог наблюдения за панелью.
          */
         post: operations["heartbeat_api_v1_bot_heartbeat_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot/admin-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin Link */
+        post: operations["admin_link_api_v1_bot_admin_links_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1270,6 +1287,109 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/bot-admin/me/telegram": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** My Telegram */
+        get: operations["my_telegram_api_v1_bot_admin_me_telegram_get"];
+        put?: never;
+        post?: never;
+        /** Unlink My Telegram */
+        delete: operations["unlink_my_telegram_api_v1_bot_admin_me_telegram_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot-admin/me/telegram/code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Telegram Code */
+        post: operations["create_telegram_code_api_v1_bot_admin_me_telegram_code_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot-admin/me/telegram/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update My Events */
+        put: operations["update_my_events_api_v1_bot_admin_me_telegram_events_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot-admin/me/telegram/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test My Notifications */
+        post: operations["test_my_notifications_api_v1_bot_admin_me_telegram_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot-admin/notify-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Notify Events */
+        get: operations["notify_events_api_v1_bot_admin_notify_events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot-admin/admin-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin Links */
+        get: operations["admin_links_api_v1_bot_admin_admin_links_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/bot-admin/status": {
         parameters: {
             query?: never;
@@ -1384,6 +1504,23 @@ export interface paths {
          * @description Сколько людей получит рассылка с таким отбором, не создавая её.
          */
         post: operations["broadcast_audience_api_v1_bot_admin_broadcasts_audience_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot-admin/broadcasts/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Broadcast */
+        post: operations["test_broadcast_api_v1_bot_admin_broadcasts_test_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1593,6 +1730,46 @@ export interface components {
              */
             must_change_password: boolean;
         };
+        /** AdminEventsRead */
+        AdminEventsRead: {
+            /** Events */
+            events: {
+                [key: string]: boolean;
+            };
+        };
+        /** AdminEventsUpdate */
+        AdminEventsUpdate: {
+            /** Events */
+            events: {
+                [key: string]: boolean;
+            };
+        };
+        /** AdminLinkCodeCreated */
+        AdminLinkCodeCreated: {
+            /** Code */
+            code: string;
+            /** Link */
+            link: string | null;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+        };
+        /** AdminLinkRead */
+        AdminLinkRead: {
+            /** Admin Name */
+            admin_name: string;
+        };
+        /** AdminLinkRequest */
+        AdminLinkRequest: {
+            /** Code */
+            code: string;
+            /** Telegram Id */
+            telegram_id: number;
+            /** Telegram Username */
+            telegram_username?: string | null;
+        };
         /** AdminRead */
         AdminRead: {
             /**
@@ -1625,12 +1802,52 @@ export interface components {
             /** Permissions */
             readonly permissions: string[];
         };
+        /** AdminRecipientRead */
+        AdminRecipientRead: {
+            /**
+             * Admin Id
+             * Format: uuid
+             */
+            admin_id: string;
+            /** Admin Email */
+            admin_email: string;
+            /** Telegram Username */
+            telegram_username: string | null;
+            /**
+             * Linked At
+             * Format: date-time
+             */
+            linked_at: string;
+            /** Blocked At */
+            blocked_at: string | null;
+            /** Events */
+            events: {
+                [key: string]: boolean;
+            };
+        };
         /**
          * AdminRole
          * @description Роли админов панели. Что разрешено каждой — в modules/auth/permissions.py.
          * @enum {string}
          */
         AdminRole: "superadmin" | "operator" | "viewer";
+        /** AdminTelegramRead */
+        AdminTelegramRead: {
+            /** Linked */
+            linked: boolean;
+            /** Telegram Username */
+            telegram_username: string | null;
+            /** Linked At */
+            linked_at: string | null;
+            /** Blocked At */
+            blocked_at: string | null;
+            /** Events */
+            events: {
+                [key: string]: boolean;
+            };
+            /** Code Pending Until */
+            code_pending_until: string | null;
+        };
         /** AdminUpdate */
         AdminUpdate: {
             role?: components["schemas"]["AdminRole"] | null;
@@ -1675,7 +1892,7 @@ export interface components {
          * AuditAction
          * @enum {string}
          */
-        AuditAction: "login" | "login_failed" | "login_locked" | "logout" | "password_changed" | "password_change_failed" | "admin_created" | "admin_updated" | "server_created" | "server_updated" | "server_deleted" | "server_credentials_set" | "server_credentials_deleted" | "server_host_key_pinned" | "server_host_key_reset" | "server_host_key_mismatch" | "server_install_started" | "server_install_completed" | "server_install_failed" | "server_sync_started" | "server_sync_completed" | "server_sync_failed" | "server_discover_started" | "server_discover_completed" | "server_discover_failed" | "server_ssh_key_install_started" | "server_ssh_key_install_completed" | "server_ssh_key_install_failed" | "protocol_install_started" | "protocol_install_completed" | "protocol_install_failed" | "protocol_remove_started" | "protocol_remove_completed" | "protocol_remove_failed" | "vpn_user_created" | "vpn_user_updated" | "vpn_user_deleted" | "subscription_created" | "subscription_updated" | "subscription_activated" | "subscription_revoked" | "subscription_expired" | "subscription_deleted" | "access_granted" | "access_updated" | "access_revoked" | "access_expired" | "access_deleted" | "credential_issued" | "credential_imported" | "credential_issue_failed" | "credential_revoked" | "credential_revoke_failed" | "config_viewed" | "clients_import_started" | "clients_import_completed" | "clients_import_failed" | "gateway_exit_add_started" | "gateway_exit_add_completed" | "gateway_exit_add_failed" | "gateway_exit_remove_started" | "gateway_exit_remove_completed" | "gateway_exit_remove_failed" | "gateway_exit_updated" | "gateway_client_assigned" | "gateway_client_unassigned" | "geoip_list_updated" | "geoip_list_activated" | "geoip_override_added" | "geoip_override_removed" | "gateway_ru_applied" | "gateway_ru_apply_failed" | "gateway_client_moved" | "gateway_failover" | "gateway_all_exits_down" | "gateway_exit_recovered" | "gateway_container_recreated" | "bot_key_created" | "bot_key_revoked" | "bot_invite_created" | "bot_invite_revoked" | "bot_registration_created" | "bot_registration_activated" | "bot_registration_failed" | "bot_registration_retried" | "config_link_created" | "bot_broadcast_created" | "bot_broadcast_cancelled" | "bot_config_link_queued" | "bot_settings_updated";
+        AuditAction: "login" | "login_failed" | "login_locked" | "logout" | "password_changed" | "password_change_failed" | "admin_created" | "admin_updated" | "server_created" | "server_updated" | "server_deleted" | "server_credentials_set" | "server_credentials_deleted" | "server_host_key_pinned" | "server_host_key_reset" | "server_host_key_mismatch" | "server_health_changed" | "server_install_started" | "server_install_completed" | "server_install_failed" | "server_sync_started" | "server_sync_completed" | "server_sync_failed" | "server_discover_started" | "server_discover_completed" | "server_discover_failed" | "server_ssh_key_install_started" | "server_ssh_key_install_completed" | "server_ssh_key_install_failed" | "protocol_install_started" | "protocol_install_completed" | "protocol_install_failed" | "protocol_remove_started" | "protocol_remove_completed" | "protocol_remove_failed" | "vpn_user_created" | "vpn_user_updated" | "vpn_user_deleted" | "subscription_created" | "subscription_updated" | "subscription_activated" | "subscription_revoked" | "subscription_expired" | "subscription_deleted" | "access_granted" | "access_updated" | "access_revoked" | "access_expired" | "access_deleted" | "credential_issued" | "credential_imported" | "credential_issue_failed" | "credential_revoked" | "credential_revoke_failed" | "config_viewed" | "clients_import_started" | "clients_import_completed" | "clients_import_failed" | "gateway_exit_add_started" | "gateway_exit_add_completed" | "gateway_exit_add_failed" | "gateway_exit_remove_started" | "gateway_exit_remove_completed" | "gateway_exit_remove_failed" | "gateway_exit_updated" | "gateway_client_assigned" | "gateway_client_unassigned" | "geoip_list_updated" | "geoip_list_activated" | "geoip_override_added" | "geoip_override_removed" | "gateway_ru_applied" | "gateway_ru_apply_failed" | "gateway_client_moved" | "gateway_failover" | "gateway_all_exits_down" | "gateway_exit_recovered" | "gateway_container_recreated" | "bot_key_created" | "bot_key_revoked" | "bot_invite_created" | "bot_invite_revoked" | "bot_registration_created" | "bot_registration_activated" | "bot_registration_failed" | "bot_registration_retried" | "config_link_created" | "bot_broadcast_created" | "bot_broadcast_cancelled" | "bot_config_link_queued" | "bot_settings_updated" | "bot_admin_link_code_created" | "bot_admin_link_created" | "bot_admin_link_removed" | "bot_admin_link_events_updated" | "bot_notify_test_queued";
         /** AuditActorRead */
         AuditActorRead: {
             /**
@@ -1826,15 +2043,26 @@ export interface components {
         };
         /**
          * BotSettingsUpdate
-         * @description Настройки, которые админ меняет из интерфейса. Порог «панель недоступна» появится в UI вместе с 25.5.
+         * @description Обновляются только переданные поля; старые клиенты сохраняют порог уведомлений.
          */
         BotSettingsUpdate: {
             /** Default Protocol Id */
-            default_protocol_id: string | null;
-            /** Default Days */
+            default_protocol_id?: string | null;
+            /**
+             * Default Days
+             * @default 30
+             */
             default_days: number;
-            /** Invite Valid Days */
+            /**
+             * Invite Valid Days
+             * @default 7
+             */
             invite_valid_days: number;
+            /**
+             * Panel Down After Seconds
+             * @default 300
+             */
+            panel_down_after_seconds: number;
         };
         /**
          * BotStatusRead
@@ -1856,6 +2084,18 @@ export interface components {
             /** Last Claim At */
             last_claim_at: string | null;
             outbox: components["schemas"]["OutboxCounts"];
+            /** Last Seen Local */
+            last_seen_local?: boolean | null;
+            /**
+             * Notify Capable
+             * @default false
+             */
+            notify_capable: boolean;
+            /**
+             * Admin Links
+             * @default 0
+             */
+            admin_links: number;
         };
         /**
          * BroadcastCreate
@@ -1925,6 +2165,11 @@ export interface components {
              * @enum {string}
              */
             state: "running" | "cancelled" | "finished";
+        };
+        /** BroadcastTestRequest */
+        BroadcastTestRequest: {
+            /** Text */
+            text: string;
         };
         /** ChangePasswordRequest */
         ChangePasswordRequest: {
@@ -2241,6 +2486,12 @@ export interface components {
             bot_username: string;
             /** Version */
             version: string;
+            /** Local */
+            local?: boolean | null;
+        };
+        /** HeartbeatResponse */
+        HeartbeatResponse: {
+            notify: components["schemas"]["NotifyConfig"];
         };
         /** HostKeyPin */
         HostKeyPin: {
@@ -2515,6 +2766,32 @@ export interface components {
             /** Points */
             points: components["schemas"]["MetricPoint"][];
         };
+        /** NotifyConfig */
+        NotifyConfig: {
+            /** Panel Down After Seconds */
+            panel_down_after_seconds: number;
+            /** Chats */
+            chats: number[];
+        };
+        /** NotifyEventRead */
+        NotifyEventRead: {
+            /** Key */
+            key: string;
+            /** Title */
+            title: string;
+            /** Group */
+            group: string;
+            /** Default */
+            default: boolean;
+        };
+        /** NotifyTestQueued */
+        NotifyTestQueued: {
+            /**
+             * Outbox Id
+             * Format: uuid
+             */
+            outbox_id: string;
+        };
         /** OutboxAckItem */
         OutboxAckItem: {
             /**
@@ -2569,6 +2846,10 @@ export interface components {
             config_url?: string | null;
             /** Valid Until */
             valid_until?: string | null;
+            /** Text */
+            text?: string | null;
+            /** Format */
+            format?: ("plain" | "html") | null;
         };
         /** OutboxClaimRequest */
         OutboxClaimRequest: {
@@ -2577,6 +2858,8 @@ export interface components {
              * @default 50
              */
             limit: number;
+            /** Kinds */
+            kinds?: ("news" | "config" | "notify")[] | null;
         };
         /** OutboxClaimResponse */
         OutboxClaimResponse: {
@@ -5317,9 +5600,40 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["HeartbeatResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    admin_link_api_v1_bot_admin_links_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminLinkRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminLinkRead"];
                 };
             };
             /** @description Validation Error */
@@ -5835,6 +6149,157 @@ export interface operations {
             };
         };
     };
+    my_telegram_api_v1_bot_admin_me_telegram_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminTelegramRead"];
+                };
+            };
+        };
+    };
+    unlink_my_telegram_api_v1_bot_admin_me_telegram_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    create_telegram_code_api_v1_bot_admin_me_telegram_code_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminLinkCodeCreated"];
+                };
+            };
+        };
+    };
+    update_my_events_api_v1_bot_admin_me_telegram_events_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminEventsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminEventsRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_my_notifications_api_v1_bot_admin_me_telegram_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotifyTestQueued"];
+                };
+            };
+        };
+    };
+    notify_events_api_v1_bot_admin_notify_events_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotifyEventRead"][];
+                };
+            };
+        };
+    };
+    admin_links_api_v1_bot_admin_admin_links_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminRecipientRead"][];
+                };
+            };
+        };
+    };
     bot_status_api_v1_bot_admin_status_get: {
         parameters: {
             query?: never;
@@ -6046,6 +6511,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AudienceRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_broadcast_api_v1_bot_admin_broadcasts_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BroadcastTestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotifyTestQueued"];
                 };
             };
             /** @description Validation Error */

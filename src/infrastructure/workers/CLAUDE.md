@@ -42,6 +42,7 @@ interval) — несколько воркеров не дублируют раб
 |---|---|
 | `access` | активация и истечение подписок (своя сессия на подписку), при истечении — задачи отзыва клиентов |
 | `admin_sessions` | чистка истёкших refresh-сессий |
+| `bot_notify` | `NotifyCollector.run()` в своей сессии: аудит → seen/outbox/курсор одной транзакцией; интервал `BOT_NOTIFY_INTERVAL_SECONDS` (15 с), без SSH и новой Job; контракт — `docs/bot/notify.md` |
 | `stale_jobs` | RUNNING дольше 30 мин → FAILED (иначе блокировали бы плановые проверки навсегда); затем `BotRegistrationService.reconcile()`: регистрации бота в `provisioning` без незавершённой задачи → `active` (клиент есть) или `failed` |
 | `requeue_jobs` | PENDING, потерянные очередью → снова в очередь |
 | `health` | задачи HEALTH_CHECK всем серверам с учёткой (кроме INSTALLING) |

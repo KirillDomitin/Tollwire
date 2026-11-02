@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """Чтение для страницы «Бот» в панели: состояние, получатели, протоколы, списки. Записей здесь нет."""
 
+import re
 from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from typing import Literal
@@ -11,20 +12,30 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.exceptions import NotFoundError
+from modules.bot.admin_link_repository import AdminLinkRepository
 from modules.bot.models.broadcast import BotBroadcast
 from modules.bot.models.invite import BotInvite
 from modules.bot.models.registration import BotRegistration, RegistrationStatus
+from modules.bot.notify_catalog import CATALOG, default_events
 from modules.bot.repository import BotPageRepository, OutboxRepository
 from modules.bot.schemas import (
+    AdminRecipientRead,
+    AdminTelegramRead,
     BotProtocolRead,
     BotStatusRead,
     BroadcastRead,
+    NotifyEventRead,
     OutboxCounts,
     OutboxRowRead,
     RecipientRead,
 )
 
 Cursor = tuple[datetime, UUID] | None
+
+
+def notify_capable(version: str | None) -> bool:
+    match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:[-+].*)?", version or "")
+    return match is not None and tuple(int(part) for part in match.groups()) >= (0, 3, 0)
 
 
 def broadcast_read(broadcast: BotBroadcast, has_open_rows: bool) -> BroadcastRead:
@@ -84,7 +95,44 @@ class BotPageService:
             stale=stale,
             last_claim_at=max(claims) if claims else None,
             outbox=OutboxCounts(pending=pending, claimed=claimed),
+            last_seen_local=seen.last_seen_local if seen else None,
+            notify_capable=notify_capable(seen.last_seen_version if seen else None),
+            admin_links=await AdminLinkRepository(self.session).count_linked(),
         )
+
+    async def telegram(self, admin_id: UUID) -> AdminTelegramRead:
+        link = await AdminLinkRepository(self.session).read(admin_id)
+        pending = link.code_expires_at if link is not None and link.code_hash is not None else None
+        if pending is not None and pending <= datetime.now(timezone.utc):
+            pending = None
+        return AdminTelegramRead(
+            linked=link is not None and link.telegram_id is not None,
+            telegram_username=link.telegram_username if link else None,
+            linked_at=link.linked_at if link else None,
+            blocked_at=link.blocked_at if link else None,
+            events={**default_events(), **link.events} if link else default_events(),
+            code_pending_until=pending,
+        )
+
+    def notify_events(self) -> list[NotifyEventRead]:
+        return [
+            NotifyEventRead(key=key, title=event.title, group=event.group, default=event.default)
+            for key, event in CATALOG.items()
+        ]
+
+    async def admin_links(self) -> list[AdminRecipientRead]:
+        return [
+            AdminRecipientRead(
+                admin_id=link.admin_id,
+                admin_email=email,
+                telegram_username=link.telegram_username,
+                linked_at=link.linked_at,
+                blocked_at=link.blocked_at,
+                events={**default_events(), **link.events},
+            )
+            for link, email in await AdminLinkRepository(self.session).recipients()
+            if link.linked_at is not None
+        ]
 
     async def recipients(self, search: str | None, limit: int) -> list[RecipientRead]:
         return [

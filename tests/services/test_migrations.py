@@ -1693,10 +1693,19 @@ async def test_outbox_columns_that_must_be_filled_and_that_may_stay_empty() -> N
     outbox = {str(row[0]): row[2] for row in await _query(_columns_sql("bot_outbox"))}
     broadcasts = {str(row[0]): row[2] for row in await _query(_columns_sql("bot_broadcasts"))}
 
-    assert all(outbox[name] == "NO" for name in ("kind", "user_id", "status", "priority", "attempts", "created_at"))
+    assert all(outbox[name] == "NO" for name in ("kind", "status", "priority", "attempts", "created_at"))
     assert all(
         outbox[name] == "YES"
-        for name in ("broadcast_id", "access_grant_id", "lease_id", "claimed_until", "config_link_id", "error")
+        for name in (
+            "user_id",
+            "admin_link_id",
+            "broadcast_id",
+            "access_grant_id",
+            "lease_id",
+            "claimed_until",
+            "config_link_id",
+            "error",
+        )
     )
     assert all(broadcasts[name] == "NO" for name in ("kind", "target", "request_id", "total", "sent", "cancelled"))
     assert all(broadcasts[name] == "YES" for name in ("text", "protocol_id", "cancelled_at", "finished_at"))
@@ -1925,6 +1934,7 @@ async def test_outbox_foreign_keys_cascade_or_clear_as_agreed() -> None:
     assert await _delete_rules("bot_outbox") == {
         "broadcast_id": "cascade",
         "user_id": "cascade",
+        "admin_link_id": "cascade",
         "access_grant_id": "set null",
         "claimed_by_key_id": "set null",
         "config_link_id": "set null",

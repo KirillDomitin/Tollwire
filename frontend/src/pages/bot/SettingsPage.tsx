@@ -12,10 +12,7 @@ import { protocolLabel } from "./protocols";
 import { failed, Loading, Problem } from "./states";
 import { botKeys, useBotProtocols, useBotSettings, type BotProtocol, type BotSettings } from "./useBot";
 
-/**
- * «Настройки» (/bot/settings): что подставляется в приглашение. Порога «панель недоступна» здесь нет: он заработает с
- * уведомлениями (этап 25.5), а показывать настройку, которая ничего не меняет, не нужно.
- */
+/** Invitation defaults and the panel outage notification threshold. */
 export function SettingsPage() {
   const { t } = useTranslation();
   const settings = useBotSettings();
@@ -49,18 +46,24 @@ function SettingsForm({ settings, protocols }: { settings: BotSettings; protocol
   const { can } = useAuth();
   const manage = can("bot:manage");
   const queryClient = useQueryClient();
-  const [protocolId, setProtocolId] = useState(settings.default_protocol_id ?? "");
-  const [days, setDays] = useState(String(settings.default_days));
-  const [valid, setValid] = useState(String(settings.invite_valid_days));
+  const [draft, setDraft] = useState<Partial<Record<"protocolId" | "days" | "valid" | "threshold", string>>>({});
+  const protocolId = draft.protocolId ?? settings.default_protocol_id ?? "";
+  const days = draft.days ?? String(settings.default_days);
+  const valid = draft.valid ?? String(settings.invite_valid_days);
+  const threshold = draft.threshold ?? String(settings.panel_down_after_seconds / 60);
   const [saved, setSaved] = useState(false);
+  const [invalid, setInvalid] = useState(false);
 
   const save = useMutation({
     mutationFn: (body: {
       default_protocol_id: string | null;
       default_days: number;
       invite_valid_days: number;
+      panel_down_after_seconds: number;
     }) => botUnwrap(api.PUT("/api/v1/bot-admin/settings", { body })),
-    onSuccess: () => {
+    onSuccess: (updated) => {
+      queryClient.setQueryData(botKeys.settings, updated);
+      setDraft({});
       setSaved(true);
       return queryClient.invalidateQueries({ queryKey: botKeys.settings });
     },
@@ -68,33 +71,47 @@ function SettingsForm({ settings, protocols }: { settings: BotSettings; protocol
 
   const daysNumber = Number(days);
   const validNumber = Number(valid);
+  const thresholdNumber = Number(threshold);
+  const seconds = thresholdNumber * 60;
+  const thresholdSeconds = draft.threshold === undefined ? settings.panel_down_after_seconds : Math.round(seconds);
+  // Decimal minute inputs may acquire a floating-point rounding error when multiplied by 60.
+  const wholeSeconds = Math.abs(seconds - thresholdSeconds) <= Number.EPSILON * Math.max(1, Math.abs(seconds)) * 4;
   const ready =
     Number.isInteger(daysNumber) &&
     daysNumber >= 1 &&
     daysNumber <= 3650 &&
     Number.isInteger(validNumber) &&
     validNumber >= 1 &&
-    validNumber <= 365;
+    validNumber <= 365 &&
+    Number.isFinite(thresholdNumber) &&
+    wholeSeconds &&
+    thresholdNumber >= 1 &&
+    thresholdNumber <= 1440;
 
-  function edit<T>(set: (value: T) => void) {
-    return (value: T) => {
-      set(value);
+  function edit(field: keyof typeof draft) {
+    return (value: string) => {
+      setDraft((current) => ({ ...current, [field]: value }));
       setSaved(false);
+      setInvalid(false);
     };
   }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!ready) return;
+    if (!ready) {
+      setInvalid(true);
+      return;
+    }
     save.mutate({
       default_protocol_id: protocolId || null,
       default_days: daysNumber,
       invite_valid_days: validNumber,
+      panel_down_after_seconds: thresholdSeconds,
     });
   }
 
   return (
-    <form className={styles.form} onSubmit={submit}>
+    <form className={styles.form} onSubmit={submit} noValidate>
       <div className={styles.field}>
         <label htmlFor="settings-protocol" className={styles.label}>
           {t("bot.settings.protocol")}
@@ -103,8 +120,8 @@ function SettingsForm({ settings, protocols }: { settings: BotSettings; protocol
           id="settings-protocol"
           className={styles.control}
           value={protocolId}
-          disabled={!manage}
-          onChange={(event) => edit(setProtocolId)(event.target.value)}
+          disabled={!manage || save.isPending}
+          onChange={(event) => edit("protocolId")(event.target.value)}
         >
           <option value="">{t("bot.settings.noProtocol")}</option>
           {protocols.map((protocol) => (
@@ -123,10 +140,10 @@ function SettingsForm({ settings, protocols }: { settings: BotSettings; protocol
           type="number"
           className={styles.control}
           value={days}
-          disabled={!manage}
+          disabled={!manage || save.isPending}
           min={1}
           max={3650}
-          onChange={(event) => edit(setDays)(event.target.value)}
+          onChange={(event) => edit("days")(event.target.value)}
         />
         <p className={styles.hint}>{t("bot.settings.daysHint")}</p>
       </div>
@@ -139,17 +156,39 @@ function SettingsForm({ settings, protocols }: { settings: BotSettings; protocol
           type="number"
           className={styles.control}
           value={valid}
-          disabled={!manage}
+          disabled={!manage || save.isPending}
           min={1}
           max={365}
-          onChange={(event) => edit(setValid)(event.target.value)}
+          onChange={(event) => edit("valid")(event.target.value)}
         />
         <p className={styles.hint}>{t("bot.settings.validDaysHint")}</p>
       </div>
+      <div className={styles.field}>
+        <label htmlFor="settings-threshold" className={styles.label}>
+          {t("bot.settings.panelDown")}
+        </label>
+        <input
+          id="settings-threshold"
+          type="number"
+          className={styles.control}
+          value={threshold}
+          disabled={!manage || save.isPending}
+          min={1}
+          max={1440}
+          step="any"
+          aria-describedby="settings-threshold-hint"
+          aria-invalid={invalid || undefined}
+          onChange={(event) => edit("threshold")(event.target.value)}
+        />
+        <p id="settings-threshold-hint" className={styles.hint}>
+          {t("bot.settings.panelDownHint")}
+        </p>
+      </div>
+      {invalid && <Notice>{t("bot.settings.invalid")}</Notice>}
       {save.isError && <Notice>{errorMessage(save.error)}</Notice>}
       {manage && (
         <div className={styles.row}>
-          <Button type="submit" busy={save.isPending} busyLabel={t("bot.settings.saving")} disabled={!ready}>
+          <Button type="submit" busy={save.isPending} busyLabel={t("bot.settings.saving")}>
             {t("bot.settings.save")}
           </Button>
           {saved && (

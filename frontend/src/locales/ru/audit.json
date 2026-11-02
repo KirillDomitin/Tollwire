@@ -100,7 +100,13 @@
     "bot_broadcast_created": "Создана рассылка через бота",
     "bot_broadcast_cancelled": "Рассылка через бота отменена",
     "bot_config_link_queued": "Ссылка на конфиг поставлена в очередь бота",
-    "bot_settings_updated": "Изменены настройки бота"
+    "bot_settings_updated": "Изменены настройки бота",
+    "server_health_changed": "Состояние сервера изменилось",
+    "bot_admin_link_code_created": "Создан код привязки Telegram",
+    "bot_admin_link_created": "Telegram администратора привязан",
+    "bot_admin_link_removed": "Telegram администратора отвязан",
+    "bot_admin_link_events_updated": "События уведомлений изменены",
+    "bot_notify_test_queued": "Пробное уведомление поставлено в очередь"
   },
   "details": {
     "reason": "Причина",
@@ -145,7 +151,10 @@
     "kind": "Вид",
     "target": "Кому",
     "recipients": "Получателей",
-    "cancelled": "Остановлено сообщений"
+    "cancelled": "Остановлено сообщений",
+    "from": "Прежнее состояние",
+    "to": "Новое состояние",
+    "replaced": "Прежняя привязка заменена"
   },
   "actor": {
     "anonymous": "Аноним",

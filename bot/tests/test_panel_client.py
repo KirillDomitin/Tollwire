@@ -104,7 +104,9 @@ async def test_every_request_carries_the_bot_key_and_user_agent(panel: FakePanel
 async def test_heartbeat_sends_name_and_version(panel: FakePanel, client: PanelClient) -> None:
     await client.heartbeat("tollwire_test_bot", "1.2.3")
 
-    assert panel.bodies("POST /heartbeat") == [{"bot_username": "tollwire_test_bot", "version": "1.2.3"}]
+    assert panel.bodies("POST /heartbeat") == [
+        {"bot_username": "tollwire_test_bot", "version": "1.2.3", "local": False}
+    ]
 
 
 @pytest.mark.parametrize(("status", "code"), [("valid", "A"), ("used", "B"), ("expired", "C"), ("revoked", "D")])
@@ -887,10 +889,10 @@ async def test_ack_waits_out_a_short_rate_limit_once(panel: FakePanel, client: P
     assert naps.delays == [2] and list(outcome.applied) == []
 
 
-def test_the_bot_version_is_0_2_0_everywhere() -> None:
+def test_the_bot_version_is_0_3_0_everywhere() -> None:
     """Панель по версии из heartbeat видит, что бот умеет забирать очередь; в pyproject та же версия."""
     import tomllib
 
     pyproject = tomllib.loads((Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8"))
 
-    assert __version__ == "0.2.0" and pyproject["project"]["version"] == "0.2.0"
+    assert __version__ == "0.3.0" and pyproject["project"]["version"] == "0.3.0"

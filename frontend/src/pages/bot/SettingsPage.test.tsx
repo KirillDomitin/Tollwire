@@ -15,6 +15,7 @@ import {
 } from "../../test/botApi";
 import { json, renderWithProviders } from "../../test/render";
 import { SettingsPage } from "./SettingsPage";
+import { botKeys } from "./useBot";
 
 /*
  * ДОПУЩЕНИЯ о коде, которого ещё нет (этап 25.4):
@@ -22,8 +23,8 @@ import { SettingsPage } from "./SettingsPage";
  *   GET /bot-admin/settings и /bot-admin/protocols, сохраняет PUT /bot-admin/settings.
  * - Поля: «Протокол по умолчанию» (select; value опции = id протокола, опция с value "" - «не выбран»),
  *   «Срок по умолчанию, дней» (число), «Приглашение действует, дней» (число); кнопка «Сохранить» (bot:manage).
- *   Поля порога «панель недоступна» нет (решение Р5.1-B): в форме ровно два числовых поля, в теле PUT ровно три
- *   ключа: default_protocol_id, default_days, invite_valid_days.
+ *   Этап 25.5 добавляет четвёртое поле - порог «Панель недоступна, минут» (1..1440; в теле PUT -
+ *   `panel_down_after_seconds` в секундах, 60..86400) с подсказкой про бота на одном сервере с панелью.
  * - После успеха - сообщение «Сохранено». У наблюдателя (только bot:read) значения видны, кнопки нет.
  * - Ошибки - Notice без `detail`; 429 - «слишком часто, попробуйте через N с».
  */
@@ -66,16 +67,15 @@ describe("bot settings", () => {
     expect(options.some((text) => text.includes("DE1"))).toBe(true);
   });
 
-  it("has no field for the «panel is down» threshold yet", async () => {
+  it("has the «panel is down» threshold in minutes (300 s = 5 min)", async () => {
     setup();
     await loaded();
 
-    expect(screen.getAllByRole("spinbutton")).toHaveLength(2);
-    expect(screen.queryByLabelText(/недоступн/i)).not.toBeInTheDocument();
-    expect(screen.queryByDisplayValue("300")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("spinbutton")).toHaveLength(3);
+    expect(screen.getByLabelText(/Панель недоступна/i)).toHaveValue(5);
   });
 
-  it("saves exactly the three settings the page shows", async () => {
+  it("saves exactly the four settings the page shows", async () => {
     const user = userEvent.setup();
     const { api } = setup();
     await loaded();
@@ -92,10 +92,11 @@ describe("bot settings", () => {
       default_protocol_id: PROTO2_ID,
       default_days: 14,
       invite_valid_days: 3,
+      panel_down_after_seconds: 300,
     });
   });
 
-  it("sends only those three keys even when nothing was changed", async () => {
+  it("sends only those four keys even when nothing was changed", async () => {
     const user = userEvent.setup();
     const { api } = setup();
     await loaded();
@@ -107,7 +108,113 @@ describe("bot settings", () => {
       "default_days",
       "default_protocol_id",
       "invite_valid_days",
+      "panel_down_after_seconds",
     ]);
+  });
+
+  it("sends the threshold in seconds", async () => {
+    const user = userEvent.setup();
+    const { api } = setup();
+    await loaded();
+
+    await user.clear(screen.getByLabelText(/Панель недоступна/i));
+    await user.type(screen.getByLabelText(/Панель недоступна/i), "10");
+    await user.click(screen.getByRole("button", { name: "Сохранить" }));
+
+    await waitFor(() => expect(api.count("PUT", SETTINGS)).toBe(1));
+    expect(api.last("PUT", SETTINGS)?.body).toMatchObject({ panel_down_after_seconds: 600 });
+  });
+
+  it("uses refreshed pristine settings while preserving a locally edited field", async () => {
+    const user = userEvent.setup();
+    const { api, queryClient } = setup();
+    await loaded();
+    await user.clear(daysField());
+    await user.type(daysField(), "14");
+    api.world.settings = botSettings({ default_protocol_id: PROTO2_ID, default_days: 60, invite_valid_days: 3, panel_down_after_seconds: 90 });
+
+    await queryClient.invalidateQueries({ queryKey: botKeys.settings });
+
+    await waitFor(() => expect(protocolField()).toHaveValue(PROTO2_ID));
+    expect(daysField()).toHaveValue(14);
+    expect(validField()).toHaveValue(3);
+    expect(screen.getByLabelText(/Панель недоступна/i)).toHaveValue(1.5);
+    await user.click(screen.getByRole("button", { name: "Сохранить" }));
+    await waitFor(() => expect(api.count("PUT", SETTINGS)).toBe(1));
+    expect(api.last("PUT", SETTINGS)?.body).toEqual({ default_protocol_id: PROTO2_ID, default_days: 14, invite_valid_days: 3, panel_down_after_seconds: 90 });
+  });
+
+  it.each([90, 77])("preserves a stored threshold of %s seconds when saving another field", async (seconds) => {
+    const user = userEvent.setup();
+    const { api } = setup(OPERATOR, { settings: botSettings({ panel_down_after_seconds: seconds }) });
+    await loaded();
+    expect(screen.getByLabelText(/Панель недоступна/i)).toHaveValue(seconds / 60);
+    await user.clear(daysField());
+    await user.type(daysField(), "14");
+    await user.click(screen.getByRole("button", { name: "Сохранить" }));
+
+    await waitFor(() => expect(api.count("PUT", SETTINGS)).toBe(1));
+    expect(api.last("PUT", SETTINGS)?.body).toMatchObject({ default_days: 14, panel_down_after_seconds: seconds });
+  });
+
+  it("accepts fractional minutes that represent whole seconds", async () => {
+    const user = userEvent.setup();
+    const { api } = setup();
+    await loaded();
+    await user.clear(screen.getByLabelText(/Панель недоступна/i));
+    await user.type(screen.getByLabelText(/Панель недоступна/i), "1.5");
+    await user.click(screen.getByRole("button", { name: "Сохранить" }));
+
+    await waitFor(() => expect(api.count("PUT", SETTINGS)).toBe(1));
+    expect(api.last("PUT", SETTINGS)?.body).toMatchObject({ panel_down_after_seconds: 90 });
+  });
+
+  it("refuses fractional seconds without sending a request", async () => {
+    const user = userEvent.setup();
+    const { api } = setup();
+    await loaded();
+    await user.clear(screen.getByLabelText(/Панель недоступна/i));
+    await user.type(screen.getByLabelText(/Панель недоступна/i), "1.001");
+    await user.click(screen.getByRole("button", { name: "Сохранить" }));
+
+    expect(api.count("PUT", SETTINGS)).toBe(0);
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+  });
+
+  it.each(["0", "1441"])("refuses a threshold of %s minutes without sending anything", async (minutes) => {
+    const user = userEvent.setup();
+    const { api } = setup();
+    await loaded();
+
+    await user.clear(screen.getByLabelText(/Панель недоступна/i));
+    await user.type(screen.getByLabelText(/Панель недоступна/i), minutes);
+    await user.click(screen.getByRole("button", { name: "Сохранить" }));
+
+    expect(api.count("PUT", SETTINGS)).toBe(0);
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+  });
+
+  it.each([
+    ["1", 60],
+    ["1440", 86400],
+  ])("accepts the edge of %s minutes", async (minutes, seconds) => {
+    const user = userEvent.setup();
+    const { api } = setup();
+    await loaded();
+
+    await user.clear(screen.getByLabelText(/Панель недоступна/i));
+    await user.type(screen.getByLabelText(/Панель недоступна/i), minutes);
+    await user.click(screen.getByRole("button", { name: "Сохранить" }));
+
+    await waitFor(() => expect(api.count("PUT", SETTINGS)).toBe(1));
+    expect(api.last("PUT", SETTINGS)?.body).toMatchObject({ panel_down_after_seconds: seconds });
+  });
+
+  it("explains that a bot on the panel server cannot see the host going down", async () => {
+    setup();
+    await loaded();
+
+    expect(screen.getByText(/на том же сервере/i)).toBeInTheDocument();
   });
 
   it("confirms that the settings are saved", async () => {

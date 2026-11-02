@@ -16,6 +16,7 @@ from modules.access.service import SubscriptionService
 from modules.audit.actor import SYSTEM_ACTOR
 from modules.audit.service import AuditService
 from modules.auth.service import AuthService
+from modules.bot.notify import NotifyCollector
 from modules.bot.registrations import BotRegistrationService
 from modules.bot.repository import OutboxRepository
 from modules.gateway.failover import GatewayFailoverService
@@ -217,10 +218,17 @@ async def apply_retention(job_days: int, audit_days: int, outbox_days: int | Non
     return message
 
 
+async def collect_bot_notifications() -> str:
+    async with session_factory() as session:
+        queued = await NotifyCollector(session).run()
+    return f"queued {queued} bot notifications"
+
+
 def build_rules(settings: Settings) -> list[Rule]:
     return [
         Rule("access", settings.access_rules_interval_seconds, apply_access_rules),
         Rule("admin_sessions", settings.session_cleanup_interval_seconds, cleanup_admin_sessions),
+        Rule("bot_notify", settings.bot_notify_interval_seconds, collect_bot_notifications),
         Rule(
             "stale_jobs",
             settings.stale_jobs_interval_seconds,

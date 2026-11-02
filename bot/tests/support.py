@@ -81,6 +81,10 @@ OTHER_EMAIL = "maria.sidorova@example.org"
 CODE = "Inv_Code-123"
 OTHER_CODE = "Other_Code-456"
 DEFAULT_KEY = "twb_" + "k" * 43
+ADMIN_CODE = "AdminCode_" + "x" * 22  # 32 символа: так бот отличает код привязки админа от приглашения (24)
+INVITE_24 = "Invite24_" + "y" * 15  # 24 символа: обычное приглашение
+ADMIN_TG_ID = 6660001234
+assert len(ADMIN_CODE) == 32 and len(INVITE_24) == 24
 
 # Секреты для проверки логов: форма настоящих (токен BotFather и ключ панели), значения выдуманные.
 SECRET_TOKEN = "7000000001:AAF3x9Qk1ZpLm2NvB8cD4eR6tY0uI5oP7aS"
@@ -127,6 +131,14 @@ class K:
     # сбои панели
     panel_unavailable = "panel_unavailable"
     rate_limited = "rate_limited"
+    # этап 25.5: привязка Telegram админа и слежение за панелью
+    panel_down = "panel_down"  # {minutes}: «Панель не отвечает N мин»
+    panel_up = "panel_up"  # «Панель снова отвечает»
+    admin_linked = "admin_linked"  # {name}: «Telegram привязан к админу <имя>»
+    admin_link_usage = "admin_link_usage"  # /admin без кода
+    admin_link_invalid = "admin_link_invalid"  # код неверный или уже использован
+    admin_link_expired = "admin_link_expired"  # срок кода вышел
+    admin_link_taken = "admin_link_taken"  # этот Telegram уже привязан к другому админу
 
 
 def all_keys() -> list[str]:
@@ -562,3 +574,118 @@ def ack_results(panel: FakePanel, lease_id: str | None = None) -> dict[str, dict
             for result in body["results"]:
                 found[result["id"]] = result
     return found
+
+
+# --- слежение за панелью (этап 25.5) -------------------------------------------------------------------------------
+#
+# Допущения, которых в плане нет (правятся ТОЛЬКО здесь):
+#
+# - `tollwire_bot.panel.NotifyConfig(panel_down_after_seconds: int, chats: list[int])` - результат
+#   `PanelClient.heartbeat(bot_username, version, local=False)`; `chats` - telegram_id (чат с админом совпадает с ним);
+# - `PanelClient(..., observer=watch)`: наблюдатель связи получает `on_ok()` (2xx на heartbeat/claim; 401 и 429 тоже
+#   считаются «панель жива») и `on_fail()` (сеть, 5xx, `PanelUnavailable`);
+# - `PanelWatch(bot, storage, *, repeat_seconds=1800, sleep=, clock=)`: `await start()` (на пустом
+#   диске `last_ok_at` = сейчас), `configure(NotifyConfig)`, `await tick()` (один цикл раз в 15 с), `await run()`;
+# - `Heartbeat(bot, panel, *, version, sleep=, watch=None)`: после ответа передаёт `NotifyConfig` в `watch.configure`;
+#   `local` бот определяет по адресу панели (внутреннее имя без точки - значит панель рядом, на том же сервере);
+# - сообщения: «Панель не отвечает N мин» - `t(K.panel_down, minutes=N)`, «Панель снова отвечает» - `t(K.panel_up)`,
+#   обычный текст (без `parse_mode`).
+
+WATCH_TICK = 15  # секунд между циклами слежения
+WATCH_REPEAT = 1800
+
+
+@dataclass
+class WatchWorld:
+    """Бот над фейками без диспетчера: клиент панели, heartbeat и слежение; время идёт только вручную (`step`)."""
+
+    tmp_path: Path
+    clock: FakeClock
+    panel: FakePanel
+    telegram: FakeTelegram
+    bot: Bot
+    storage: SqliteStorage = field(init=False)
+    client: PanelClient = field(init=False)
+    watch: Any = field(init=False)
+    heartbeat: Heartbeat = field(init=False)
+    driver: asyncio.Task[None] | None = None
+
+    @property
+    def state_file(self) -> Path:
+        return self.tmp_path / "state.sqlite3"
+
+    def open(self) -> None:
+        from tollwire_bot import __version__
+        from tollwire_bot.heartbeat import Heartbeat
+        from tollwire_bot.panel import PanelClient
+        from tollwire_bot.panel_watch import PanelWatch
+
+        self.storage = make_storage(self.state_file, self.clock)
+        self.watch = PanelWatch(
+            self.bot, self.storage, repeat_seconds=WATCH_REPEAT, sleep=self.clock.sleep, clock=self.clock.wall
+        )
+        self.client = PanelClient(
+            PANEL_URL, self.panel.key, transport=self.panel.transport, sleep=self.clock.sleep, observer=self.watch
+        )
+        self.heartbeat = Heartbeat(self.bot, self.client, version=__version__, sleep=self.clock.sleep, watch=self.watch)
+
+    async def start(self) -> None:
+        await self.watch.start()
+        await self.heartbeat.start()
+
+    async def close(self) -> None:
+        await self.client.aclose()
+        await self.storage.close()
+
+    async def restart(self) -> None:
+        """Процесс бота перезапущен: Telegram, панель и время остались, память - нет, файл состояния - да."""
+        await self.close()
+        self.open()
+        await self.start()
+
+    async def configure(self, chats: list[int], threshold: int = 300) -> None:
+        """Панель сообщила чаты и порог (ответ heartbeat), бот это принял."""
+        self.panel.notify_chats, self.panel.notify_threshold = list(chats), threshold
+        await self.heartbeat.beat()
+
+    async def step(self, seconds: float, *, beat: bool = False) -> None:
+        """Время идёт по 15 секунд; на каждом шаге - цикл слежения, при `beat` каждые 30 секунд - ещё и heartbeat."""
+        for _ in range(int(seconds // WATCH_TICK)):
+            self.clock.advance(WATCH_TICK)
+            if beat and int(self.clock.now) % 30 == 0:
+                await self.heartbeat.beat()
+            await self.watch.tick()
+
+    def said(self, chat_id: int) -> list[str]:
+        return self.telegram.texts(chat_id)
+
+    def downs(self, chat_id: int) -> list[str]:
+        """Сообщения «панель не отвечает» в чате (всё, что не «снова отвечает»)."""
+        return [text for text in self.said(chat_id) if text != t(K.panel_up)]
+
+    def ups(self, chat_id: int) -> list[str]:
+        return [text for text in self.said(chat_id) if text == t(K.panel_up)]
+
+
+@contextlib.asynccontextmanager
+async def running_watch(tmp_path: Path, *, limits: bool = False) -> AsyncIterator[WatchWorld]:
+    clock = FakeClock()
+    panel = FakePanel(clock)
+    telegram = FakeTelegram()
+    telegram.clock = clock
+    if limits:
+        telegram.limits = TelegramLimits()
+    bot = Bot(BOT_TOKEN, default=DefaultBotProperties(link_preview_is_disabled=True))
+    bot.session.middleware(telegram)
+    world = WatchWorld(tmp_path, clock, panel, telegram, bot)
+    world.open()
+    world.driver = asyncio.create_task(clock.drive(quiet=0.006))
+    try:
+        await world.start()
+        yield world
+    finally:
+        await world.close()
+        world.driver.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await world.driver
+        await bot.session.close()

@@ -22,6 +22,7 @@ class Permission(enum.Enum):
     BOT_READ = "bot:read"  # ключи (без секретов), приглашения (без кодов), регистрации Telegram-бота
     BOT_MANAGE = "bot:manage"  # создать и отозвать приглашение, повторить регистрацию
     BOT_KEYS = "bot:keys"  # выпустить и отозвать ключ бота: им бот входит в панель (только superadmin)
+    BOT_NOTIFY = "bot:notify"  # собственная привязка Telegram и уведомления
 
 
 _VIEWER = frozenset(
@@ -32,6 +33,7 @@ _VIEWER = frozenset(
         Permission.JOBS_READ,
         Permission.AUDIT_READ,
         Permission.BOT_READ,
+        Permission.BOT_NOTIFY,
     }
 )
 _OPERATOR = _VIEWER | {

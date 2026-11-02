@@ -29,6 +29,8 @@ export const SECRET_DETAIL = "internal detail leak 4242";
 export const OPERATOR = ["bot:read", "bot:manage"];
 export const VIEWER = ["bot:read"];
 export const SUPERADMIN = ["bot:read", "bot:manage", "bot:keys"];
+/** Этап 25.5: свои уведомления - право есть у всех трёх ролей. */
+export const NOTIFY = "bot:notify";
 
 const NOW = Date.now();
 export const ago = (seconds: number) => new Date(NOW - seconds * 1000).toISOString();
@@ -43,8 +45,49 @@ export const botStatus = (overrides: Record<string, unknown> = {}) => ({
   stale: false,
   last_claim_at: ago(5),
   outbox: { pending: 0, claimed: 0 },
+  // этап 25.5
+  last_seen_local: false,
+  notify_capable: true,
+  admin_links: 1,
   ...overrides,
 });
+
+/** Этап 25.5: код привязки (32 символа) и ссылка на бота; открытые, показываются один раз. */
+export const NOTIFY_CODE = "test-only-link-code-0123456789ab";
+export const NOTIFY_LINK = `https://t.me/tollwire_bot?start=${NOTIFY_CODE}`;
+export const NOTIFY_OUTBOX_ID = "f1f1f1f1-f1f1-41f1-81f1-f1f1f1f1f1f1";
+
+/** Каталог событий: `GET /notify-events` (ключ, группа, включено по умолчанию). */
+export const NOTIFY_CATALOG = [
+  { key: "server_down", group: "servers", default: true },
+  { key: "server_recovered", group: "servers", default: true },
+  { key: "gateway_all_exits_down", group: "gateway", default: true },
+  { key: "gateway_failover", group: "gateway", default: true },
+  { key: "gateway_exit_recovered", group: "gateway", default: true },
+  { key: "jobs_failed", group: "jobs", default: true },
+  { key: "bot_registration_failed", group: "bot", default: true },
+  { key: "server_host_key_mismatch", group: "security", default: true },
+  { key: "login_locked", group: "security", default: false },
+  { key: "panel_down", group: "bot", default: true },
+];
+
+export const DEFAULT_EVENTS: Record<string, boolean> = Object.fromEntries(
+  NOTIFY_CATALOG.map((item) => [item.key, item.default]),
+);
+
+/** Ответ `GET /me/telegram`. */
+export const myTelegram = (overrides: Record<string, unknown> = {}) => ({
+  linked: false,
+  telegram_username: null,
+  linked_at: null,
+  blocked_at: null,
+  events: DEFAULT_EVENTS,
+  code_pending_until: null as string | null,
+  ...overrides,
+});
+
+export const linkedTelegram = (overrides: Record<string, unknown> = {}) =>
+  myTelegram({ linked: true, telegram_username: "admin_tg", linked_at: ago(3600), ...overrides });
 
 export const botKey = (overrides: Record<string, unknown> = {}) => ({
   id: KEY_ID,
@@ -172,6 +215,10 @@ export interface BotBackend {
   registrations?: Record<string, unknown>[];
   broadcasts?: Record<string, unknown>[];
   audience?: { recipients: number; without_telegram: number; blocked: number };
+  /** Этап 25.5: состояние `GET /me/telegram` (по умолчанию - не привязан). Тест меняет `world.me`, чтобы «бот привязал». */
+  me?: Record<string, unknown>;
+  /** Этап 25.5: кто получает (`GET /admin-links`). */
+  adminLinks?: Record<string, unknown>[];
   /** Ссылка в ответе на создание приглашения; null - имя бота неизвестно. */
   inviteLink?: string | null;
   /** Карточка пользователя USER_ID: поля Telegram и прочее. */
@@ -199,6 +246,7 @@ export function mockBot(options: BotBackend = {}) {
     invites: options.invites ?? [],
     registrations: options.registrations ?? [],
     broadcasts: options.broadcasts ?? [],
+    me: myTelegram(options.me),
   };
   const audience = options.audience ?? { recipients: 12, without_telegram: 3, blocked: 2 };
   const custom = Object.entries(options.respond ?? {}).map(([key, value]) => ({
@@ -213,6 +261,7 @@ export function mockBot(options: BotBackend = {}) {
     "bot:read",
     "bot:manage",
     "bot:keys",
+    "bot:notify",
   ];
 
   const handler = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -265,6 +314,13 @@ export function mockBot(options: BotBackend = {}) {
           (options.recipients ?? RECIPIENTS).filter((person) =>
             String(person.username).toLowerCase().includes(search),
           ),
+        );
+      }
+      if (path === `${bot}/me/telegram`) return json(world.me);
+      if (path === `${bot}/notify-events`) return json(NOTIFY_CATALOG);
+      if (path === `${bot}/admin-links`) {
+        return json(
+          options.adminLinks ?? [{ admin_email: "admin@example.com", telegram_username: "admin_tg" }],
         );
       }
       if (path === `${bot}/invites`) return json(world.invites);
@@ -343,6 +399,12 @@ export function mockBot(options: BotBackend = {}) {
           202,
         );
       }
+      if (path === `${bot}/me/telegram/code`) {
+        world.me = { ...world.me, code_pending_until: ahead(600) };
+        return json({ code: NOTIFY_CODE, link: NOTIFY_LINK, expires_at: ahead(600) }, 201);
+      }
+      if (path === `${bot}/me/telegram/test`) return json({ outbox_id: NOTIFY_OUTBOX_ID }, 202);
+      if (path === `${bot}/broadcasts/test`) return json({ outbox_id: NOTIFY_OUTBOX_ID }, 202);
       if (path === `${bot}/broadcasts/audience`) return json(audience);
       if (path === `${bot}/broadcasts`) {
         const asked = body as Record<string, unknown>;
@@ -372,6 +434,15 @@ export function mockBot(options: BotBackend = {}) {
       }
       const link = match(new RegExp(`^${bot}/users/([^/]+)/config-link$`));
       if (link) return json({ outbox_id: OUTBOX_ID, status: "pending" }, 202);
+    }
+
+    if (method === "PUT" && path === `${bot}/me/telegram/events`) {
+      world.me = { ...world.me, events: (body as { events: Record<string, boolean> }).events };
+      return json({ events: world.me.events });
+    }
+    if (method === "DELETE" && path === `${bot}/me/telegram`) {
+      world.me = myTelegram({ events: world.me.events });
+      return new Response(null, { status: 204 });
     }
 
     if (method === "PUT" && path === `${bot}/settings`) {

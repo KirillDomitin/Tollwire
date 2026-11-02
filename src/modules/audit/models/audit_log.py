@@ -122,6 +122,11 @@ class AuditAction(enum.Enum):
     BOT_BROADCAST_CANCELLED = "bot_broadcast_cancelled"
     BOT_CONFIG_LINK_QUEUED = "bot_config_link_queued"
     BOT_SETTINGS_UPDATED = "bot_settings_updated"
+    BOT_ADMIN_LINK_CODE_CREATED = "bot_admin_link_code_created"
+    BOT_ADMIN_LINK_CREATED = "bot_admin_link_created"
+    BOT_ADMIN_LINK_REMOVED = "bot_admin_link_removed"
+    BOT_ADMIN_LINK_EVENTS_UPDATED = "bot_admin_link_events_updated"
+    BOT_NOTIFY_TEST_QUEUED = "bot_notify_test_queued"
 
 
 class AuditEntity:
@@ -140,6 +145,7 @@ class AuditEntity:
     CONFIG_LINK = "config_link"
     BOT_BROADCAST = "bot_broadcast"
     BOT_SETTINGS = "bot_settings"
+    ADMIN_TELEGRAM_LINK = "admin_telegram_link"
 
 
 class AuditLog(UuidPkMixin, Base):

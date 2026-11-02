@@ -3,6 +3,7 @@
 
 from typing import Literal
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import field_validator, model_validator
 from pydantic.types import SecretStr
@@ -127,6 +128,15 @@ class Settings(BaseSettings):
     metrics_concurrency: int = 5  # сколько серверов опрашивать одновременно
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    @field_validator("bot_notify_timezone")
+    @classmethod
+    def validate_notify_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError("BOT_NOTIFY_TIMEZONE must be a valid IANA timezone") from exc
+        return value
 
     @field_validator("public_url")
     @classmethod

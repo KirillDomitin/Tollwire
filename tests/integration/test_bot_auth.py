@@ -41,6 +41,8 @@ BOT_ROUTES: list[tuple[str, str, dict[str, Any] | None]] = [
     ("POST", f"/api/v1/bot/users/by-telegram/{TELEGRAM_ID}/config-link", None),
     ("POST", OUTBOX_CLAIM_URL, {"limit": 10}),
     ("POST", OUTBOX_ACK_URL, {"lease_id": NO_LEASE, "results": []}),
+    ("POST", OUTBOX_CLAIM_URL, {"limit": 10, "kinds": ["news", "config", "notify"]}),  # 25.5
+    ("POST", "/api/v1/bot/admin-links", {"code": "a" * 32, "telegram_id": TELEGRAM_ID}),  # 25.5
 ]
 ROUTE_IDS = [
     "heartbeat",
@@ -51,6 +53,8 @@ ROUTE_IDS = [
     "config-link",
     "outbox-claim",
     "outbox-ack",
+    "outbox-claim-kinds",
+    "admin-links",
 ]
 
 
@@ -191,10 +195,11 @@ async def test_a_bot_key_as_a_bearer_token_does_not_open_the_admin_api(
 # --- heartbeat -----------------------------------------------------------------------------------------------------
 
 
-async def test_heartbeat_records_the_bot_and_answers_with_an_empty_object(key: dict[str, Any]) -> None:
+async def test_heartbeat_records_the_bot_and_answers_with_notify_settings(key: dict[str, Any]) -> None:
     async with bot_client(key["key"]) as bot:
         response = await bot.post("/api/v1/bot/heartbeat", json=HEARTBEAT)
-    assert response.status_code == 200 and response.json() == {}
+    assert response.status_code == 200
+    assert response.json() == {"notify": {"chats": [], "panel_down_after_seconds": 300}}
     row: BotKey = await fetch(BotKey, UUID(key["id"]))
     assert (row.bot_username, row.last_seen_version) == ("tollwire_bot", "0.1.0")
     assert row.last_seen_at is not None

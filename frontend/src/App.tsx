@@ -66,6 +66,10 @@ export const router = createBrowserRouter([
                 lazy: async () => ({ Component: (await import("./pages/bot/BotPage")).BotPage }),
                 children: [
                   {
+                    path: "notify",
+                    lazy: async () => ({ Component: (await import("./pages/bot/NotifyPage")).NotifyPage }),
+                  },
+                  {
                     index: true,
                     lazy: async () => ({ Component: (await import("./pages/bot/StatusPage")).StatusPage }),
                   },

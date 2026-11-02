@@ -405,7 +405,9 @@ class OutboxRepository:
         await self.session.flush()
         return row
 
-    async def lease_candidates(self, now: datetime, limit: int) -> list[BotOutbox]:
+    async def lease_candidates(
+        self, now: datetime, limit: int, kinds: Iterable[str] = ("news", "config")
+    ) -> list[BotOutbox]:
         """Строки, которые можно выдать: готовые к отправке, и выданные, у которых аренда вышла. Строки, занятые другой
         выдачей, пропускаются (SKIP LOCKED): две выдачи одновременно получают разные строки."""
         ready = and_(
@@ -415,7 +417,7 @@ class OutboxRepository:
         expired = and_(BotOutbox.status == OutboxStatus.CLAIMED.value, BotOutbox.claimed_until < now)
         query = (
             select(BotOutbox)
-            .where(or_(ready, expired))
+            .where(or_(ready, expired), BotOutbox.kind.in_(list(kinds)))
             .order_by(BotOutbox.priority, BotOutbox.created_at, BotOutbox.id)
             .limit(limit)
             .with_for_update(skip_locked=True)

@@ -8,7 +8,7 @@
 
 | Метод и путь | Запрос | Ответ | Коды |
 |---|---|---|---|
-| `POST /heartbeat` | `bot_username` (`^@?[A-Za-z0-9_]{1,32}$`), `version` (1–32 символа) | `{}` | 200; 422 |
+| `POST /heartbeat` | `bot_username` (`^@?[A-Za-z0-9_]{1,32}$`), `version` (1–32 символа), `local` (необяз., bool) | `{notify: {panel_down_after_seconds, chats}}`, `no-store` | 200; 422 |
 | `POST /invites/check` | `code` (1–64) | `{status}`: `valid`, `used`, `expired`, `revoked`, `unknown` | 200; 422 |
 | `POST /registrations` | `code`, `telegram_id` (1…2⁶³−1), `telegram_username` (необяз., ≤64), `name` (1–64 после обрезки пробелов), `email` | `{registration_id, status}` | 201; 409 с `reason`; 422; 429 |
 | `GET /registrations/{registration_id}` | — | `{registration_id, status}` | 200; 404; 422 (не UUID) |
@@ -90,6 +90,41 @@
 - Аудит и логи: актор бота без админа (только IP). `core/log.py` маскирует `twb_…`, значение `X-Bot-Key`, поле
   `code` (от 8 символов) и поле `token` страницы конфига (от 8 символов). Ключ и приглашение, выпущенные консольными скриптами, — с `source: cli` в `meta`.
 - Ключ, отозванный в панели, перестаёт работать на следующем запросе.
+
+## Уведомления администратору
+
+Контракт сервисов — [notify.md](notify.md).
+
+Bot API (`X-Bot-Key`): `POST /admin-links` принимает `{code, telegram_id, telegram_username?}`,
+код — ровно 32 URL-safe символа; ответ `{admin_name}`, 409 `link_invalid`/`link_expired`/`telegram_taken`.
+`POST /outbox/claim` принимает `{limit: 1..100 (50), kinds?: [news,config,notify]}`;
+без kinds — только news/config. Ответ `{lease_id,lease_until,items,texts}`, `no-store`;
+notify item: `{id,kind,telegram_id,text,format}` (plain/html).
+`POST /outbox/ack`: `{lease_id,results}` (до 100) → `{applied,ignored}`; повтор идемпотентен.
+Поздний blocked после перепривязки не блокирует новый Telegram (см. `notify.md`).
+
+Админский API (`/api/v1/bot-admin`, JWT):
+
+| Метод | Право | Ответ / ограничения |
+|---|---|---|
+| `GET /me/telegram` | `bot:notify` | linked, telegram_username, linked_at, blocked_at, events, code_pending_until; без кода и telegram_id |
+| `POST /me/telegram/code` | `bot:notify` | 201 `{code,link,expires_at}`, no-store; link=null до известного имени бота |
+| `PUT /me/telegram/events` | `bot:notify` | `{events: {key: bool}}` → `{events}`; частичное обновление, неизвестный ключ/не bool → 422 |
+| `DELETE /me/telegram` | `bot:notify` | 204, идемпотентно, CASCADE очереди |
+| `POST /me/telegram/test` | `bot:notify` | 202 `{outbox_id}`; 409 not_linked/bot_blocked |
+| `GET /notify-events` | `bot:read` | список key/title/group/default |
+| `GET /admin-links` | `bot:read` | admin_id/email, telegram_username, linked_at, blocked_at, events; без telegram_id |
+| `POST /broadcasts/test` | `bot:manage` | `{text}` (Telegram HTML) → 202 `{outbox_id}` себе; 409 not_linked/bot_blocked |
+
+`GET /status` дополнен last_seen_local, notify_capable (версия ≥0.3.0), admin_links.
+GET/PUT `/settings`: panel_down_after_seconds, целое 60..86400 (300); непереданные поля PUT сохраняются.
+`GET /outbox/{id}` (bot:read) возвращает только id/status/error.
+
+Лимиты (10 за 600 с): неудачи привязки по ключу — `BOT_ADMIN_LINK_FAILURES_MAX` и
+`BOT_ADMIN_LINK_FAILURES_WINDOW_SECONDS`; выпуск кодов по админу —
+`BOT_ADMIN_LINK_CODES_PER_ADMIN_MAX`/`BOT_ADMIN_LINK_CODES_PER_ADMIN_WINDOW_SECONDS`;
+пробы по админу — `BOT_NOTIFY_TESTS_PER_ADMIN_MAX`/`BOT_NOTIFY_TESTS_PER_ADMIN_WINDOW_SECONDS`.
+429 с Retry-After. Коды хранятся хешем и маскируются в логах, включая start=.
 
 ## Принятые компромиссы
 

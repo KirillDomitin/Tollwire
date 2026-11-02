@@ -8,6 +8,7 @@ from uuid import UUID
 
 from sqlalchemy import CursorResult, delete, literal, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.selectable import Select
 
 from modules.audit.models.audit_log import AuditAction, AuditLog
 from modules.auth.models.admin import Admin
@@ -32,6 +33,18 @@ class AuditLogRepository:
     def add(self, log: AuditLog) -> None:
         # Без flush: запись уходит в БД тем же commit'ом, что и само действие.
         self.session.add(log)
+
+    async def list_for_notify(
+        self, actions: Sequence[AuditAction], since: datetime, exclude_seen: Select[tuple[UUID]], limit: int
+    ) -> Sequence[AuditLog]:
+        """Oldest unseen events first; exclude in SQL before LIMIT to avoid starving a backlog."""
+        query = (
+            select(AuditLog)
+            .where(AuditLog.action.in_(actions), AuditLog.created_at >= since, AuditLog.id.not_in(exclude_seen))
+            .order_by(AuditLog.created_at, AuditLog.id)
+            .limit(limit)
+        )
+        return (await self.session.scalars(query)).all()
 
     async def list(self, filters: AuditLogFilter, limit: int, offset: int) -> Sequence[tuple[AuditLog, str | None]]:
         """Записи вместе с email админа (None — анонимное событие или админ удалён)."""

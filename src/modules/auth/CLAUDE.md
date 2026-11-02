@@ -41,12 +41,16 @@
 | Право | viewer | operator | superadmin |
 |---|---|---|---|
 | servers:read, vpn_users:read, access:read, jobs:read, audit:read, bot:read | ✓ | ✓ | ✓ |
+| bot:notify (собственная привязка Telegram и уведомления) | ✓ | ✓ | ✓ |
 | servers:check (sync/health/discover), vpn_users:manage, access:manage, config:reveal, bot:manage | | ✓ | ✓ |
 | servers:manage (сервер, SSH, ключ хоста, установка, протокол), admins:manage, bot:keys | | | ✓ |
 
 Новый эндпоинт — обязательно с `require(...)`; `tests/integration/test_rbac.py` обходит все маршруты и проверяет
 матрицу (новый маршрут без права уронит тест). Маршруты `/api/v1/bot/*` открываются ключом бота и в матрицу
 не входят (`modules/bot/CLAUDE.md`).
+
+`BOT_NOTIFY` входит в набор прав ролей и защищает HTTP-маршруты собственной привязки и уведомлений.
+Сервисные инварианты — `docs/bot/notify.md`. Право не разрешает управление чужой привязкой.
 
 ## /api/v1/admins (`admin_service.py`, только superadmin)
 

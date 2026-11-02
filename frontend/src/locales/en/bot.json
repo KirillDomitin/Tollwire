@@ -18,7 +18,8 @@
     "invites": "Invites",
     "registrations": "Registrations",
     "broadcasts": "Broadcasts",
-    "settings": "Settings"
+    "settings": "Settings",
+    "notify": "My notifications"
   },
   "errors": {
     "tooMany": "Too often, try again in {{seconds}} s.",
@@ -32,7 +33,8 @@
       "config_unavailable": "A config link cannot be issued for this access: for example, the client was picked up from AmneziaVPN.",
       "no_default_protocol": "No protocol chosen: choose one in the form or set a default protocol in the Settings tab.",
       "not_failed": "This registration is no longer in error.",
-      "already_finished": "The broadcast is already finished or cancelled."
+      "already_finished": "The broadcast is already finished or cancelled.",
+      "not_linked": "Link Telegram under My notifications first."
     }
   },
   "html": {
@@ -140,7 +142,10 @@
     "validDaysHint": "After how many days an unaccepted invite expires.",
     "saving": "Saving…",
     "save": "Save",
-    "saved": "Saved"
+    "saved": "Saved",
+    "panelDown": "Panel unavailable, minutes",
+    "panelDownHint": "From 1 to 1440 minutes. A bot on the same server as the panel cannot report that server going down.",
+    "invalid": "Check the values: the outage threshold must be from 1 to 1440 minutes, with whole-second precision."
   },
   "broadcasts": {
     "title": "Broadcasts",
@@ -194,6 +199,54 @@
       "skipped": "skipped",
       "cancelled": "cancelled"
     },
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "selfTest": "Send a test to myself",
+    "selfTestQueued": "Test queued"
+  },
+  "notify": {
+    "title": "My notifications",
+    "notLinked": "Telegram is not linked",
+    "linked": "Telegram is linked",
+    "linkedAt": "Linked: {{time}}",
+    "link": "Link Telegram",
+    "linkTitle": "Link Telegram",
+    "linkHint": "Open the bot using the link or send /admin followed by this code. The code is valid for 10 minutes.",
+    "openTelegram": "Open in Telegram",
+    "expires": "Time remaining: {{remaining}}",
+    "expired": "The code has expired. Close this window and request a new one.",
+    "close": "Close",
+    "test": "Test",
+    "queued": "Message queued…",
+    "sent": "Message sent",
+    "deliveryFailed": "Message was not delivered. Check your Telegram link and the bot status.",
+    "unlink": "Unlink",
+    "unlinkTitle": "Unlink Telegram?",
+    "unlinkConsequences": "You will stop receiving notifications. You can link Telegram again.",
+    "unlinkBusy": "Unlinking…",
+    "updateBot": "Update the bot: this version does not support notifications.",
+    "localBot": "The bot runs on the same server as the panel and cannot report this server going down.",
+    "blocked": "You blocked the bot. Unblock it in Telegram and link it again.",
+    "recipients": "Who receives notifications",
+    "noRecipients": "No recipients yet.",
+    "groups": {
+      "servers": "Servers",
+      "gateway": "Gateway",
+      "jobs": "Jobs",
+      "bot": "Bot and panel",
+      "security": "Security",
+      "panel": "Panel"
+    },
+    "events": {
+      "server_down": "Server unavailable",
+      "server_recovered": "Server recovered",
+      "gateway_all_exits_down": "All gateway exits unavailable",
+      "gateway_failover": "Gateway failover",
+      "gateway_exit_recovered": "Gateway exit recovered",
+      "jobs_failed": "Job failures",
+      "bot_registration_failed": "Bot registration failed",
+      "server_host_key_mismatch": "Server host key changed",
+      "login_locked": "Login locked",
+      "panel_down": "Panel unavailable"
+    }
   }
 }

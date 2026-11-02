@@ -390,6 +390,32 @@ The data (volumes `pg_data`, `redis_data`) stays. **`down -v` deletes the volume
 
 ### Settings you can change in `.env.prod`
 
+Telegram notifications require bot **0.3.0 or later**. On **Bot → My notifications**, create a one-time
+link/code (valid for 10 minutes), open the link or send `/admin <code>` in the bot's private chat,
+choose events and send a test. A queued test is not a delivery confirmation; check its displayed status.
+The panel warns about older bots and local placement: a bot on the panel host cannot report that host's outage.
+The panel outage threshold is stored in Bot settings (1–1440 minutes, default 5), not in the bot environment.
+
+Panel notification settings (API and worker environment; restart the affected services after changes):
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `BOT_NOTIFY_INTERVAL_SECONDS` | 15 | audit collector interval; 0 disables the rule |
+| `BOT_NOTIFY_OVERLAP_SECONDS` | 2100 | late-commit window; must be at least `STALE_JOB_TIMEOUT_SECONDS + 300` |
+| `BOT_NOTIFY_BATCH` | 500 | audit rows per pass |
+| `BOT_NOTIFY_TTL_HOURS` | 24 | notification lifetime from event time |
+| `BOT_NOTIFY_TIMEZONE` | UTC | IANA timezone used in message timestamps; invalid names prevent startup |
+| `BOT_ADMIN_LINK_CODE_TTL_SECONDS` | 600 | one-time administrator link code lifetime |
+| `BOT_ADMIN_LINK_FAILURES_MAX`, `BOT_ADMIN_LINK_FAILURES_WINDOW_SECONDS` | 10, 600 | failed link attempts per bot key |
+| `BOT_ADMIN_LINK_CODES_PER_ADMIN_MAX`, `BOT_ADMIN_LINK_CODES_PER_ADMIN_WINDOW_SECONDS` | 10, 600 | code requests per administrator |
+| `BOT_NOTIFY_TESTS_PER_ADMIN_MAX`, `BOT_NOTIFY_TESTS_PER_ADMIN_WINDOW_SECONDS` | 10, 600 | test messages per administrator |
+
+Bot environment (`.env.bot` on the panel host or `bot/.env` remotely): `PANEL_WATCH_REPEAT_SECONDS`
+defaults to 1800 and cannot be lower. `OUTBOX_RATE_PER_SECOND` defaults to 20 (1–28), shared by
+outbox and panel alerts; `OUTBOX_BATCH` defaults to 50 (1–100). Add overrides to the bot environment
+and recreate its container. Keep the persistent bot data volume: it holds per-chat outage/recovery state.
+See [notification services](docs/bot/notify.md) and [panel watcher](docs/bot-service/panel-watch.md).
+
 | Variable | Default | What it does |
 |---|---|---|
 | `HTTP_PORT`, `HTTPS_PORT` | 80, 443 | nginx ports on the host; `HTTPS_PORT` also goes into the links to the config page (see below) |

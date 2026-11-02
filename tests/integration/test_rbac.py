@@ -131,6 +131,7 @@ def test_every_bot_api_route_requires_the_bot_key_and_no_admin_permission() -> N
         ("POST", "users/by-telegram/{}/config-link"),
         ("POST", "outbox/claim"),
         ("POST", "outbox/ack"),
+        ("POST", "admin-links"),  # 25.5: привязка Telegram админа по коду
     }
     unmarked = [f"{m} {p}" for m, p, route in BOT_API_ROUTES if marks(route, "bot_key_required") != 1]
     assert unmarked == []
@@ -191,10 +192,45 @@ def test_the_bot_page_routes_exist_with_the_agreed_permissions() -> None:
     assert {key: declared.get(key) for key in expected} == expected
 
 
+def test_the_notify_routes_exist_with_the_agreed_permissions() -> None:
+    """Свои уведомления - bot:notify; проба новости - bot:manage; каталог и список - bot:read."""
+    notify, manage, read = Permission.BOT_NOTIFY, Permission.BOT_MANAGE, Permission.BOT_READ
+    expected = {
+        ("GET", "me/telegram"): notify,
+        ("POST", "me/telegram/code"): notify,
+        ("PUT", "me/telegram/events"): notify,
+        ("DELETE", "me/telegram"): notify,
+        ("POST", "me/telegram/test"): notify,
+        ("POST", "broadcasts/test"): manage,
+        ("GET", "notify-events"): read,
+        ("GET", "admin-links"): read,
+    }
+    declared = {
+        (method, bot_admin_shape(path)): required_permissions(route)[0] for method, path, route in BOT_ADMIN_ROUTES
+    }
+    assert {key: declared.get(key) for key in expected} == expected
+
+
+def test_bot_notify_is_allowed_only_for_the_own_notification_routes() -> None:
+    """Правило «записи - `bot:manage`» допускает `bot:notify` только для `/me/telegram*`."""
+    wrong = [
+        f"{method} {path}"
+        for method, path, route in BOT_ADMIN_ROUTES
+        if required_permissions(route)[0] == Permission.BOT_NOTIFY
+        and not bot_admin_shape(path).startswith("me/telegram")
+    ]
+    assert wrong == []
+
+
+def test_the_notify_permission_is_open_to_every_role() -> None:
+    assert Permission.BOT_NOTIFY.value == "bot:notify"
+    assert all(has_permission(role, Permission.BOT_NOTIFY) for role in AdminRole)
+
+
 def test_the_bot_page_writes_are_closed_to_a_viewer_and_open_to_an_operator() -> None:
     for method in ("PUT", "POST"):
         for _, path, route in BOT_ADMIN_ROUTES:
-            if method in route.methods and "/keys" not in path:
+            if method in route.methods and "/keys" not in path and "/me/telegram" not in path:
                 (permission,) = required_permissions(route)
                 assert not has_permission(AdminRole.VIEWER, permission), path
                 assert has_permission(AdminRole.OPERATOR, permission), path
@@ -206,6 +242,9 @@ def test_bot_admin_writes_need_manage_and_key_changes_need_the_keys_permission()
     for method, path, route in BOT_ADMIN_ROUTES:
         (permission,) = required_permissions(route)
         segment = path.removeprefix("/api/v1/bot-admin/").split("/")[0]
+        if segment == "me":  # 25.5: свои уведомления - право `bot:notify`, доступное и viewer
+            assert permission == Permission.BOT_NOTIFY, f"{method} {path}"
+            continue
         if segment == "keys" and method != "GET":
             assert permission == Permission.BOT_KEYS, f"{method} {path}"
         elif method == "GET":
@@ -385,6 +424,8 @@ def bot_critical() -> dict[str, Permission]:
         "POST /api/v1/bot-admin/keys": Permission.BOT_KEYS,  # выпуск ключа: им бот входит в панель
         "POST /api/v1/bot-admin/broadcasts": Permission.BOT_MANAGE,  # сообщения настоящим людям от имени сервиса
         "POST /api/v1/bot-admin/users/{user_id}/config-link": Permission.BOT_MANAGE,  # выпуск ссылки на конфиг
+        "POST /api/v1/bot-admin/me/telegram/code": Permission.BOT_NOTIFY,  # код привязки Telegram к админу
+        "POST /api/v1/bot-admin/broadcasts/test": Permission.BOT_MANAGE,  # сообщение от сервиса (себе на пробу)
     }
 
 

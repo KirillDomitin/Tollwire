@@ -5,21 +5,28 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Path
+from fastapi import APIRouter, Path, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
+from core.exceptions import ReasonConflictError
+from core.rate_limit import RateLimiter
+from modules.bot.admin_links import AdminLinkService
 from modules.bot.config_links import ConfigLinkService
 from modules.bot.dependencies import BotKeyContext
 from modules.bot.invites import BotInviteService
 from modules.bot.keys import BotKeyService
 from modules.bot.models.registration import BotRegistration
 from modules.bot.outbox import OutboxService
+from modules.bot.rate_limits import BOT_ADMIN_LINK_FAILURES_BY_KEY
 from modules.bot.registrations import BotRegistrationService
 from modules.bot.schemas import (
+    AdminLinkRead,
+    AdminLinkRequest,
     BotRegistrationRead,
     ConfigLinkRead,
     HeartbeatRequest,
+    HeartbeatResponse,
     InviteCheckRequest,
     InviteCheckResponse,
     OutboxAckRequest,
@@ -38,11 +45,26 @@ def _read(registration: BotRegistration) -> BotRegistrationRead:
     return BotRegistrationRead(registration_id=registration.id, status=registration.status)
 
 
-@router.post("/heartbeat")
-async def heartbeat(data: HeartbeatRequest, context: BotKeyContext) -> dict[str, object]:
-    """Бот сообщает, что жив: имя и версия. Ответ пока пустой, поля появятся вместе с настройками бота."""
-    await BotKeyService(context.session, context.actor).heartbeat(context.key_id, data)
-    return {}
+@router.post("/heartbeat", response_model=HeartbeatResponse)
+async def heartbeat(data: HeartbeatRequest, context: BotKeyContext, response: Response) -> HeartbeatResponse:
+    """Бот сообщает имя и версию, получает чаты и порог наблюдения за панелью."""
+    response.headers["Cache-Control"] = "no-store"
+    return await BotKeyService(context.session, context.actor).heartbeat(context.key_id, data)
+
+
+@router.post("/admin-links", response_model=AdminLinkRead)
+async def admin_link(data: AdminLinkRequest, context: BotKeyContext) -> AdminLinkRead:
+    limiter = RateLimiter()
+    subject = str(context.key_id)
+    await limiter.ensure_not_exceeded(BOT_ADMIN_LINK_FAILURES_BY_KEY, subject)
+    try:
+        result = await AdminLinkService(context.session, context.actor).link(
+            data.code, data.telegram_id, data.telegram_username
+        )
+    except ReasonConflictError:
+        await limiter.record(BOT_ADMIN_LINK_FAILURES_BY_KEY, subject)
+        raise
+    return AdminLinkRead(admin_name=result.admin_name)
 
 
 @router.post("/invites/check", response_model=InviteCheckResponse)
@@ -86,7 +108,8 @@ async def config_link(telegram_id: Annotated[int, Path(ge=1, le=2**63 - 1)], con
 async def outbox_claim(data: OutboxClaimRequest, context: BotKeyContext) -> JSONResponse:
     """Бот забирает пачку исходящих сообщений в аренду. Для ссылок на конфиг адрес выпускается прямо сейчас и есть
     только в этом ответе (no-store); темп отправки держит бот, лимит Telegram - на нём."""
-    result = await OutboxService(context.session, context.actor).claim(context.key_id, data.limit)
+    kinds: list[str] | None = list(data.kinds) if data.kinds is not None else None
+    result = await OutboxService(context.session, context.actor).claim(context.key_id, data.limit, kinds=kinds)
     items = []
     for item in result.items:
         if item.kind == "config":
@@ -97,6 +120,16 @@ async def outbox_claim(data: OutboxClaimRequest, context: BotKeyContext) -> JSON
                     "telegram_id": item.telegram_id,
                     "config_url": item.config_url,
                     "valid_until": item.valid_until,
+                }
+            )
+        elif item.kind == "notify":
+            items.append(
+                {
+                    "id": item.id,
+                    "kind": item.kind,
+                    "telegram_id": item.telegram_id,
+                    "text": item.text,
+                    "format": item.format,
                 }
             )
         else:

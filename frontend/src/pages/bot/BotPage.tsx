@@ -13,6 +13,7 @@ const SECTIONS = [
   { to: "/bot/registrations", key: "registrations", end: false },
   { to: "/bot/broadcasts", key: "broadcasts", end: false },
   { to: "/bot/settings", key: "settings", end: false },
+  { to: "/bot/notify", key: "notify", end: false },
 ] as const;
 
 const isOpen = (section: (typeof SECTIONS)[number], pathname: string) =>
@@ -25,6 +26,7 @@ const PRELOAD = [
   () => import("./RegistrationsPage"),
   () => import("./BroadcastsPage"),
   () => import("./SettingsPage"),
+  () => import("./NotifyPage"),
 ];
 
 /**
@@ -64,7 +66,7 @@ export function BotPage() {
       {status.data && preloaded && connected && (
         <>
           <nav aria-label={t("bot.nav.label")} className={styles.nav}>
-            {SECTIONS.map((section) => (
+            {SECTIONS.filter((section) => section.key !== "notify" || can("bot:notify")).map((section) => (
               <Link
                 key={section.to}
                 to={section.to}

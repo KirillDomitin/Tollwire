@@ -199,3 +199,66 @@ describe("bot dictionary (stage 25.4)", () => {
     }
   });
 });
+
+describe("notify dictionary (stage 25.5)", () => {
+  const CYRILLIC = /[А-Яа-яЁё]/;
+  const node = (dictionary: unknown, ...path: string[]) =>
+    path.reduce<unknown>((current, part) => (current as Record<string, unknown> | undefined)?.[part], dictionary);
+  const notifyKeys = (dictionary: unknown) => {
+    const root = node(dictionary, "bot", "notify");
+    return root === undefined ? [] : keysOf(root);
+  };
+
+  it("has the bot.notify section in both languages with the same keys", () => {
+    expect(notifyKeys(ru).length).toBeGreaterThan(25);
+    expect(rootKeys({ notify: node(en, "bot", "notify") })).toEqual(rootKeys({ notify: node(ru, "bot", "notify") }));
+  });
+
+  it("keeps the English notify texts free of Cyrillic", () => {
+    const values = notifyKeys(en).map((key) => String(node(node(en, "bot", "notify"), ...key.split("."))));
+
+    expect(values.length).toBeGreaterThan(25);
+    expect(values.filter((value) => CYRILLIC.test(value))).toEqual([]);
+  });
+
+  it("names every catalog event in both languages", () => {
+    for (const key of [
+      "server_down",
+      "server_recovered",
+      "gateway_all_exits_down",
+      "gateway_failover",
+      "gateway_exit_recovered",
+      "jobs_failed",
+      "bot_registration_failed",
+      "server_host_key_mismatch",
+      "login_locked",
+      "panel_down",
+    ]) {
+      expect(node(ru, "bot", "notify", "events", key), `ru ${key}`).toBeTruthy();
+      expect(node(en, "bot", "notify", "events", key), `en ${key}`).toBeTruthy();
+    }
+  });
+
+  it("has the audit texts of the six new events in both languages", () => {
+    for (const action of [
+      "server_health_changed",
+      "bot_admin_link_code_created",
+      "bot_admin_link_created",
+      "bot_admin_link_removed",
+      "bot_admin_link_events_updated",
+      "bot_notify_test_queued",
+    ]) {
+      expect(node(ru, "audit", "actions", action), `ru ${action}`).toBeTruthy();
+      expect(node(en, "audit", "actions", action), `en ${action}`).toBeTruthy();
+      expect(node(en, "audit", "actions", action)).not.toMatch(CYRILLIC);
+    }
+  });
+
+  it("has the audit detail labels from, to, reason and replaced in both languages", () => {
+    for (const key of ["from", "to", "reason", "replaced"]) {
+      expect(node(ru, "audit", "details", key), `ru ${key}`).toBeTruthy();
+      expect(node(en, "audit", "details", key), `en ${key}`).toBeTruthy();
+      expect(node(en, "audit", "details", key)).not.toMatch(CYRILLIC);
+    }
+  });
+});

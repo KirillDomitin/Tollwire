@@ -3,14 +3,16 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { api, type Schemas } from "../../api/client";
+import { useAuth } from "../../auth/AuthContext";
 import { Button } from "../../components/Button";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { Notice } from "../../components/Notice";
 import { MAX_VISIBLE, validateTelegramHtml } from "../../lib/telegramHtml";
-import { botUnwrap } from "./botErrors";
+import { botUnwrap, errorMessage } from "./botErrors";
 import styles from "./Bot.module.css";
 import { protocolLabel } from "./protocols";
 import { TelegramPreview } from "./TelegramPreview";
-import { botKeys, useBotProtocols, type AudienceRequest, type Recipient } from "./useBot";
+import { botKeys, useBotProtocols, useMyTelegram, type AudienceRequest, type Recipient } from "./useBot";
 
 type Kind = AudienceRequest["kind"];
 type Target = AudienceRequest["target"];
@@ -29,6 +31,13 @@ const TARGETS: Record<Kind, Target[]> = {
  */
 export function BroadcastForm() {
   const { t } = useTranslation();
+  const { can } = useAuth();
+  const me = useMyTelegram(can("bot:manage"));
+  const selfTest = useMutation({
+    mutationFn: (text: string) =>
+      botUnwrap(api.POST("/api/v1/bot-admin/broadcasts/test", { body: { text } })),
+    gcTime: 0,
+  });
   const queryClient = useQueryClient();
   const ids = { text: useId(), counter: useId(), error: useId(), preview: useId() };
 
@@ -262,6 +271,16 @@ export function BroadcastForm() {
       {audience.isError && <p className={styles.fieldError}>{audience.error.message}</p>}
 
       <div className={styles.row}>
+        {news && can("bot:manage") && me.data?.linked && !me.data.blocked_at && (
+          <Button
+            variant="quiet"
+            busy={selfTest.isPending}
+            disabled={!check.ok}
+            onClick={() => selfTest.mutate(text)}
+          >
+            {t("bot.broadcasts.selfTest")}
+          </Button>
+        )}
         <ConfirmDialog
           trigger={
             <Button disabled={!canSend}>
@@ -284,6 +303,12 @@ export function BroadcastForm() {
           onConfirm={confirm}
         />
       </div>
+      {selfTest.isError && <Notice>{errorMessage(selfTest.error)}</Notice>}
+      {selfTest.isSuccess && (
+        <p role="status" className={styles.good}>
+          {t("bot.broadcasts.selfTestQueued")}
+        </p>
+      )}
     </div>
   );
 }

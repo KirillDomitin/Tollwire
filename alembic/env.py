@@ -16,10 +16,10 @@ from modules.auth.models.admin import Admin  # noqa
 from modules.auth.models.admin_session import AdminSession  # noqa
 from modules.bot.models.admin_link import AdminTelegramLink  # noqa
 from modules.bot.models.broadcast import BotBroadcast  # noqa
-from modules.bot.models.notify import BotNotifyCursor, BotNotifySeen  # noqa
 from modules.bot.models.config_link import ConfigLink  # noqa
 from modules.bot.models.invite import BotInvite  # noqa
 from modules.bot.models.key import BotKey  # noqa
+from modules.bot.models.notify import BotNotifyCursor, BotNotifySeen  # noqa
 from modules.bot.models.outbox import BotOutbox  # noqa
 from modules.bot.models.registration import BotRegistration  # noqa
 from modules.bot.models.settings import BotSettings  # noqa

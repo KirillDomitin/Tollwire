@@ -100,7 +100,13 @@
     "bot_broadcast_created": "Broadcast created via the bot",
     "bot_broadcast_cancelled": "Bot broadcast cancelled",
     "bot_config_link_queued": "Config link queued for the bot",
-    "bot_settings_updated": "Bot settings changed"
+    "bot_settings_updated": "Bot settings changed",
+    "server_health_changed": "Server health changed",
+    "bot_admin_link_code_created": "Telegram linking code created",
+    "bot_admin_link_created": "Admin Telegram linked",
+    "bot_admin_link_removed": "Admin Telegram unlinked",
+    "bot_admin_link_events_updated": "Notification events updated",
+    "bot_notify_test_queued": "Test notification queued"
   },
   "details": {
     "reason": "Reason",
@@ -145,7 +151,10 @@
     "kind": "Kind",
     "target": "Audience",
     "recipients": "Recipients",
-    "cancelled": "Messages stopped"
+    "cancelled": "Messages stopped",
+    "from": "Previous state",
+    "to": "New state",
+    "replaced": "Previous link replaced"
   },
   "actor": {
     "anonymous": "Anonymous",

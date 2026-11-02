@@ -19,7 +19,9 @@ from tollwire_bot.config import Settings
 from tollwire_bot.heartbeat import Heartbeat
 from tollwire_bot.log import configure_logging
 from tollwire_bot.outbox import OutboxSender
+from tollwire_bot.pacing import MessagePacer
 from tollwire_bot.panel import PanelClient
+from tollwire_bot.panel_watch import PanelWatch
 from tollwire_bot.storage import SqliteStorage
 from tollwire_bot.texts import t
 
@@ -54,9 +56,13 @@ async def run(settings: Settings) -> int:
         settings.telegram_bot_token.get_secret_value(), default=DefaultBotProperties(link_preview_is_disabled=True)
     )
     dp = build_dispatcher(settings, panel, storage)
-    heartbeat = Heartbeat(bot, panel, version=__version__)
+    pacer = MessagePacer(settings.outbox_rate_per_second)
+    watch = PanelWatch(bot, storage, repeat_seconds=settings.panel_watch_repeat_seconds, pacer=pacer)
+    panel.set_observer(watch)
+    heartbeat = Heartbeat(bot, panel, version=__version__, watch=watch)
     background: list[asyncio.Task[None]] = []
     try:
+        await watch.start()
         try:
             await heartbeat.start()  # getMe: неверный токен виден сразу, а не молчанием бота
         except TelegramUnauthorizedError:
@@ -71,6 +77,7 @@ async def run(settings: Settings) -> int:
         )
         background = [
             asyncio.create_task(heartbeat.run()),
+            asyncio.create_task(watch.run()),
             asyncio.create_task(keep_alive_file(heartbeat)),
             asyncio.create_task(purge_loop(storage)),
             # Рассылки: тот же бот, что у диалога, - лимит Telegram один на токен.
@@ -81,6 +88,7 @@ async def run(settings: Settings) -> int:
                     storage,
                     rate_per_second=settings.outbox_rate_per_second,
                     batch=settings.outbox_batch,
+                    pacer=pacer,
                 ).run()
             ),
         ]
@@ -93,6 +101,7 @@ async def run(settings: Settings) -> int:
         for task in background:
             with contextlib.suppress(asyncio.CancelledError, Exception):  # упавшая фоновая задача не мешает закрыть
                 await task
+        await watch.persist()
         await panel.aclose()
         await storage.close()
         await bot.session.close()

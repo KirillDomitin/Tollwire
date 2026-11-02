@@ -12,8 +12,8 @@ from modules.audit.actor import AuditActor
 from modules.audit.models.audit_log import AuditAction, AuditEntity
 from modules.audit.service import AuditService
 from modules.bot.models.key import BotKey
-from modules.bot.repository import BotKeyRepository
-from modules.bot.schemas import BotKeyCreate, HeartbeatRequest
+from modules.bot.repository import BotKeyRepository, BotSettingsRepository
+from modules.bot.schemas import BotKeyCreate, HeartbeatRequest, HeartbeatResponse, NotifyConfig
 
 # Префикс по которому ключ бота узнаётся в тексте (core.log маскирует его, даже если имени поля рядом нет).
 KEY_PREFIX = "twb_"
@@ -65,7 +65,7 @@ class BotKeyService:
     async def list(self) -> Sequence[BotKey]:
         return await self.keys.list_all()
 
-    async def heartbeat(self, key_id: UUID, data: HeartbeatRequest) -> None:
+    async def heartbeat(self, key_id: UUID, data: HeartbeatRequest) -> HeartbeatResponse:
         """Бот сообщает, что жив: имя бота и версия видны админу на странице «Бот»."""
         key = await self.keys.get_by_id(key_id)
         if key is None:
@@ -73,4 +73,13 @@ class BotKeyService:
         key.last_seen_at = datetime.now(timezone.utc)
         key.last_seen_version = data.version
         key.bot_username = data.bot_username
+        key.last_seen_local = data.local
+        from modules.bot.admin_links import AdminLinkService
+
+        chats = await AdminLinkService(self.session, self.actor).chats()
+        settings = await BotSettingsRepository(self.session).get_or_create()
+        result = HeartbeatResponse(
+            notify=NotifyConfig(panel_down_after_seconds=settings.panel_down_after_seconds, chats=chats)
+        )
         await self.session.commit()
+        return result

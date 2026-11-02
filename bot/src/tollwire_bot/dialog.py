@@ -72,6 +72,11 @@ def register(router: Router) -> None:
         assert message.from_user is not None
         await state.clear()  # /start посреди диалога начинает его заново
         code = (command.args or "").strip()
+        if len(code) == 32:
+            from tollwire_bot.commands import link_admin
+
+            await link_admin(message, code, state, panel)
+            return
         if not code:
             await message.answer(t("no_code"))
             return

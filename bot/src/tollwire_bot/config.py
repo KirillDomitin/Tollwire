@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     # сколько сообщений бот берёт у панели за раз.
     outbox_rate_per_second: int = Field(default=20, ge=1, le=28)
     outbox_batch: int = Field(default=50, ge=1, le=100)
+    panel_watch_repeat_seconds: int = Field(default=1800, ge=1800)
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

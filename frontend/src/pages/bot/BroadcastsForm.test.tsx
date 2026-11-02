@@ -14,6 +14,7 @@ import {
   broadcast,
   conflict,
   invalidHtml,
+  linkedTelegram,
   mockBot,
   tooMany,
   type BotBackend,
@@ -574,5 +575,97 @@ describe("broadcast form in English", () => {
     fireEvent.change(await screen.findByRole("textbox", { name: /text/i }), { target: { value: "Hello" } });
 
     expect(await screen.findByRole("button", { name: /^Send to 1 recipient$/i })).toBeInTheDocument();
+  });
+});
+
+describe("broadcast form: send to myself (stage 25.5)", () => {
+  // ДОПУЩЕНИЯ: рядом с «Отправить…» стоит кнопка «Отправить себе на пробу» - только при bot:manage и живой привязке
+  // Telegram админа (GET /me/telegram -> linked, без blocked_at). Работает по тексту новости: POST /broadcasts/test
+  // {text} без подтверждения и без создания рассылки; показывает «Проба в очереди». Ошибки - Notice без `detail`.
+  const TEST = `${BROADCASTS}/test`;
+  const myself = () => screen.findByRole("button", { name: "Отправить себе на пробу" });
+  const linked = (extra: BotBackend = {}): BotBackend => ({ me: linkedTelegram(), ...extra });
+
+  it("is not offered while the admin has no linked Telegram", async () => {
+    setup();
+    await readyForm();
+
+    expect(screen.queryByRole("button", { name: "Отправить себе на пробу" })).not.toBeInTheDocument();
+  });
+
+  it("is not offered when the bot is blocked in the admin's chat", async () => {
+    setup(OPERATOR, { me: linkedTelegram({ blocked_at: new Date().toISOString() }) });
+    await readyForm();
+
+    expect(screen.queryByRole("button", { name: "Отправить себе на пробу" })).not.toBeInTheDocument();
+  });
+
+  it("is not offered to a viewer", async () => {
+    setup(VIEWER, linked());
+
+    await screen.findByText(EMPTY_TEXT.broadcasts);
+
+    expect(screen.queryByRole("button", { name: "Отправить себе на пробу" })).not.toBeInTheDocument();
+  });
+
+  it("is disabled while the text is empty", async () => {
+    setup(OPERATOR, linked());
+    await readyForm();
+
+    expect(await myself()).toBeDisabled();
+  });
+
+  it("sends the typed text to the admin himself, without confirmation and without making a broadcast", async () => {
+    const user = userEvent.setup();
+    const { api } = setup(OPERATOR, linked());
+    await readyForm();
+    fill("<b>Проба</b> текста");
+
+    await waitFor(async () => expect(await myself()).toBeEnabled());
+    await user.click(await myself());
+
+    await waitFor(() => expect(api.count("POST", TEST)).toBe(1));
+    expect(api.last("POST", TEST)?.body).toEqual({ text: "<b>Проба</b> текста" });
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(api.count("POST", BROADCASTS)).toBe(0);
+    expect(await screen.findByText(/проба в очереди/i)).toBeInTheDocument();
+  });
+
+  it("shows the matching text for an invalid HTML and no backend detail", async () => {
+    const user = userEvent.setup();
+    setup(OPERATOR, linked({ respond: { [`POST ${TEST}`]: () => invalidHtml("telegram_html_tag") } }));
+    await readyForm();
+    fill("<b>Проба</b>");
+    await waitFor(async () => expect(await myself()).toBeEnabled());
+
+    await user.click(await myself());
+
+    expect(await screen.findByRole("alert")).not.toHaveTextContent(SECRET_DETAIL);
+  });
+
+  it("says that the chat is blocked (409 bot_blocked) without the backend detail", async () => {
+    const user = userEvent.setup();
+    setup(OPERATOR, linked({ respond: { [`POST ${TEST}`]: () => conflict("bot_blocked") } }));
+    await readyForm();
+    fill("Проба");
+    await waitFor(async () => expect(await myself()).toBeEnabled());
+
+    await user.click(await myself());
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).not.toHaveTextContent(SECRET_DETAIL);
+    expect(alert).toHaveTextContent(/заблокир/i);
+  });
+
+  it("says when to try again after the limit (429)", async () => {
+    const user = userEvent.setup();
+    setup(OPERATOR, linked({ respond: { [`POST ${TEST}`]: () => tooMany(17) } }));
+    await readyForm();
+    fill("Проба");
+    await waitFor(async () => expect(await myself()).toBeEnabled());
+
+    await user.click(await myself());
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/17/);
   });
 });

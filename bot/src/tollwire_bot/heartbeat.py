@@ -5,10 +5,17 @@ import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable
+from typing import Protocol
 
 from aiogram import Bot
 
-from tollwire_bot.panel import PanelClient
+from tollwire_bot.panel import NotifyConfig, PanelClient
+from tollwire_bot.panel_watch import PanelWatch
+
+
+class ConfigWatch(Protocol):
+    def configure(self, config: NotifyConfig) -> None: ...
+
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +29,10 @@ class Heartbeat:
         panel: PanelClient,
         *,
         version: str,
+        watch: ConfigWatch | None = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
+        self._watch = watch
         self._bot = bot
         self._panel = panel
         self._version = version
@@ -40,7 +49,11 @@ class Heartbeat:
 
     async def beat(self) -> None:
         try:
-            await self._panel.heartbeat(self._username, self._version)
+            config = await self._panel.heartbeat(self._username, self._version, local=self._panel.local)
+            if self._watch is not None and self._panel.notify_updated:
+                self._watch.configure(config)
+                if isinstance(self._watch, PanelWatch):
+                    await self._watch.persist()
         except Exception as exc:  # noqa: BLE001 - любой сбой: бот живёт дальше, панель может вернуться
             if self._up is not False:
                 logger.warning("the panel does not answer the heartbeat (%s)", type(exc).__name__)

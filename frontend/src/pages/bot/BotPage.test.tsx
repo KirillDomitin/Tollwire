@@ -113,12 +113,14 @@ describe("bot section: routes", () => {
     });
   }
 
-  it("has exactly the five bot routes and every one is a lazy chunk", () => {
+  it("has the six bot routes including personal notifications, all lazy chunks", () => {
     const bot = leaves(router.routes as unknown as RouteLike[]).filter(
       ({ full }) => full === "/bot" || full.startsWith("/bot/"),
     );
 
-    expect(bot.map(({ full }) => full).sort()).toEqual(SECTIONS.map(([path]) => path).sort());
+    expect(bot.map(({ full }) => full).sort()).toEqual(
+      [...SECTIONS.map(([path]) => path), "/bot/notify"].sort(),
+    );
     for (const { full, route } of bot) {
       expect(route.lazy, `${full} must be lazy`).toBeTruthy();
     }

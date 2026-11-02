@@ -46,10 +46,11 @@ def upgrade() -> None:
         "bot_notify_cursor",
         sa.Column("id", sa.SmallInteger(), nullable=False),
         sa.Column("cursor_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("started_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.CheckConstraint("id = 1", name="ck_bot_notify_cursor_single"),
         sa.PrimaryKeyConstraint("id", name="bot_notify_cursor_pkey"),
     )
-    op.execute("INSERT INTO bot_notify_cursor (id, cursor_at) VALUES (1, now())")
+    op.execute("INSERT INTO bot_notify_cursor (id, cursor_at, started_at) VALUES (1, now(), now())")
 
     op.create_table(
         "bot_notify_seen",

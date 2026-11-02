@@ -8,7 +8,7 @@ import ssl
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import Any, Protocol
 from urllib.parse import urlsplit
 
 import certifi
@@ -25,6 +25,8 @@ RETRY_STATUSES = (502, 503, 504)
 MAX_RATE_LIMIT_WAIT = 10  # Retry-After дольше этого бот не ждёт
 CONFLICT_REASONS = frozenset(
     {
+        "link_invalid",
+        "link_expired",
         "invite_invalid",
         "invite_expired",
         "invite_used",
@@ -73,6 +75,22 @@ class Rejected(PanelError):
         self.field = field
 
 
+class ConnectionObserver(Protocol):
+    def on_ok(self) -> None: ...
+    def on_fail(self) -> None: ...
+
+
+@dataclass(frozen=True)
+class NotifyConfig:
+    panel_down_after_seconds: int = 300
+    chats: list[int] = field(default_factory=list, repr=False)
+
+
+@dataclass(frozen=True)
+class AdminLinkResult:
+    admin_name: str = field(repr=False)
+
+
 @dataclass(frozen=True)
 class Registration:
     registration_id: str
@@ -102,8 +120,10 @@ class OutboxItem:
     """Сообщение из очереди панели. Адрес ссылки (токен в нём) в repr не попадает."""
 
     id: str
-    kind: str  # news / config
+    kind: str  # news / config / notify
     telegram_id: int = field(repr=False)
+    text: str | None = field(default=None, repr=False)
+    format: str | None = None
     broadcast_id: str | None = None
     config_url: str | None = field(default=None, repr=False)
     valid_until: str | None = None
@@ -163,10 +183,15 @@ class PanelClient:
         api_key: str,
         *,
         ca_file: str | None = None,
+        observer: ConnectionObserver | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
         self._sleep = sleep
+        self._observer = observer
+        self._notify = NotifyConfig()
+        self.notify_updated = False
+        self.local = "." not in (urlsplit(base_url).hostname or "") and ":" not in (urlsplit(base_url).hostname or "")
         self._auth_failed = False  # ERROR про отклонённый ключ пишется один раз, пока панель не ответит нормально
         self._http = httpx.AsyncClient(
             base_url=_check_url(base_url) + API_PREFIX,
@@ -177,13 +202,57 @@ class PanelClient:
             transport=transport,
         )
 
+    def set_observer(self, observer: ConnectionObserver) -> None:
+        self._observer = observer
+
     async def aclose(self) -> None:
         await self._http.aclose()
 
     # --- методы Bot API ----------------------------------------------------------------------------------------------
 
-    async def heartbeat(self, bot_username: str, version: str) -> None:
-        await self._request("POST", "/heartbeat", {"bot_username": bot_username, "version": version})
+    async def heartbeat(self, bot_username: str, version: str, local: bool = False) -> NotifyConfig:
+        self.notify_updated = False
+        response = await self._request(
+            "POST",
+            "/heartbeat",
+            {
+                "bot_username": bot_username,
+                "version": version,
+                "local": local,
+            },
+        )
+        try:
+            raw = _json(response).get("notify")
+        except PanelUnexpected:
+            return self._notify
+        if isinstance(raw, dict):
+            chats, threshold = raw.get("chats"), raw.get("panel_down_after_seconds")
+            if (
+                isinstance(chats, list)
+                and all(type(chat) is int and chat > 0 for chat in chats)
+                and type(threshold) is int
+                and 60 <= threshold <= 86400
+            ):
+                self._notify = NotifyConfig(threshold, list(dict.fromkeys(chats)))
+                self.notify_updated = True
+        return self._notify
+
+    async def admin_link(self, code: str, telegram_id: int, telegram_username: str | None = None) -> AdminLinkResult:
+        data = _json(
+            await self._request(
+                "POST",
+                "/admin-links",
+                {
+                    "code": code,
+                    "telegram_id": telegram_id,
+                    "telegram_username": telegram_username,
+                },
+            )
+        )
+        name = data.get("admin_name")
+        if not isinstance(name, str) or not name:
+            raise PanelUnexpected("no admin name in the answer")
+        return AdminLinkResult(admin_name=name)
 
     async def check_invite(self, code: str) -> str:
         response = await self._request("POST", "/invites/check", {"code": code})
@@ -234,9 +303,12 @@ class PanelClient:
         valid_until = data.get("valid_until")
         return ConfigLink(config_url=url, valid_until=valid_until if isinstance(valid_until, str) else None)
 
-    async def claim(self, limit: int) -> Claim:
+    async def claim(self, limit: int, kinds: list[str] | None = None) -> Claim:
         """Взять пачку исходящих сообщений в аренду (для ссылок на конфиг панель выпускает адрес прямо сейчас)."""
-        data = _json(await self._request("POST", "/outbox/claim", {"limit": limit}))
+        body: dict[str, Any] = {"limit": limit}
+        if kinds is not None:
+            body["kinds"] = kinds
+        data = _json(await self._request("POST", "/outbox/claim", body))
         lease_id, until = data.get("lease_id"), data.get("lease_until")
         raw_items, raw_texts = data.get("items"), data.get("texts")
         if not isinstance(lease_id, str) or not isinstance(until, str):
@@ -258,6 +330,8 @@ class PanelClient:
                 raise PanelUnexpected("unexpected claim item")
             items.append(
                 OutboxItem(
+                    text=raw.get("text") if isinstance(raw.get("text"), str) else None,
+                    format=raw.get("format") if raw.get("format") in ("plain", "html") else None,
                     id=raw["id"],
                     kind=raw["kind"],
                     telegram_id=raw["telegram_id"],
@@ -295,6 +369,15 @@ class PanelClient:
 
     # --- запрос ------------------------------------------------------------------------------------------------------
 
+    async def _observe(self, event: str) -> None:
+        if self._observer is None:
+            return
+        callback = getattr(self._observer, event, self._observer.on_ok)
+        callback()
+        persist = getattr(self._observer, "persist", None)
+        if persist is not None:
+            await persist()
+
     async def _request(
         self, method: str, path: str, body: dict[str, Any] | None = None, *, allow_missing: bool = False
     ) -> httpx.Response:
@@ -308,16 +391,27 @@ class PanelClient:
             else:
                 failure = f"HTTP {response.status_code}" if response.status_code in RETRY_STATUSES else ""
             if failure:
-                if outage == len(RETRY_DELAYS):
+                if self._observer is not None and path in ("/heartbeat", "/outbox/claim"):
+                    await self._observe("on_fail")
+                # Heartbeat already has its own periodic scheduler: leave retries to its next tick.
+                if path == "/heartbeat" or outage == len(RETRY_DELAYS):
                     raise PanelUnavailable(failure)
                 await self._sleep(RETRY_DELAYS[outage])
                 outage += 1
                 continue
 
             status = response.status_code
+            if self._observer is not None and path in ("/heartbeat", "/outbox/claim"):
+                if 200 <= status < 300:
+                    await self._observe("on_ok")
+                elif status in (401, 429):
+                    await self._observe("on_alive")
+                elif status >= 500:
+                    await self._observe("on_fail")
             if status == 429:
                 wait = _retry_after(response)
-                if rate_limited or wait is None or wait > MAX_RATE_LIMIT_WAIT:
+                # A binding is a one-time action; let the person retry explicitly after a limit.
+                if path in ("/heartbeat", "/admin-links") or rate_limited or wait is None or wait > MAX_RATE_LIMIT_WAIT:
                     raise RateLimited(f"retry after {wait}")
                 rate_limited = True
                 await self._sleep(wait)

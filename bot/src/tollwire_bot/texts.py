@@ -5,6 +5,13 @@ parse_mode у бота не задан (имя и почта человека п
 from datetime import datetime, timezone
 
 TEXTS: dict[str, dict[str, str]] = {
+    "panel_down": {"ru": "Панель не отвечает {minutes} мин"},
+    "panel_up": {"ru": "Панель снова отвечает"},
+    "admin_linked": {"ru": "Telegram привязан к администратору {name}."},
+    "admin_link_usage": {"ru": "Используйте /admin и одноразовый код из панели."},
+    "admin_link_invalid": {"ru": "Код привязки недействителен или уже использован. Получите новый в панели."},
+    "admin_link_expired": {"ru": "Срок действия кода привязки истёк. Получите новый в панели."},
+    "admin_link_taken": {"ru": "Этот Telegram уже привязан к другому администратору."},
     # /start
     "no_code": {
         "ru": "Этот сервис работает в режиме закрытого тестирования. "

@@ -2,6 +2,40 @@
 
 Слои и правила тестов — в `tests/CLAUDE.md`. Здесь — что проверяет каждый файл бота.
 
+## Уведомления: проверки серверных сервисов
+
+Проверки серверных сервисов, HTTP, Telegram-бота и фронтенда:
+
+- `tests/bot_notify_support.py` — общие сцены привязки, аудита и очереди уведомлений.
+- `unit/test_bot_notify_catalog.py` — каталог и defaults, переходы down/recovered, разрешённые ошибки задач,
+  настройки overlap, право `bot:notify` у трёх ролей, правило `bot_notify`.
+- `unit/test_bot_notify_texts.py` — фильтры сущности и дат в ссылке на журнал, свёртка разных сущностей,
+  часовые пояса браузера −12/+14, недопустимый адрес панели, предел 4096 единиц UTF-16.
+- `services/test_admin_links.py` — хеш и TTL кода, одноразовость и замена, уникальный Telegram,
+  неактивный администратор, выбор событий, безопасный аудит, каскад очереди, список живых чатов.
+- `services/test_bot_notify.py` — получатели и настройки, seen/курсор, поздний commit внутри overlap,
+  LIMIT и несколько проходов, очистка seen, свёртка, TTL, время и очистка текста; отсутствие `panel_down`.
+- `services/test_outbox_notify.py` — opt-in `kinds`, текущий Telegram, приоритет, expired/no_recipient,
+  ack/retry, разделение blocked администратора и VPN-пользователя, CHECK получателя и CASCADE.
+- `services/test_server_health_event.py` — событие смены health, актор, причина и конкурентная запись.
+- `services/test_migrations_notify.py` — ограничения таблиц уведомлений и upgrade/downgrade с данными.
+
+Контракт реализации и ограничения — [notify.md](notify.md).
+
+- `services/test_notify_ack_races.py` — поздний blocked после relink, время claim, ack/unlink.
+- `integration/test_bot_notify_admin.py` — привязка, события, каталог/получатели, пробы, лимиты и секреты.
+- `integration/test_bot_notify_flow.py` — health → аудит → сборщик → очередь, отсутствие дублей.
+- `integration/test_bot_client_notify_contract.py` — настоящий PanelClient против API уведомлений.
+- `test_rbac.py`, `test_forced_password_change.py`, `test_bot_auth.py` — права, временный пароль, ключ/JWT.
+- `frontend/src/pages/bot/NotifyPage.test.tsx` — привязка, события, проба, предупреждения;
+  `SettingsPage.test.tsx`, `BroadcastsForm.test.tsx` — порог, HTML-проба;
+  `frontend/src/lib/audit.test.ts`, `src/i18n/i18n.test.ts` — действия и переводы.
+
+Для сборщика проверять неизменяемый started_at: история до старта исключена даже внутри overlap.
+Для проверки имён в тексте брать детерминированные имена без длинных чисел: очистка намеренно
+удаляет последовательности от шести цифр, поэтому случайный UUID-фрагмент делает ожидание полного имени нестабильным.
+Тесты бота — [../bot-service/tests.md](../bot-service/tests.md).
+
 ## Общее
 
 - `tests/bot_support.py` — сцены и обёртки над сервисами модуля, константы контракта (префиксы, причины отказа,

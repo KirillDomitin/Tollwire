@@ -11,6 +11,12 @@
 - `AuditService.record(...)` не коммитит: запись попадает в ту же транзакцию, что и само действие (откат действия
   откатывает и запись).
 - `diff_changes(obj, new_values)` — что поменялось в PATCH (для `*_updated`).
+- `server_health_changed` — смена health с `{from, to, reason}`. Привязки администратора:
+  `bot_admin_link_code_created/created/removed/events_updated`, сущность `admin_telegram_link`;
+  без кода, хеша и `telegram_id`. Доставка уведомлений и blocked не аудируются.
+- `AuditLogRepository.list_for_notify`: разрешённые действия, окно `created_at >= since`,
+  исключение seen до LIMIT, порядок `created_at ASC, id ASC`. Курсор, перекрытие и транзакция —
+  ответственность сборщика (`docs/bot/notify.md`), не HTTP-списка аудита.
 - **Без секретов:** пароли, ключи, токены, конфиги в `meta` не кладутся.
 - API: `GET /api/v1/audit-logs`, право `audit:read`. Фильтры: `admin_id`, `action` (несколько значений),
   `entity_type`, `entity_id`, `since`, `until` (граница не включается). Курсор: `before_created_at` и

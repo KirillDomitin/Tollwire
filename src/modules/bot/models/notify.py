@@ -17,6 +17,8 @@ class BotNotifyCursor(Base):
 
     id: Mapped[int] = mapped_column(SmallInteger, primary_key=True, default=1)
     cursor_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # Immutable floor: overlap must never import audit history preceding initialization.
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class BotNotifySeen(Base):

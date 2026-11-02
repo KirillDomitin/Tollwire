@@ -20,6 +20,9 @@ const FIVE_MINUTES = 5 * 60_000;
 
 export const botKeys = {
   status: ["bot", "status"] as const,
+  telegram: ["bot", "telegram"] as const,
+  notifyEvents: ["bot", "notify-events"] as const,
+  adminLinks: ["bot", "admin-links"] as const,
   keys: ["bot", "keys"] as const,
   settings: ["bot", "settings"] as const,
   protocols: ["bot", "protocols"] as const,
@@ -31,6 +34,42 @@ export const botKeys = {
   audience: (body: AudienceRequest) => ["bot", "audience", body] as const,
   outbox: (id: string) => ["bot", "outbox", id] as const,
 };
+
+export function useMyTelegram(enabled = true, polling = false) {
+  return useQuery({
+    queryKey: botKeys.telegram,
+    queryFn: ({ signal }) => botUnwrap(api.GET("/api/v1/bot-admin/me/telegram", { signal })),
+    enabled,
+    gcTime: 0,
+    refetchInterval: (query) =>
+      polling && (!query.state.data?.linked || !!query.state.data?.blocked_at) ? POLL_MS : false,
+  });
+}
+
+export function useNotifyEvents(enabled = true) {
+  return useQuery({
+    queryKey: botKeys.notifyEvents,
+    queryFn: () => botUnwrap(api.GET("/api/v1/bot-admin/notify-events")),
+    enabled,
+  });
+}
+
+export function useOutbox(id: string | undefined) {
+  return useQuery({
+    queryKey: botKeys.outbox(id ?? ""),
+    queryFn: () =>
+      botUnwrap(
+        api.GET("/api/v1/bot-admin/outbox/{outbox_id}", {
+          params: { path: { outbox_id: id! } },
+        }),
+      ),
+    enabled: !!id,
+    refetchInterval: (query) =>
+      !query.state.error && (!query.state.data || ["pending", "claimed"].includes(query.state.data.status))
+        ? POLL_MS
+        : false,
+  });
+}
 
 /**
  * Состояние бота. Его читают меню и каркас страницы: «есть ли хоть один ключ» меняется редко, поэтому `staleTime`

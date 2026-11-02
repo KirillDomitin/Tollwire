@@ -8,12 +8,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- Raised the Telegram bot's memory limit to 256 MB for local and remote deployments to prevent startup OOM kills.
+
 - The panel no longer touches a foreign `amnezia-awg` container. The AmneziaVPN app names its container the same
   way, so "Remove protocol" on such a server would have deleted a working VPN. A container now counts as the
   panel's only if it mounts `/opt/vpn-admin/awg`; installing or managing clients against a foreign one fails with a
   clear error, removal changes nothing, and status and health report "not installed".
 
 ### Added
+
+- Personal Telegram notifications: link an administrator with a one-time code, choose events and test delivery
+  on the Bot page; receive server, gateway, job and security alerts. Bot 0.3.0 also reports panel outages and recovery.
 
 - Telegram bot, panel side (API only; there is no screen yet). Superadmins issue and revoke keys for the bot
   (`POST /api/v1/bot-admin/keys`). Operators and superadmins create one-time invites

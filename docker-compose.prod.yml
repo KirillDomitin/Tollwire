@@ -132,7 +132,7 @@ services:
     cap_drop: [ALL]
     read_only: true
     tmpfs: [/tmp]
-    mem_limit: 128m
+    mem_limit: 256m
     volumes:
       - bot_data:/data
     networks: [edge]

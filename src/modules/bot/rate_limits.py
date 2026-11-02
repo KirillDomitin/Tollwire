@@ -36,3 +36,17 @@ BOT_CONFIG_SENDS_BY_ADMIN = Limit(
 BOT_REGISTRATIONS_BY_KEY = Limit(
     "bot_key_registrations", settings.bot_registrations_max, settings.bot_registrations_window_seconds
 )
+
+BOT_ADMIN_LINK_FAILURES_BY_KEY = Limit(
+    "bot_key_admin_link_failures", settings.bot_admin_link_failures_max, settings.bot_admin_link_failures_window_seconds
+)
+BOT_ADMIN_LINK_CODES_BY_ADMIN = Limit(
+    "bot_admin_link_codes",
+    settings.bot_admin_link_codes_per_admin_max,
+    settings.bot_admin_link_codes_per_admin_window_seconds,
+)
+BOT_NOTIFY_TESTS_BY_ADMIN = Limit(
+    "bot_admin_notify_tests",
+    settings.bot_notify_tests_per_admin_max,
+    settings.bot_notify_tests_per_admin_window_seconds,
+)
