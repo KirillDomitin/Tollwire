@@ -24,6 +24,25 @@ class ProviderStatus:
     uptime: str | None
 
 
+@dataclass(frozen=True)
+class ProviderImageInfo:
+    image_id: str
+    os: str
+    architecture: str
+    variant: str | None = None
+    repo_digests: tuple[str, ...] = ()
+
+
+@dataclass
+class ProtocolUpdateResult:
+    changed: bool
+    previous_image_id: str | None
+    target_image_id: str | None
+    target_digest: str | None
+    rollback: str = "not_needed"
+    recovered: bool = False
+
+
 @dataclass
 class VPNClientInfo:
     """Клиент, как его видит сервер. Секретов нет: публичный ключ и адрес можно показывать."""
@@ -98,6 +117,12 @@ class Discovery:
 class VPNProvider(ABC):
     def __init__(self, ssh_client: SSHClient):
         self.ssh_client = ssh_client
+
+    async def update(self) -> ProtocolUpdateResult:
+        raise UnsupportedOperationError(f"{type(self).__name__} does not support container updates")
+
+    async def image_info(self) -> ProviderImageInfo:
+        raise UnsupportedOperationError(f"{type(self).__name__} does not support image inspection")
 
     @abstractmethod
     async def install(self) -> ProviderStatus: ...

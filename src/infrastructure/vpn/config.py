@@ -10,6 +10,7 @@ RESTARTING_POLICIES = frozenset({"unless-stopped", "always"})  # обе подн
 # registry «latest» попал бы на все серверы при следующей установке. Обновление — осознанно: сменить дайджест
 # (docker image inspect amneziavpn/amneziawg-go:<tag> --format '{{index .RepoDigests 0}}').
 AMNEZIAWG_IMAGE = "amneziavpn/amneziawg-go@sha256:cbafc02b8373a83f428272db6d8001b37bc02e6211cbd8c0cb4e2e3759b12b72"
+AMNEZIAWG_UPDATE_IMAGE = "amneziavpn/amneziawg-go:latest"
 # Фильтр docker ps по имени ищет ПОДСТРОКУ: name=amnezia-awg совпал бы и с чужим amnezia-awg2.
 # Якоря ^…$ делают совпадение точным; /? — docker хранит имена с ведущим слэшем.
 # В одинарных кавычках: иначе shell принял бы ? за glob-шаблон, а $ — за начало переменной.

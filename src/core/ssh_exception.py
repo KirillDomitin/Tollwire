@@ -17,6 +17,14 @@ class InvalidServerConfigurationError(SSHServerError): ...
 class DockerError(SSHServerError): ...
 
 
+class ContainerUpdateError(DockerError):
+    """Sanitized update failure; job_result contains image identifiers and rollback status only."""
+
+    def __init__(self, message: str, job_result: dict[str, object]):
+        super().__init__(message)
+        self.job_result = job_result
+
+
 class ConfigChangedError(CommandExecutionError):
     """Конфиг на сервере изменился между чтением и записью (например, приложением AmneziaVPN): запись отменена."""
 

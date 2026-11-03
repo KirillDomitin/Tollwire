@@ -11,7 +11,7 @@
 ## Шаги
 
 - [x] `tests/`, `frontend/src/**/*.test.tsx` → красные тесты провайдеров, API/RBAC, фоновой задачи, миграции и UI; подтверждены пользователем «погнали».
-- [ ] `src/infrastructure/vpn/{provider,config,amnezia,gateway}.py` → контракт обновления, доверенный latest → digest, проверка владельца, сохранение состояния, откат и восстановление; тесты через test-runner, коммит.
+- [x] `src/infrastructure/vpn/{provider,config,amnezia,gateway}.py`, `container_update.py`, `registry.py` → контракт обновления, доверенный latest → digest, read-only metadata, проверка владельца, snapshot, откат и восстановление; 31 новый тест и 785 регрессионных прошли (2 shell через Git Bash), Ruff/mypy файлов PASS.
 - [ ] `src/modules/{servers,jobs,audit}`, `src/infrastructure/workers/`, `alembic/` → API 202 с правом servers:manage, UPDATE_PROTOCOL, исполнение и безопасный аудит; upgrade/downgrade, тесты через test-runner, коммит.
 - [ ] `frontend/src/pages/server/`, API-типы и ru/en → действие обновления для каждого своего протокола, подтверждение краткого разрыва, отображение результата/ошибки; проверки, коммит.
 - [ ] Reviewer по diff master → исправления, полный прогон через test-runner, ruff/mypy и проверки frontend; показать итог пользователю.

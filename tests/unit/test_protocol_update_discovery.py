@@ -3,6 +3,7 @@
 import importlib
 import importlib.util
 import json
+from hashlib import sha256
 from typing import Any
 
 import httpx
@@ -37,6 +38,17 @@ def index() -> dict[str, Any]:
             {"digest": ARM_MANIFEST, "platform": {"os": "linux", "architecture": "arm64", "variant": "v8"}},
         ],
     }
+
+
+def manifest_metadata(image_id: str = OLD_IMAGE) -> tuple[bytes, str]:
+    document = {
+        "schemaVersion": 2,
+        "mediaType": "application/vnd.oci.image.manifest.v1+json",
+        "config": {"digest": image_id, "size": 123, "mediaType": "application/vnd.oci.image.config.v1+json"},
+        "layers": [],
+    }
+    body = json.dumps(document).encode()
+    return body, "sha256:" + sha256(body).hexdigest()
 
 
 @pytest.mark.parametrize("architecture,variant,digest", [("amd64", None, AMD_MANIFEST), ("arm64", "v8", ARM_MANIFEST)])
@@ -94,30 +106,24 @@ async def test_registry_compares_platform_config_digest_with_local_image_id() ->
     image_cls = getattr(provider, "ProviderImageInfo", None)
     assert image_cls is not None, "ProviderImageInfo must describe installed architecture"
     requests: list[str] = []
+    body, child_digest = manifest_metadata()
+    document = index()
+    document["manifests"][1]["digest"] = child_digest
 
     def respond(request: httpx.Request) -> httpx.Response:
         requests.append(str(request.url))
         assert request.url.host == "registry-1.docker.io"
         if request.url.path.endswith("/manifests/latest"):
             return httpx.Response(
-                200, json=index(), headers={"Content-Type": "application/vnd.oci.image.index.v1+json"}
+                200, json=document, headers={"Content-Type": "application/vnd.oci.image.index.v1+json"}
             )
-        if request.url.path.endswith(f"/manifests/{ARM_MANIFEST}"):
+        if request.url.path.endswith(f"/manifests/{child_digest}"):
             return httpx.Response(
                 200,
-                json={
-                    "schemaVersion": 2,
-                    "mediaType": "application/vnd.oci.image.manifest.v1+json",
-                    "config": {
-                        "digest": OLD_IMAGE,
-                        "size": 123,
-                        "mediaType": "application/vnd.oci.image.config.v1+json",
-                    },
-                    "layers": [],
-                },
+                content=body,
                 headers={
                     "Content-Type": "application/vnd.oci.image.manifest.v1+json",
-                    "Docker-Content-Digest": ARM_MANIFEST,
+                    "Docker-Content-Digest": child_digest,
                 },
             )
         raise AssertionError(f"Unexpected metadata request: {request.url}")
@@ -126,6 +132,6 @@ async def test_registry_compares_platform_config_digest_with_local_image_id() ->
         image = image_cls(image_id=OLD_IMAGE, os="linux", architecture="arm64", variant="v8")
         latest = await registry.AmneziaImageRegistry(client=client).latest_for(image)
     assert latest.image_id == OLD_IMAGE  # index/child manifest digest differs, but no actual image update exists.
-    assert latest.digest == f"{REPOSITORY}@{ARM_MANIFEST}"
+    assert latest.digest == f"{REPOSITORY}@{child_digest}"
     assert not any(AMD_MANIFEST in request for request in requests)
     assert not any("/blobs/" in request for request in requests)  # metadata only; no image layers.

@@ -1,6 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 import asyncio
+import json
 import logging
 import re
 from datetime import datetime, timezone
@@ -43,7 +44,9 @@ from infrastructure.vpn.config import (
 )
 from infrastructure.vpn.provider import (
     HealthCheck,
+    ProtocolUpdateResult,
     ProviderHealth,
+    ProviderImageInfo,
     ProviderState,
     ProviderStatus,
     SyncResult,
@@ -211,6 +214,44 @@ class AmneziaWGProvider(VPNProvider):
         await self.ssh_client.write_file(layout.host_config_file, config)
         await self._run_container(port)
         return await self.get_status()
+
+    async def update(self) -> ProtocolUpdateResult:
+        from infrastructure.vpn.container_update import ContainerUpdater
+
+        return await ContainerUpdater(self).run()
+
+    async def _update_runtime_state(self) -> dict[str, object]:
+        """Additional runtime invariants captured by the recoverable container updater."""
+        return {}
+
+    async def image_info(self) -> ProviderImageInfo:
+        """Inspect the actual container image, never a mutable local tag; no config or layer reads."""
+        from infrastructure.vpn.container_update import valid_image_id
+
+        await self._require_own_container()
+        result = await self.ssh_client.execute(
+            f"docker inspect --type container -f '{{{{.Image}}}}' {self.layout.container_name}"
+        )
+        image_id = result.stdout.strip()
+        if result.exit_status or not valid_image_id(image_id):
+            raise DockerError("Cannot inspect the installed container image")
+        result = await self.ssh_client.execute(f"docker image inspect --format '{{{{json .}}}}' {image_id}")
+        try:
+            data = json.loads(result.stdout)
+            if result.exit_status or not isinstance(data, dict) or data.get("Id") != image_id:
+                raise ValueError
+            os_name, architecture = data["Os"], data["Architecture"]
+            variant, digests = data.get("Variant") or None, data.get("RepoDigests") or []
+            if not all(isinstance(value, str) and re.fullmatch(r"[a-z0-9_-]{1,32}", value)
+                       for value in (os_name, architecture)):
+                raise ValueError
+            if variant is not None and (not isinstance(variant, str) or not re.fullmatch(r"[a-z0-9_-]{1,32}", variant)):
+                raise ValueError
+            if not isinstance(digests, list) or not all(isinstance(value, str) for value in digests):
+                raise ValueError
+        except (ValueError, KeyError, TypeError):
+            raise DockerError("Cannot inspect the installed image platform") from None
+        return ProviderImageInfo(image_id, os_name, architecture, variant, tuple(digests))
 
     async def uninstall(self) -> ProviderStatus:
         if await self._is_foreign():

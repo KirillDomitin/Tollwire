@@ -90,6 +90,19 @@ class AmneziaGatewayProvider(AmneziaWGProvider):
     # поэтому вызывающий сервис пишет его в аудит.
     recreated: str | None = None
 
+    async def _update_runtime_state(self) -> dict[str, object]:
+        """Read actual routing state; no fresh handshake is required for replacement readiness."""
+        assignments = await self.read_assignments()
+        ru = await self.ru_status()
+        return {
+            "exits": sorted(await self._exit_slots_up()),
+            "assignments": {str(address): slot for address, slot in assignments.items()},
+            # start.sh may switch the active double-buffered table; content must be unchanged.
+            "ru_routes": ru.routes,
+            "ru_digest": ru.digest,
+            "ru_enabled": ru.table is not None,
+        }
+
     async def install(self) -> ProviderStatus:
         """Идемпотентно: порт и ключи сервера не перегенерируются, start.sh и правила дочиниваются.
 

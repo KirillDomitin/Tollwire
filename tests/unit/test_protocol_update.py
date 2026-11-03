@@ -1,6 +1,8 @@
 """Manual latest-image replacement must preserve existing VPN identity and be recoverable."""
 
 from dataclasses import asdict
+from ipaddress import IPv4Address, IPv4Network
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -8,10 +10,22 @@ import pytest
 from core.ssh_exception import DockerError, ForeignContainerError, UnsupportedOperationError
 from infrastructure.vpn.amnezia import AmneziaWGProvider
 from infrastructure.vpn.amnezia_app import AmneziaAppAWG2Provider, AmneziaAppAWGProvider
+from infrastructure.vpn.awg_config import list_peers
 from infrastructure.vpn.gateway import AmneziaGatewayProvider
 from infrastructure.vpn.gateway_config import GATEWAY_LAYOUT
 from tests.fakes.fake_ssh import FakeSSHClient
 from tests.fakes.protocol_update import DIGEST, LATEST, NEW_IMAGE, OLD_IMAGE, UpdateServer
+from tests.gateway_support import add_live_exit
+
+
+@pytest.fixture(autouse=True)
+def no_update_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+    from infrastructure.vpn import container_update
+
+    async def instant(_: float) -> None:
+        pass
+
+    monkeypatch.setattr(container_update, "asyncio", SimpleNamespace(sleep=instant))
 
 
 async def installed(gateway: bool = False) -> UpdateServer:
@@ -115,6 +129,72 @@ async def test_repeated_update_recovers_after_worker_dies_during_replace() -> No
     assert result.recovered is True
     assert fake.files == before and fake.running
     assert set(fake.containers) == {fake.layout.container_name}
+
+
+async def test_failed_rollback_is_reported_and_preserves_recovery_metadata() -> None:
+    fake = await installed()
+    fake.fail_new_start = fake.fail_old_start = True
+    with pytest.raises(DockerError) as error:
+        await update(fake)
+    assert error.value.job_result["rollback"] == "failed"  # type: ignore[attr-defined]
+    assert f"{fake.layout.host_config_dir}/.container-update.json" in fake.files
+    assert fake.layout.host_config_dir + "-update-snapshot" in fake.dirs
+
+
+async def test_running_new_image_that_changes_config_is_rolled_back() -> None:
+    fake = await installed()
+    before = dict(fake.files)
+    fake.mutate_config_on_start = True
+    with pytest.raises(DockerError) as error:
+        await update(fake)
+    assert error.value.job_result["rollback"] == "succeeded"  # type: ignore[attr-defined]
+    assert fake.files == before and fake.running
+    assert fake.image_ids[fake.layout.container_name] == OLD_IMAGE
+
+
+async def test_recovery_refuses_backup_container_with_unexpected_id() -> None:
+    fake = await installed()
+    fake.crash_after_rename = True
+    with pytest.raises(KeyboardInterrupt):
+        await update(fake)
+    backup = fake.layout.container_name + "-update-backup"
+    fake.container_ids[backup] = "9" * 64
+    before = dict(fake.files)
+    fake.commands.clear()
+    with pytest.raises(DockerError):
+        await update(fake)
+    assert changing_commands(fake) == []
+    assert fake.container_ids[backup] == "9" * 64 and fake.files == before
+
+
+async def test_unknown_backup_without_journal_is_not_removed_or_overwritten() -> None:
+    fake = await installed()
+    backup = fake.layout.container_name + "-update-backup"
+    fake.containers[backup] = "exited"
+    fake.container_ids[backup] = "9" * 64
+    with pytest.raises(DockerError):
+        await update(fake)
+    assert changing_commands(fake) == [] and fake.running
+    assert not any(command.startswith("docker pull") for command in fake.commands)
+
+
+async def test_gateway_update_restores_exits_assignments_and_russian_routes_without_fresh_handshake() -> None:
+    fake = await installed(gateway=True)
+    await add_live_exit(fake, handshake=0)
+    address = IPv4Address(list_peers(fake.files[fake.layout.host_config_file])[0].address)
+    async with FakeSSHClient(fake) as ssh:
+        instance = AmneziaGatewayProvider(ssh)
+        await instance.apply_assignments({address: 1})
+        await instance.apply_ru([IPv4Network("5.45.200.0/24")])
+        before_runtime = await instance._update_runtime_state()
+    before_files = dict(fake.files)
+    result = await update(fake, gateway=True)
+    async with FakeSSHClient(fake) as ssh:
+        after_runtime = await AmneziaGatewayProvider(ssh)._update_runtime_state()
+    assert result.changed and fake.files == before_files
+    assert after_runtime == before_runtime
+    assert fake.exit_interfaces == ["gwx1"] and fake.assign_chain == {str(address): 1001}
+    assert any(rule.startswith("9000:") and "prohibit" in rule for rule in fake.ip_rules)
 
 
 @pytest.mark.parametrize("cls", [AmneziaAppAWGProvider, AmneziaAppAWG2Provider])
