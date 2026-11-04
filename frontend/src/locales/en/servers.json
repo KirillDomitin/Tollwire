@@ -437,7 +437,7 @@
       "unknown": "Could not check",
       "unsupported": "Updates unsupported"
     },
-    "checkNow": "Check now",
+    "checkNow": "Check for updates",
     "schedule": "Updates are checked daily at 03:00 Moscow time. Updates are installed manually.",
     "stale": "Information is out of date",
     "checked": "Checked: {{when}}",

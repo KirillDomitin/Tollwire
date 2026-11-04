@@ -82,7 +82,7 @@ it("does not offer container update without servers:manage", async () => {
   setup(["amnezia_wg"], ["servers:read"]);
   await screen.findByRole("heading", { name: "Обслуживание" });
   expect(screen.queryByRole("button", { name: /Обновить контейнер/ })).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "Проверить сейчас" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Проверить обновления" })).not.toBeInTheDocument();
 });
 
 function observed(protocolId: string, protocolType: string, status: string, stale = false) {
@@ -116,7 +116,7 @@ it("marks old availability observations as stale", async () => {
 it("lets servers:check check now without permission to replace a container", async () => {
   const checks: string[] = [];
   const updates = setup(["amnezia_wg"], ["servers:read", "servers:check"], [], checks);
-  await userEvent.click(await screen.findByRole("button", { name: "Проверить сейчас" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Проверить обновления" }));
   await waitFor(() => expect(checks).toEqual([`${BASE}/protocol/updates/check`]));
   expect(updates).toEqual([]);
   expect(screen.queryByRole("button", { name: /Обновить контейнер/ })).not.toBeInTheDocument();
