@@ -251,7 +251,38 @@ class AmneziaWGProvider(VPNProvider):
                 raise ValueError
         except (ValueError, KeyError, TypeError):
             raise DockerError("Cannot inspect the installed image platform") from None
-        return ProviderImageInfo(image_id, os_name, architecture, variant, tuple(digests))
+        descriptor = await self.ssh_client.execute(
+            f"docker inspect --type container -f '{{{{json .ImageManifestDescriptor}}}}' {self.layout.container_name}"
+        )
+        manifest_digest = None
+        if descriptor.exit_status:
+            # Older engines have no descriptor field. Other failures must not silently
+            # downgrade a containerd index ID to a supposed config/content ID.
+            unsupported = "ImageManifestDescriptor" in descriptor.stderr and (
+                "can't evaluate field" in descriptor.stderr or "map has no entry" in descriptor.stderr
+            )
+            if not unsupported:
+                raise DockerError("Cannot inspect the installed image manifest")
+        else:
+            try:
+                manifest = json.loads(descriptor.stdout)
+                if manifest is not None:
+                    if not isinstance(manifest, dict) or not valid_image_id(manifest.get("digest", "")):
+                        raise ValueError
+                    platform = manifest.get("platform")
+                    expected_variant = variant or ("v8" if architecture == "arm64" else None)
+                    if not isinstance(platform, dict):
+                        raise ValueError
+                    actual_variant = platform.get("variant") or ("v8" if architecture == "arm64" else None)
+                    if (
+                        platform.get("os") != os_name or platform.get("architecture") != architecture
+                        or actual_variant != expected_variant
+                    ):
+                        raise ValueError
+                    manifest_digest = manifest["digest"]
+            except (ValueError, TypeError, KeyError):
+                raise DockerError("Cannot inspect the installed image manifest") from None
+        return ProviderImageInfo(image_id, os_name, architecture, variant, tuple(digests), manifest_digest)
 
     async def uninstall(self) -> ProviderStatus:
         if await self._is_foreign():

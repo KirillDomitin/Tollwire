@@ -656,6 +656,10 @@ class FakeServer:
             content = self.files.get(match.group(1), "")
             port = next((line.split()[2] for line in content.splitlines() if line.startswith("ListenPort")), "")
             return _ok(port + "\n" if port else "")
+        if cmd == f"docker inspect --type container -f '{{{{json .ImageManifestDescriptor}}}}' {container}":
+            if container not in self.containers:
+                return _fail("No such container", 1)
+            return _ok("null\n")
         if cmd == f"docker inspect -f '{{{{.HostConfig.RestartPolicy.Name}}}}' {container}":
             if container not in self.containers:
                 return _fail("No such object", 1)

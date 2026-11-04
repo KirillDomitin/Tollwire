@@ -7,9 +7,9 @@
 ## Образы протоколов
 
 Перед изменениями читать `docs/servers/protocol-updates.md`.
-- `image_info()` только читает фактический image ID; registry сравнивает с config digest выбранной платформы,
-  не с digest multiarch index. Источник обновления фиксирован; установка сохраняет pinned image.
-- `update()` только для собственных AWG/шлюза, под ServerLock; pull до stop, равный image ID — без перезапуска.
+- `image_info()` читает Docker ID и проверенный descriptor платформы; registry сравнивает config digest.
+  Публичный ID, журнал и recovery сохраняют сырой Docker ID; источник фиксирован, установка pinned.
+- `update()` только для собственных AWG/шлюза, под ServerLock; pull до stop, равный ID или проверенный manifest платформы — без перезапуска.
 - Снимок каталога, журнал и cidfile сохраняются до завершения. Recovery действует по full CID; неизвестные
   объекты не удаляются. `verified` означает очистку без отката последующих изменений клиентов.
 - Uninstall/install для обновления запрещены: снятие удаляет конфиги. APP-провайдеры обновление не поддерживают.

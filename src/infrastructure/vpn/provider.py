@@ -31,6 +31,7 @@ class ProviderImageInfo:
     architecture: str
     variant: str | None = None
     repo_digests: tuple[str, ...] = ()
+    manifest_digest: str | None = None
 
 
 @dataclass

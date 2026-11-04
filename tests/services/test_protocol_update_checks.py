@@ -13,7 +13,7 @@ from infrastructure.vpn import provider
 from infrastructure.vpn.amnezia import AmneziaWGProvider
 from modules.jobs.models.job import Job, JobStatus, JobType
 from modules.protocols.models.protocol import ProtocolType, VPNProtocol
-from tests.fakes.protocol_update import DIGEST, NEW_IMAGE, OLD_IMAGE
+from tests.fakes.protocol_update import DIGEST, INDEX_IMAGE, NEW_IMAGE, OLD_IMAGE
 from tests.fixtures import World
 
 NOW = datetime(2026, 11, 4, 0, 5, tzinfo=timezone.utc)
@@ -74,6 +74,34 @@ async def test_check_compares_config_image_id_and_does_not_modify_vpn_or_health(
     assert fake.files == before and fake.commands == commands
     await world.session.refresh(server)
     assert server.health_status == health
+
+
+@pytest.mark.parametrize("target,status", [(OLD_IMAGE, "current"), (NEW_IMAGE, "available")])
+async def test_containerd_check_compares_canonical_config_but_preserves_raw_container_image_id(
+    world: World, monkeypatch: pytest.MonkeyPatch, target: str, status: str
+) -> None:
+    checks, (server, protocol, fake), _ = await scene(world, monkeypatch)
+    registry = importlib.import_module("infrastructure.vpn.registry")
+    assert "current_image_id" in registry.RegistryImageInfo.__dataclass_fields__, (
+        "resolved installed config is required"
+    )
+
+    async def info(self: Any) -> Any:
+        return provider.ProviderImageInfo(image_id=INDEX_IMAGE, os="linux", architecture="amd64")
+
+    class ContainerdMetadata:
+        async def latest_for(self, image: Any) -> Any:
+            assert image.image_id == INDEX_IMAGE
+            return registry.RegistryImageInfo(image_id=target, digest=DIGEST, current_image_id=OLD_IMAGE)
+
+    monkeypatch.setattr(AmneziaWGProvider, "image_info", info)
+    before, commands = dict(fake.files), list(fake.commands)
+    service = checks.ProtocolUpdateCheckService(world.session, registry=ContainerdMetadata(), clock=lambda: NOW)
+    item = observation(await service.check(server.id), protocol.id)
+    assert item["status"] == status and item["stale"] is False
+    assert (item["current_image_id"], item["target_image_id"]) == (INDEX_IMAGE, target)
+    assert observation(await service.get_cached(server.id), protocol.id) == item
+    assert fake.files == before and fake.commands == commands and fake.running
 
 
 async def test_empty_cache_is_unknown_and_cached_read_never_contacts_registry_or_ssh(

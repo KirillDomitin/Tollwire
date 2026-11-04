@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 import pytest
 
+from core.ssh_exception import DockerError
 from infrastructure.ssh.client import CommandResult
 from infrastructure.vpn import provider
 from infrastructure.vpn.amnezia import AmneziaWGProvider
@@ -16,7 +17,7 @@ from infrastructure.vpn.config import DEFAULT_LAYOUT
 from infrastructure.vpn.gateway import AmneziaGatewayProvider
 from infrastructure.vpn.gateway_config import GATEWAY_LAYOUT
 from tests.fakes.fake_ssh import FakeServer, FakeSSHClient
-from tests.fakes.protocol_update import OLD_IMAGE
+from tests.fakes.protocol_update import INDEX_IMAGE, NEW_IMAGE, OLD_IMAGE
 
 AMD_MANIFEST = "sha256:" + "d" * 64
 ARM_MANIFEST = "sha256:" + "e" * 64
@@ -135,3 +136,79 @@ async def test_registry_compares_platform_config_digest_with_local_image_id() ->
     assert latest.digest == f"{REPOSITORY}@{child_digest}"
     assert not any(AMD_MANIFEST in request for request in requests)
     assert not any("/blobs/" in request for request in requests)  # metadata only; no image layers.
+
+
+@pytest.mark.parametrize("gateway", [False, True], ids=["awg", "gateway"])
+@pytest.mark.parametrize("architecture", ["amd64", "arm64"], ids=["matching-platform", "wrong-platform"])
+async def test_containerd_image_info_reads_actual_container_platform_descriptor_without_mutation(
+    gateway: bool, architecture: str,
+) -> None:
+    class DescriptorServer(FakeServer):
+        def run(self, command: str) -> CommandResult:
+            if "{{.Image}}" in command:
+                self.commands.append(command)
+                return CommandResult(INDEX_IMAGE + "\n", "", 0)
+            if command == f"docker image inspect --format '{{{{json .}}}}' {INDEX_IMAGE}":
+                self.commands.append(command)
+                return CommandResult(json.dumps({"Id": INDEX_IMAGE, "Os": "linux", "Architecture": "amd64"}), "", 0)
+            if command == (
+                "docker inspect --type container -f '{{json .ImageManifestDescriptor}}' "
+                + self.layout.container_name
+            ):
+                self.commands.append(command)
+                descriptor = {"digest": AMD_MANIFEST, "platform": {"os": "linux", "architecture": architecture}}
+                return CommandResult(json.dumps(descriptor), "", 0)
+            return super().run(command)
+
+    fake = DescriptorServer(layout=GATEWAY_LAYOUT if gateway else DEFAULT_LAYOUT)
+    async with FakeSSHClient(fake) as ssh:
+        instance = (AmneziaGatewayProvider if gateway else AmneziaWGProvider)(ssh)
+        await instance.install()
+        fake.commands.clear()
+        before = dict(fake.files)
+        if architecture == "arm64":
+            with pytest.raises(DockerError):
+                await instance.image_info()
+        else:
+            info = await instance.image_info()
+            assert info.image_id == INDEX_IMAGE
+            assert getattr(info, "manifest_digest", None) == AMD_MANIFEST
+    assert fake.files == before and fake.running
+    assert not any(c.startswith(("docker pull", "docker stop", "docker run", "docker rm")) for c in fake.commands)
+
+
+@pytest.mark.parametrize("target", [OLD_IMAGE, NEW_IMAGE], ids=["same-config-repacked-manifest", "changed-config"])
+async def test_containerd_registry_resolves_installed_manifest_config_instead_of_comparing_index_id(
+    target: str,
+) -> None:
+    registry = registry_module()
+    image_cls = provider.ProviderImageInfo
+    assert "manifest_digest" in image_cls.__dataclass_fields__, "containerd needs its installed platform descriptor"
+    installed_body, installed_digest = manifest_metadata(OLD_IMAGE)
+    target_document = json.loads(manifest_metadata(target)[0])
+    # Different manifests may contain identical config content (for example a repack).
+    target_document["annotations"] = {"org.opencontainers.image.revision": "repacked"}
+    target_body = json.dumps(target_document).encode()
+    target_digest = "sha256:" + sha256(target_body).hexdigest()
+    document = index()
+    document["manifests"][0]["digest"] = target_digest
+    paths: list[str] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "registry-1.docker.io"
+        paths.append(request.url.path)
+        if request.url.path.endswith("/manifests/latest"):
+            return httpx.Response(200, json=document)
+        for digest, body in ((installed_digest, installed_body), (target_digest, target_body)):
+            if request.url.path.endswith(f"/manifests/{digest}"):
+                return httpx.Response(200, content=body, headers={"Docker-Content-Digest": digest})
+        raise AssertionError(f"Unexpected metadata request: {request.url}")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        image = image_cls(image_id=INDEX_IMAGE, os="linux", architecture="amd64", manifest_digest=installed_digest)
+        latest = await registry.AmneziaImageRegistry(client=client).latest_for(image)
+    assert latest.current_image_id == OLD_IMAGE
+    assert latest.image_id == target
+    assert latest.digest == f"{REPOSITORY}@{target_digest}"
+    assert any(path.endswith(f"/manifests/{installed_digest}") for path in paths)
+    assert not any("/blobs/" in path for path in paths)

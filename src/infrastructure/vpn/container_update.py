@@ -7,6 +7,7 @@ cidfile identifies a new container even if the SSH response or the worker is los
 import asyncio
 import json
 import re
+import shlex
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
@@ -256,6 +257,18 @@ class ContainerUpdater:
             self.result.target_image_id, self.result.target_digest = target, digest
             if target == self.result.previous_image_id:
                 return self.result
+            installed_image = await self.provider.image_info()
+            if installed_image.manifest_digest is not None:
+                platform = f"{installed_image.os}/{installed_image.architecture}"
+                if installed_image.variant:
+                    platform += f"/{installed_image.variant}"
+                target_manifest = await self.checked(
+                    f"docker image inspect --platform {shlex.quote(platform)} --format '{{{{.Id}}}}' {target}"
+                )
+                if not valid_image_id(target_manifest):
+                    raise DockerError("Invalid target platform manifest")
+                if installed_image.manifest_digest == target_manifest:
+                    return self.result
             pinned = await self.checked(f"docker image inspect --format '{{{{.Id}}}}' {digest}")
             if pinned != target:
                 raise DockerError("Pinned image does not match the downloaded update")

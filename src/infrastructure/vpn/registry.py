@@ -51,6 +51,7 @@ class RegistryError(ValueError):
 class RegistryImageInfo:
     image_id: str
     digest: str
+    current_image_id: str | None = None
 
 
 def _digest(value: Any) -> str:
@@ -139,7 +140,17 @@ class AmneziaImageRegistry:
                 or _variant(config.get("variant"), image.architecture) != _variant(image.variant, image.architecture)
             ):
                 raise RegistryError("platform_unknown")
-        return RegistryImageInfo(self._config_digest(manifest), f"{REPOSITORY}@{target_digest}")
+        current_image_id = None
+        if image.manifest_digest is not None:
+            installed_digest = _digest(image.manifest_digest)
+            if installed_digest == target_digest:
+                installed = manifest
+            else:
+                installed, resolved_digest = await self._metadata(client, f"manifests/{installed_digest}")
+                if resolved_digest != installed_digest:
+                    raise RegistryError()
+            current_image_id = self._config_digest(installed)
+        return RegistryImageInfo(self._config_digest(manifest), f"{REPOSITORY}@{target_digest}", current_image_id)
 
     @staticmethod
     def _config_digest(manifest: dict[str, Any]) -> str:

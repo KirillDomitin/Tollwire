@@ -150,8 +150,9 @@ class ProtocolUpdateCheckService:
                         provider = ServerConnectionService(self.session).build_provider(ssh, kind)
                         image = await provider.image_info()
                         latest = await self.registry.latest_for(image)
+                        installed_content = latest.current_image_id or image.image_id
                         item.update(
-                            status="current" if image.image_id == latest.image_id else "available",
+                            status="current" if installed_content == latest.image_id else "available",
                             stale=False, checked_at=now, last_attempt_at=now,
                             current_image_id=image.image_id, target_image_id=latest.image_id,
                             target_digest=latest.digest, reason=None,

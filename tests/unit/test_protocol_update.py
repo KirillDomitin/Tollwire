@@ -15,7 +15,7 @@ from infrastructure.vpn.awg_config import list_peers
 from infrastructure.vpn.gateway import AmneziaGatewayProvider
 from infrastructure.vpn.gateway_config import GATEWAY_LAYOUT
 from tests.fakes.fake_ssh import FakeSSHClient
-from tests.fakes.protocol_update import DIGEST, LATEST, NEW_IMAGE, OLD_IMAGE, UpdateServer
+from tests.fakes.protocol_update import DIGEST, INDEX_IMAGE, LATEST, NEW_IMAGE, OLD_IMAGE, UpdateServer
 from tests.gateway_support import add_live_exit
 
 
@@ -78,6 +78,20 @@ async def test_identical_image_does_not_restart_vpn() -> None:
     result = await update(fake)
     assert result.changed is False and result.target_image_id == OLD_IMAGE
     assert changing_commands(fake) == [] and fake.running
+
+
+@pytest.mark.parametrize("gateway", [False, True], ids=["awg", "gateway"])
+async def test_containerd_same_platform_manifest_under_new_index_does_not_restart_vpn(gateway: bool) -> None:
+    fake = await installed(gateway)
+    fake.image_ids[fake.layout.container_name] = INDEX_IMAGE
+    fake.manifest_digest = fake.target_manifest_digest = "sha256:" + "d" * 64
+    before = dict(fake.files)
+    result = await update(fake, gateway)
+    assert result.changed is False
+    assert (result.previous_image_id, result.target_image_id) == (INDEX_IMAGE, NEW_IMAGE)
+    assert changing_commands(fake) == [] and fake.running
+    assert fake.files == before
+    assert fake.image_ids[fake.layout.container_name] == INDEX_IMAGE
 
 
 @pytest.mark.parametrize("changed", [False, True], ids=["noop", "new-image"])

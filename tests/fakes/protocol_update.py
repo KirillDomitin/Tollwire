@@ -12,6 +12,7 @@ LATEST = "amneziavpn/amneziawg-go:latest"
 DIGEST = "amneziavpn/amneziawg-go@sha256:" + "b" * 64
 OLD_IMAGE = "sha256:" + "a" * 64
 NEW_IMAGE = "sha256:" + "c" * 64
+INDEX_IMAGE = "sha256:" + "f" * 64
 
 
 @dataclass
@@ -20,6 +21,8 @@ class UpdateServer(FakeServer):
     container_ids: dict[str, str] = field(default_factory=dict)
     target_image_id: str = NEW_IMAGE
     target_digest: str = DIGEST
+    manifest_digest: str | None = None
+    target_manifest_digest: str | None = None
     extra_repo_digests: list[str] = field(default_factory=list)
     pull_fails: bool = False
     fail_new_start: bool = False
@@ -134,6 +137,22 @@ class UpdateServer(FakeServer):
             self.commands.append(command)
             container = self.container_name(shlex.split(cmd)[-1])
             return CommandResult(self.image_ids.get(container, OLD_IMAGE) + "\n", "", 0)
+        if cmd == f"docker inspect --type container -f '{{{{json .ImageManifestDescriptor}}}}' {name}":
+            self.commands.append(command)
+            descriptor = (
+                {"digest": self.manifest_digest, "platform": {"os": "linux", "architecture": "amd64"}}
+                if self.manifest_digest is not None else None
+            )
+            return CommandResult(json.dumps(descriptor) + "\n", "", 0)
+        if cmd.startswith("docker image inspect --format '{{json .}}' "):
+            self.commands.append(command)
+            image = shlex.split(cmd)[-1]
+            return CommandResult(json.dumps({"Id": image, "Os": "linux", "Architecture": "amd64"}), "", 0)
+        if cmd == (
+            "docker image inspect --platform linux/amd64 --format '{{.Id}}' " + self.target_image_id
+        ):
+            self.commands.append(command)
+            return CommandResult((self.target_manifest_digest or self.target_image_id) + "\n", "", 0)
         if "inspect" in cmd and "{{range .Mounts}}" in cmd:
             self.commands.append(command)
             container = self.container_name(shlex.split(cmd)[-1])

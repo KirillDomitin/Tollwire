@@ -12,7 +12,9 @@
 
 ## Операции провайдера
 
-- `image_info()` — только inspect собственного контейнера и его фактического image ID/платформы.
+- `image_info()` — только inspect собственного контейнера, фактического image ID/платформы и необязательного
+  `ImageManifestDescriptor`; digest принимается после проверки платформы. Старый Docker без поля и null
+  дают `manifest_digest=None`; некорректный descriptor или прочий сбой inspect — `DockerError`.
 - `update()` — ручная замена собственного AWG/шлюза с проверкой готовности, snapshot и recovery;
   по умолчанию `UnsupportedOperationError`. Контракт — [обновления образов](../servers/protocol-updates.md).
 
