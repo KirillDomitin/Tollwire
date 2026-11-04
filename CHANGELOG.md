@@ -17,6 +17,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- Protocol image updates: daily availability checks at 03:00 Moscow, status beside each server's protocol,
+  manual checks and container updates with rollback while preserving VPN clients and configuration.
+
 - Bot panel: delete revoked keys and unused revoked invitations, create up to 100 invitations at once and copy
   all links, and choose broadcast recipients from a searchable paginated list.
 

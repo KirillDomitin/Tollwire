@@ -3,6 +3,14 @@
 Всё, что идёт по SSH и меняет сервер, — задача: API создаёт `Job` и отвечает 202, воркер
 (`infrastructure/workers/`) выполняет.
 
+## Образы протоколов
+
+Контракт — `docs/servers/protocol-updates.md`. `UPDATE_PROTOCOL` всегда содержит `params.protocol_type`,
+результат — image ID/digest, changed/rollback/recovered и тип протокола. `CHECK_PROTOCOL_UPDATES` возвращает
+`{"protocols": [...]}` и не меняет VPN. UPDATE пишет `protocol_update_started/completed/failed` с безопасным
+результатом. Нельзя терять job_result при переводе ошибки провайдера в доменную ошибку. Миграция
+`a9d1e6c42b70`: downgrade удаляет историю только двух новых типов задач, сохраняя остальные строки.
+
 ## Модель `jobs`
 
 - `type` (`JobType`), `status` (`JobStatus`: pending/running/success/failed/cancelled), `progress`,

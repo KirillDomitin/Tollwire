@@ -6,6 +6,8 @@
 |---|---|
 | `provider.py` | `VPNProvider` (ABC) и структуры: `ProviderState`, `ProviderStatus`, `VPNClientInfo`, `VPNClientConfig` (config с `repr=False`), `ProviderHealth`, `SyncResult`. Общая логика: `client_counts(now)` (всего / онлайн: рукопожатие за `ACTIVE_HANDSHAKE_WINDOW_SECONDS` = 180 с), `share_link`/`share_qr_codes` (по умолчанию None), `discover()` (по умолчанию None: тип не участвует в поиске), структуры `Discovery`/`DiscoveredClient`, `ImportablePeer` (клиент для импорта; PSK не в repr), `read_importable()` (по умолчанию `UnsupportedOperationError`). |
 | `amnezia.py` | `AmneziaInstaller` (готовность сервера: root + Linux + Docker, `ensure_ready`, версия Docker, задержка до интернета) и `AmneziaWGProvider` (протокол). |
+| `container_update.py` | Замена собственного контейнера с snapshot, журналом, cidfile и recovery по ID; подробности в `docs/servers/protocol-updates.md`. |
+| `registry.py` | Read-only metadata фиксированного Docker Hub-репозитория, выбор manifest платформы и Redis-кеш. |
 | `awg_config.py` | Чистые функции без SSH: ключи (X25519 + PSK, генерируются **локально**, не на сервере), порт, случайная обфускация, рендер `awg0.conf`, разбор секций, `[Peer]`-блоки, аллокатор адресов, NAT-хуки, конфиг клиента, разбор рукопожатий, разбор `clientsTable`, `[Peer]` для поиска (`discover_peers`) и для импорта с PSK (`importable_peers`, `ImportedPeer`). |
 | `amnezia_app.py` | `AmneziaAppAWGProvider` и `AmneziaAppAWG2Provider` — установка приложения AmneziaVPN: чтение, отзыв клиента и возврат peer'а (см. раздел ниже). |
 | `amnezia_link.py` | Ссылка `vpn://` и серия QR в формате приложения AmneziaVPN. |

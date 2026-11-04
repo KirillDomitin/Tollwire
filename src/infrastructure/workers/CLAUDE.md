@@ -4,6 +4,16 @@
 мягкая остановка по SIGINT/SIGTERM. Воркер и планировщик — composition root (точка сборки): им можно
 импортировать `modules/`.
 
+## Проверка и обновление образов
+
+Подробный контракт — `docs/servers/protocol-updates.md`.
+- UPDATE_PROTOCOL выполняется под ServerLock; CHECK_PROTOCOL_UPDATES — только чтение без этой блокировки.
+  Обе задачи требуют server_id; UPDATE всегда несёт params.protocol_type.
+- `protocol_updates`: календарная проверка ежедневно после 03:00 Europe/Moscow, не интервал от старта.
+  Redis-дедуп по дате; после простоя — только текущая дата. Ошибка/отмена освобождает свой claim.
+- Опрос до пяти серверов, своя сессия и срок на сервер. Ошибка отдельного хоста изолирована;
+  общие ошибки БД/Redis не считаются успешной ежедневной проверкой. Правило никогда не ставит UPDATE.
+
 ## JobWorker (`worker.py`)
 
 - Берёт `job_id` из Redis-очереди (`modules/jobs/queue.py`, BRPOP), читает Job `with_for_update`, ведёт статусы

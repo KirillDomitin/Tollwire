@@ -1,5 +1,8 @@
 # tests — бэкенд-тесты
 
+Проверка образов, замена контейнера, recovery и расписание — `docs/tests/protocol-updates.md`;
+контракт операции — `docs/servers/protocol-updates.md`. Фейк не заменяет живую проверку Docker.
+
 `uv run pytest` (нужен `docker compose up`: Postgres + Redis). ~2100 тестов: полный прогон `-n 4` (xdist),
 обычный — `--testmon` (только затронутые изменениями).
 

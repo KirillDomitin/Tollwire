@@ -25,6 +25,7 @@
 | `health.py` | `ServerHealthService` — только чтение, без ServerLock; отчёт в `Job.result` + сводка на сервере. |
 | `discovery.py` | `ServerDiscoveryService` — поиск уже установленной AmneziaVPN (только чтение): `discover(server_id)` (задача `DISCOVER_VPN`), `latest(server_id)` (отчёт и статусы клиентов). |
 | `maintenance.py` | Плановые health/sync для планировщика. |
+| `protocol_updates.py` | `ProtocolUpdateCheckService` (read-only проверка и Redis-кеш), `ProtocolUpdateService` (замена через VPNProvider под ServerLock). |
 | `reachability.py` | `mark_unreachable` / `mark_reachable`. |
 
 ## API (`/api/v1/servers`)
@@ -35,9 +36,16 @@ CRUD; `PUT/GET/DELETE /{id}/credentials`; `POST /{id}/test-connection`; `POST /{
 `servers:check`, `discovery` — `servers:read`. Права —
 см. `modules/auth/CLAUDE.md`.
 
+Обновления образов: `GET /{id}/protocol/updates` (`servers:read`, только кеш),
+`POST /{id}/protocol/updates/check` (`servers:check`, 202 CHECK_PROTOCOL_UPDATES),
+`POST /{id}/protocol/update` (`servers:manage`, 202 UPDATE_PROTOCOL). Тип обновления задаётся как у установки.
+Состояния, ошибки, расписание и восстановление — [protocol-updates.md](protocol-updates.md).
+
 ## Аудит
 
 `server_created/updated/deleted`, `server_credentials_set/deleted`, `server_host_key_pinned/reset/mismatch`,
 `server_install_*`, `server_sync_*`, `server_discover_*`, `server_ssh_key_install_*` (started/completed/failed), `protocol_install_*`,
 `protocol_remove_*`, `gateway_exit_*` (см. `modules/gateway/CLAUDE.md`). Meta: `panel_key_left_on_server: <fingerprint>` при удалении учётки или сервера с ключом панели. У `server_discover_*` meta — счётчики `protocols` и `clients`
 (без ключей и адресов).
+
+`protocol_update_started/completed/failed` — тип протокола и безопасный результат замены/отката.

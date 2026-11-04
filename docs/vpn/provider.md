@@ -12,6 +12,10 @@
 
 ## Операции провайдера
 
+- `image_info()` — только inspect собственного контейнера и его фактического image ID/платформы.
+- `update()` — ручная замена собственного AWG/шлюза с проверкой готовности, snapshot и recovery;
+  по умолчанию `UnsupportedOperationError`. Контракт — [обновления образов](../servers/protocol-updates.md).
+
 - `install()` — идемпотентен: если `awg0.conf` уже есть, ключи и порт **не** перегенерируются; старые установки
   дочиниваются: NAT-хуки и политика перезапуска (`docker update --restart unless-stopped`, без перезапуска
   контейнера; `always` и `unless-stopped`, выбранные вручную, не трогаем). После `docker run` — пауза перед
@@ -32,5 +36,7 @@
 | `amnezia_link.py` | Ссылка `vpn://` и серия QR в формате приложения. |
 | `config.py` | Константы (контейнер, образ по дайджесту, пути, подсеть, NAT, DNS) и `ContainerLayout`; `AmneziaWGProvider.layout` — атрибут класса, подкласс (шлюз) переопределяет его. Команды раскладки по умолчанию закреплены golden-файлом `tests/unit/golden/provider_default_commands.json`. |
 | `gateway.py` | `AmneziaGatewayProvider(AmneziaWGProvider)` — шлюз и его выходы. |
+| `container_update.py` | `ContainerUpdater`: pull/pin, snapshot, атомарный журнал, CID-проверки, откат и восстановление. |
+| `registry.py` | `AmneziaImageRegistry`: доверенные metadata latest, выбор платформы, общий Redis-кеш; слои не скачиваются. |
 | `gateway_config.py` | `GATEWAY_LAYOUT`, sysctl, `start.sh`, `apply-ru.sh`, `assign.rules`, конфиги выходов, разборщики вывода. Чистые функции без SSH. |
 | `split_routes.py` | Какие сети можно класть в таблицу «Россия напрямую» — единый источник для `modules/geoip` и шлюза. |
