@@ -107,7 +107,7 @@ class ContainerUpdater:
         # Only used for equality, never interpolated into shell commands or exposed in a job.
         return sorted(output.split())
 
-    async def ready(self, journal: dict[str, Any]) -> None:
+    async def ready(self, journal: dict[str, Any], *, preserved_state: bool = True) -> None:
         for attempt in range(10):
             try:
                 health = await self.provider.health_check()
@@ -115,6 +115,10 @@ class ContainerUpdater:
                 checks = [check for check in health.checks if check.name != "exits"]
                 if not checks or not all(check.ok for check in checks) or health.port != journal["port"]:
                     raise DockerError("Updated container is not ready")
+                if not preserved_state:
+                    # Commit is already durable. Clients/routing may legitimately change before
+                    # a retry of cleanup; never roll them back to the pre-update snapshot.
+                    return
                 if await self.peers() != journal["peers"]:
                     raise DockerError("Container peers changed during update")
                 if await self.provider._update_runtime_state() != journal["runtime"]:
@@ -176,7 +180,7 @@ class ContainerUpdater:
             await self.provider._require_own_container()
             if await self.image_id(current) != journal["target_image_id"]:
                 raise DockerError("Verified replacement image changed; refusing recovery")
-            await self.ready(journal)
+            await self.ready(journal, preserved_state=False)
             if backup:
                 await self.checked(f"docker rm {old}")
             await self.cleanup()
@@ -243,11 +247,18 @@ class ContainerUpdater:
             if not isinstance(digests, list):
                 raise DockerError("Invalid image digest metadata")
             valid = [digest for digest in digests if isinstance(digest, str) and _DIGEST.fullmatch(digest)]
-            if len(set(valid)) != 1:
+            if not valid:
                 raise DockerError("No trusted immutable image digest was returned")
-            self.result.target_image_id, self.result.target_digest = target, valid[0]
+            # One image can legitimately have both index and platform RepoDigests.
+            # They identify identical image content; verify the selected immutable reference
+            # resolves to the downloaded image before replacing any container.
+            digest = sorted(set(valid))[0]
+            self.result.target_image_id, self.result.target_digest = target, digest
             if target == self.result.previous_image_id:
                 return self.result
+            pinned = await self.checked(f"docker image inspect --format '{{{{.Id}}}}' {digest}")
+            if pinned != target:
+                raise DockerError("Pinned image does not match the downloaded update")
             config = await self.ssh.read_file(self.layout.host_config_file)
             port = int(interface_values(config)["ListenPort"])
             if not 1 <= port <= 65535:
@@ -255,7 +266,7 @@ class ContainerUpdater:
             journal = {
                 "version": 1, "name": self.name, "old_container_id": old,
                 "previous_image_id": self.result.previous_image_id,
-                "target_image_id": target, "target_digest": valid[0], "port": port,
+                "target_image_id": target, "target_digest": digest, "port": port,
                 "peers": await self.peers(), "runtime": await self.provider._update_runtime_state(),
                 "phase": "preparing",
             }
@@ -281,7 +292,7 @@ class ContainerUpdater:
             await self.checked(f"docker stop {old}")
             await self.checked(f"docker rename {old} {self.backup}")
             command = self.provider._docker_run_command(port).replace(
-                AMNEZIAWG_IMAGE, f"--cidfile {self.cid_path} {valid[0]}", 1
+                AMNEZIAWG_IMAGE, f"--cidfile {self.cid_path} {digest}", 1
             )
             await self.checked(command, timeout=300)
             new = await self.container_id(self.name)

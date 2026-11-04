@@ -429,5 +429,31 @@
     "done": "Done",
     "close": "Close",
     "limit": "At most {{max}} clients can be taken over at once. The first ones are selected; take over the rest in a separate run."
+  },
+  "protocolUpdates": {
+    "status": {
+      "available": "Update available",
+      "current": "Up to date",
+      "unknown": "Could not check",
+      "unsupported": "Updates unsupported"
+    },
+    "checkNow": "Check now",
+    "schedule": "Updates are checked daily at 03:00 Moscow time. Updates are installed manually.",
+    "stale": "Information is out of date",
+    "checked": "Checked: {{when}}",
+    "update": "Update container",
+    "updating": "Updating…",
+    "title": "Update {{protocol}}",
+    "consequences": "VPN connections will briefly disconnect. Clients and configuration will be preserved. If the new image does not start, the panel will attempt to restore the previous container.",
+    "confirm": "Update",
+    "conflict": "A check or update is already running, or SSH credentials are missing. Wait for the task and check server access.",
+    "result": {
+      "changed": "Container updated",
+      "unchanged": "The current image is already installed",
+      "rollbackSucceeded": "Previous container and configuration restored",
+      "rollbackFailed": "Rollback did not complete. Check the server and retry the update.",
+      "recovered": "Interrupted operation recovered",
+      "failed": "The container update failed."
+    }
   }
 }

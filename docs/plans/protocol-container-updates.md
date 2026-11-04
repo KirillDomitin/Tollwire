@@ -13,7 +13,7 @@
 - [x] `tests/`, `frontend/src/**/*.test.tsx` → красные тесты провайдеров, API/RBAC, фоновой задачи, миграции и UI; подтверждены пользователем «погнали».
 - [x] `src/infrastructure/vpn/{provider,config,amnezia,gateway}.py`, `container_update.py`, `registry.py` → контракт обновления, доверенный latest → digest, read-only metadata, проверка владельца, snapshot, откат и восстановление; 31 новый тест и 785 регрессионных прошли (2 shell через Git Bash), Ruff/mypy файлов PASS.
 - [x] `src/modules/{servers,jobs,audit}`, `src/infrastructure/workers/`, `alembic/` → API UPDATE_PROTOCOL/CHECK_PROTOCOL_UPDATES, кеш доступности, безопасный аудит, ежедневный календарный запуск 03:00 Europe/Moscow. Test-runner: 47 passed, включая upgrade/downgrade; Ruff всего проекта и mypy 197 файлов PASS. Расширенная регрессия выполняется отдельно.
-- [ ] `frontend/src/pages/server/`, API-типы и ru/en → действие обновления для каждого своего протокола, подтверждение краткого разрыва, отображение результата/ошибки; проверки, коммит.
+- [x] `frontend/src/pages/server/`, API-типы и ru/en → статус доступности у конкретного протокола, ручная проверка, обновление с подтверждением разрыва, результаты/откат в журнале задач. Focused UI: 13 passed, typecheck/lint/build PASS; полный прогон выполняется.
 - [ ] Reviewer по diff master → исправления, полный прогон через test-runner, ruff/mypy и проверки frontend; показать итог пользователю.
 - [ ] Живой прогон на выделенном сервере только после отдельного явного согласия пользователя.
 - [ ] Doc-writer → справочники и инварианты затронутых модулей, итоговый статус плана.
@@ -64,7 +64,7 @@
 - Ruff всех восьми Python-файлов тестов/фейка, frontend typecheck и ESLint UI проходят. Collection/фикстуры/БД/Redis исправны.
 - При реализации дополнить проверки ограничений HTTP registry (доверенные hosts, redirects, размер/timeout), конкуренции общего metadata-кеша, изоляции ошибок collector и промежуточной update-фазы.
 
-Пользователь подтвердил расширенные красные тесты («погнали»). Реализация начата в ветке codex/protocol-container-updates; реальные серверы не затрагиваются.
+Пользователь подтвердил расширенные красные тесты («погнали»). Реализация провайдера, backend и UI завершена в ветке codex/protocol-container-updates; реальные серверы не затрагиваются. Ревью: два P2 (verified cleanup recovery и multiple RepoDigests) исправлены и покрыты регрессиями; повторное ревью без остаточных находок. Backend focused: 47 passed; existing impacted: 376 passed; provider с review-regressions: 21 passed. Полные прогоны backend/frontend выполняются. Документация и живой прогон ожидают следующих обязательных остановок процесса feature.
 
 ### Красная стадия
 

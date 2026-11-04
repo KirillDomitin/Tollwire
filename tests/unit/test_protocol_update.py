@@ -80,6 +80,21 @@ async def test_identical_image_does_not_restart_vpn() -> None:
     assert changing_commands(fake) == [] and fake.running
 
 
+@pytest.mark.parametrize("changed", [False, True], ids=["noop", "new-image"])
+async def test_multiple_repository_digests_for_one_image_do_not_prevent_update(changed: bool) -> None:
+    fake = await installed()
+    fake.extra_repo_digests = ["amneziavpn/amneziawg-go@sha256:" + "d" * 64]
+    if not changed:
+        fake.target_image_id = OLD_IMAGE
+    result = await update(fake)
+    assert result.changed is changed and fake.running
+    assert result.target_digest in {fake.target_digest, *fake.extra_repo_digests}
+    if changed:
+        assert fake.image_ids[fake.layout.container_name] == NEW_IMAGE
+    else:
+        assert changing_commands(fake) == []
+
+
 async def test_pull_failure_keeps_working_container_and_config() -> None:
     fake = await installed()
     fake.pull_fails = True
@@ -156,6 +171,31 @@ async def test_interrupted_rollback_keeps_replacing_journal_and_next_update_reco
     result = await update(fake)
     assert result.recovered and result.changed and fake.running
     assert fake.files == before and fake.image_ids[fake.layout.container_name] == NEW_IMAGE
+
+
+async def test_verified_cleanup_retry_preserves_clients_added_after_successful_replacement() -> None:
+    fake = await installed()
+    directory = fake.layout.host_config_dir
+    fake.fail_cleanup_once = True
+    with pytest.raises(DockerError, match="cleanup is pending"):
+        await update(fake)
+    assert fake.running and fake.image_ids[fake.layout.container_name] == NEW_IMAGE
+    assert json.loads(fake.files[directory + "/.container-update.json"])["phase"] == "verified"
+
+    async with FakeSSHClient(fake) as ssh:
+        await AmneziaWGProvider(ssh).create_client("phone-added-after-update")
+    config_after_new_client = fake.files[fake.layout.host_config_file]
+    peers_after_new_client = set(fake.interface_peers)
+    fake.commands.clear()
+    result = await update(fake)
+
+    assert result.recovered and not result.changed and fake.running
+    assert fake.files[fake.layout.host_config_file] == config_after_new_client
+    assert fake.interface_peers == peers_after_new_client
+    assert len(peers_after_new_client) == 2
+    assert changing_commands(fake) == []
+    assert directory + "/.container-update.json" not in fake.files
+    assert directory + "-update-snapshot" not in fake.dirs
 
 
 async def test_running_new_image_that_changes_config_is_rolled_back() -> None:

@@ -16,7 +16,9 @@
     "gateway_remove_exit": "Gateway exit removal",
     "gateway_apply": "Gateway exits check",
     "gateway_apply_ru": "Russia direct apply",
-    "geoip_update": "Russia direct list update"
+    "geoip_update": "Russia direct list update",
+    "update_protocol": "Protocol container update",
+    "check_protocol_updates": "Protocol update check"
   },
   "statuses": {
     "pending": "Queued",

@@ -262,6 +262,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/servers/{server_id}/protocol/update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Protocol Update */
+        post: operations["protocol_update_api_v1_servers__server_id__protocol_update_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/servers/{server_id}/protocol/updates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Protocol Updates Cached */
+        get: operations["protocol_updates_cached_api_v1_servers__server_id__protocol_updates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/servers/{server_id}/protocol/updates/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Protocol Updates Check */
+        post: operations["protocol_updates_check_api_v1_servers__server_id__protocol_updates_check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/servers/{server_id}/protocols": {
         parameters: {
             query?: never;
@@ -1943,7 +1994,7 @@ export interface components {
          * AuditAction
          * @enum {string}
          */
-        AuditAction: "login" | "login_failed" | "login_locked" | "logout" | "password_changed" | "password_change_failed" | "admin_created" | "admin_updated" | "server_created" | "server_updated" | "server_deleted" | "server_credentials_set" | "server_credentials_deleted" | "server_host_key_pinned" | "server_host_key_reset" | "server_host_key_mismatch" | "server_health_changed" | "server_install_started" | "server_install_completed" | "server_install_failed" | "server_sync_started" | "server_sync_completed" | "server_sync_failed" | "server_discover_started" | "server_discover_completed" | "server_discover_failed" | "server_ssh_key_install_started" | "server_ssh_key_install_completed" | "server_ssh_key_install_failed" | "protocol_install_started" | "protocol_install_completed" | "protocol_install_failed" | "protocol_remove_started" | "protocol_remove_completed" | "protocol_remove_failed" | "vpn_user_created" | "vpn_user_updated" | "vpn_user_deleted" | "subscription_created" | "subscription_updated" | "subscription_activated" | "subscription_revoked" | "subscription_expired" | "subscription_deleted" | "access_granted" | "access_updated" | "access_revoked" | "access_expired" | "access_deleted" | "credential_issued" | "credential_imported" | "credential_issue_failed" | "credential_revoked" | "credential_revoke_failed" | "config_viewed" | "clients_import_started" | "clients_import_completed" | "clients_import_failed" | "gateway_exit_add_started" | "gateway_exit_add_completed" | "gateway_exit_add_failed" | "gateway_exit_remove_started" | "gateway_exit_remove_completed" | "gateway_exit_remove_failed" | "gateway_exit_updated" | "gateway_client_assigned" | "gateway_client_unassigned" | "geoip_list_updated" | "geoip_list_activated" | "geoip_override_added" | "geoip_override_removed" | "gateway_ru_applied" | "gateway_ru_apply_failed" | "gateway_client_moved" | "gateway_failover" | "gateway_all_exits_down" | "gateway_exit_recovered" | "gateway_container_recreated" | "bot_key_created" | "bot_key_revoked" | "bot_key_deleted" | "bot_invite_created" | "bot_invite_revoked" | "bot_invite_deleted" | "bot_registration_created" | "bot_registration_activated" | "bot_registration_failed" | "bot_registration_retried" | "config_link_created" | "bot_broadcast_created" | "bot_broadcast_cancelled" | "bot_config_link_queued" | "bot_settings_updated" | "bot_admin_link_code_created" | "bot_admin_link_created" | "bot_admin_link_removed" | "bot_admin_link_events_updated" | "bot_notify_test_queued";
+        AuditAction: "login" | "login_failed" | "login_locked" | "logout" | "password_changed" | "password_change_failed" | "admin_created" | "admin_updated" | "server_created" | "server_updated" | "server_deleted" | "server_credentials_set" | "server_credentials_deleted" | "server_host_key_pinned" | "server_host_key_reset" | "server_host_key_mismatch" | "server_health_changed" | "server_install_started" | "server_install_completed" | "server_install_failed" | "server_sync_started" | "server_sync_completed" | "server_sync_failed" | "server_discover_started" | "server_discover_completed" | "server_discover_failed" | "server_ssh_key_install_started" | "server_ssh_key_install_completed" | "server_ssh_key_install_failed" | "protocol_install_started" | "protocol_install_completed" | "protocol_install_failed" | "protocol_remove_started" | "protocol_remove_completed" | "protocol_remove_failed" | "protocol_update_started" | "protocol_update_completed" | "protocol_update_failed" | "vpn_user_created" | "vpn_user_updated" | "vpn_user_deleted" | "subscription_created" | "subscription_updated" | "subscription_activated" | "subscription_revoked" | "subscription_expired" | "subscription_deleted" | "access_granted" | "access_updated" | "access_revoked" | "access_expired" | "access_deleted" | "credential_issued" | "credential_imported" | "credential_issue_failed" | "credential_revoked" | "credential_revoke_failed" | "config_viewed" | "clients_import_started" | "clients_import_completed" | "clients_import_failed" | "gateway_exit_add_started" | "gateway_exit_add_completed" | "gateway_exit_add_failed" | "gateway_exit_remove_started" | "gateway_exit_remove_completed" | "gateway_exit_remove_failed" | "gateway_exit_updated" | "gateway_client_assigned" | "gateway_client_unassigned" | "geoip_list_updated" | "geoip_list_activated" | "geoip_override_added" | "geoip_override_removed" | "gateway_ru_applied" | "gateway_ru_apply_failed" | "gateway_client_moved" | "gateway_failover" | "gateway_all_exits_down" | "gateway_exit_recovered" | "gateway_container_recreated" | "bot_key_created" | "bot_key_revoked" | "bot_key_deleted" | "bot_invite_created" | "bot_invite_revoked" | "bot_invite_deleted" | "bot_registration_created" | "bot_registration_activated" | "bot_registration_failed" | "bot_registration_retried" | "config_link_created" | "bot_broadcast_created" | "bot_broadcast_cancelled" | "bot_config_link_queued" | "bot_settings_updated" | "bot_admin_link_code_created" | "bot_admin_link_created" | "bot_admin_link_removed" | "bot_admin_link_events_updated" | "bot_notify_test_queued";
         /** AuditActorRead */
         AuditActorRead: {
             /**
@@ -2733,7 +2784,7 @@ export interface components {
          * JobType
          * @enum {string}
          */
-        JobType: "create_user" | "delete_user" | "sync_server" | "health_check" | "revoke_access" | "install_server" | "remove_protocol" | "uninstall_server" | "install_protocol" | "install_ssh_key" | "discover_vpn" | "import_clients" | "gateway_add_exit" | "gateway_remove_exit" | "geoip_update" | "gateway_apply_ru" | "gateway_apply";
+        JobType: "create_user" | "delete_user" | "sync_server" | "health_check" | "revoke_access" | "install_server" | "remove_protocol" | "uninstall_server" | "install_protocol" | "update_protocol" | "check_protocol_updates" | "install_ssh_key" | "discover_vpn" | "import_clients" | "gateway_add_exit" | "gateway_remove_exit" | "geoip_update" | "gateway_apply_ru" | "gateway_apply";
         /**
          * LatestMetrics
          * @description Последний замер сервера — для списка серверов.
@@ -3036,6 +3087,39 @@ export interface components {
          * @enum {string}
          */
         ProtocolType: "amnezia_wg" | "amnezia_app_awg" | "amnezia_app_awg2" | "amnezia_gateway";
+        /** ProtocolUpdateObservation */
+        ProtocolUpdateObservation: {
+            /**
+             * Protocol Id
+             * Format: uuid
+             */
+            protocol_id: string;
+            protocol_type: components["schemas"]["ProtocolType"];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "current" | "available" | "unknown" | "unsupported";
+            /** Stale */
+            stale: boolean;
+            /** Checked At */
+            checked_at?: string | null;
+            /** Last Attempt At */
+            last_attempt_at?: string | null;
+            /** Current Image Id */
+            current_image_id?: string | null;
+            /** Target Image Id */
+            target_image_id?: string | null;
+            /** Target Digest */
+            target_digest?: string | null;
+            /** Reason */
+            reason?: ("server_unreachable" | "registry_unavailable" | "rate_limited" | "platform_unknown" | "container_missing" | "update_in_progress") | null;
+        };
+        /** ProtocolUpdatesRead */
+        ProtocolUpdatesRead: {
+            /** Protocols */
+            protocols: components["schemas"]["ProtocolUpdateObservation"][];
+        };
         /**
          * PublicConfigRead
          * @description Содержимое страницы конфига: открывается по токену без входа. Приватный ключ клиента внутри `config`.
@@ -4096,6 +4180,105 @@ export interface operations {
                 "application/json": components["schemas"]["ProtocolRequest"] | null;
             };
         };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    protocol_update_api_v1_servers__server_id__protocol_update_post: {
+        parameters: {
+            query?: {
+                type?: components["schemas"]["ProtocolType"] | null;
+            };
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ProtocolRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    protocol_updates_cached_api_v1_servers__server_id__protocol_updates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProtocolUpdatesRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    protocol_updates_check_api_v1_servers__server_id__protocol_updates_check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             202: {

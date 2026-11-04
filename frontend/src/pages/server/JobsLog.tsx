@@ -56,7 +56,18 @@ export function JobsLog({ jobs }: { jobs: Job[] }) {
                 {timeAgo(job.created_at)}
               </time>
             </div>
-            {job.error && <p className={styles.jobError}>{job.error}</p>}
+            {job.error && <p className={styles.jobError}>
+              {job.type === "update_protocol" ? t("servers.protocolUpdates.result.failed") : job.error}
+            </p>}
+            {job.type === "update_protocol" && !isUnfinished(job) && job.result && (
+              <p className={styles.jobSummary}>
+                {job.status === "success" && t(job.result.changed === true
+                  ? "servers.protocolUpdates.result.changed" : "servers.protocolUpdates.result.unchanged")}
+                {job.result.rollback === "succeeded" && t("servers.protocolUpdates.result.rollbackSucceeded")}
+                {job.result.rollback === "failed" && t("servers.protocolUpdates.result.rollbackFailed")}
+                {job.result.recovered === true && ` · ${t("servers.protocolUpdates.result.recovered")}`}
+              </p>
+            )}
             {imported.length > 0 && <p className={styles.jobSummary}>{imported.join(" · ")}</p>}
             {checks.length > 0 && !isUnfinished(job) && (
               <details className={styles.report}>

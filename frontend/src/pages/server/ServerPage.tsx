@@ -26,6 +26,7 @@ import { EditServerDialog } from "./EditServerDialog";
 import { GatewaySection } from "./gateway/GatewaySection";
 import { HostKeyDialog } from "./HostKeyDialog";
 import { JobsLog } from "./JobsLog";
+import { ProtocolUpdateStatus, useProtocolUpdates } from "./ProtocolUpdates";
 import styles from "./ServerPage.module.css";
 import { keys, useServerData, useStartJob } from "./useServer";
 
@@ -540,6 +541,9 @@ function Maintenance({
   const searching = hasRunning(jobs, "discover_vpn");
   const installingKey = hasRunning(jobs, "install_ssh_key");
   const installingProtocol = hasRunning(jobs, "install_protocol");
+  const hasOwnProtocol = (hasProtocol && !appOnly) || Boolean(gateway);
+  const updates = useProtocolUpdates(server.id, hasOwnProtocol);
+  const checkingUpdates = hasRunning(jobs, "check_protocol_updates");
 
   return (
     <section className={styles.section} aria-labelledby="service-title">
@@ -572,9 +576,18 @@ function Maintenance({
             {t("servers.maintenance.discover")}
           </Button>
           {manage && <ConnectionTest serverId={server.id} />}
+          {hasOwnProtocol && (
+            <Button variant="secondary"
+              busy={checkingUpdates || (start.isPending && start.variables === "check-protocol-updates")}
+              busyLabel={t("servers.maintenance.checking")}
+              onClick={() => start.mutate("check-protocol-updates")}>
+              {t("servers.protocolUpdates.checkNow")}
+            </Button>
+          )}
         </div>
       )}
       {start.isError && <Notice>{start.error.message}</Notice>}
+      {hasOwnProtocol && <p className={styles.hint}>{t("servers.protocolUpdates.schedule")}</p>}
       {searched && !found && !searching && (
         <p className={styles.hint}>{t("servers.maintenance.discoverNone", { when: timeAgo(searched) })}</p>
       )}
@@ -583,7 +596,11 @@ function Maintenance({
         {hasProtocol && (
           <>
             <dt>{appOnly ? t("servers.maintenance.amneziaApp") : t("servers.maintenance.amnezia")}</dt>
-            <dd>{port ? t("servers.maintenance.port", { port }) : t("servers.maintenance.portUnknown")}</dd>
+            <dd>
+              {port ? t("servers.maintenance.port", { port }) : t("servers.maintenance.portUnknown")}
+              {!appOnly && <ProtocolUpdateStatus serverId={server.id} kind="amnezia_wg" jobs={jobs}
+                observation={updates.data?.protocols.find((item) => item.protocol_type === "amnezia_wg")} />}
+            </dd>
           </>
         )}
 
@@ -610,6 +627,8 @@ function Maintenance({
                   </Button>
                 </>
               )}
+              {gateway && <ProtocolUpdateStatus serverId={server.id} kind="amnezia_gateway" jobs={jobs}
+                observation={updates.data?.protocols.find((item) => item.protocol_id === gateway.id)} />}
             </dd>
           </>
         )}

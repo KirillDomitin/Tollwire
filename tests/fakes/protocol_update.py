@@ -20,12 +20,14 @@ class UpdateServer(FakeServer):
     container_ids: dict[str, str] = field(default_factory=dict)
     target_image_id: str = NEW_IMAGE
     target_digest: str = DIGEST
+    extra_repo_digests: list[str] = field(default_factory=list)
     pull_fails: bool = False
     fail_new_start: bool = False
     mutate_config_on_start: bool = False
     crash_after_rename: bool = False
     fail_old_start: bool = False
     crash_during_old_start: bool = False
+    fail_cleanup_once: bool = False
 
     def container_name(self, value: str) -> str:
         return next((name for name, cid in self.container_ids.items() if cid == value), value)
@@ -110,6 +112,9 @@ class UpdateServer(FakeServer):
             return CommandResult("", "", int(current != saved))
         if cmd == f"rm -rf -- {snapshot} && rm -f -- {journal} {journal}.tmp {cid_path}":
             self.commands.append(command)
+            if self.fail_cleanup_once:
+                self.fail_cleanup_once = False
+                return CommandResult("", "simulated cleanup failure", 1)
             self.files = {
                 path: text
                 for path, text in self.files.items()
@@ -137,7 +142,8 @@ class UpdateServer(FakeServer):
         if cmd.startswith("docker image inspect ") and ("RepoDigests" in cmd or "{{.Id}}" in cmd):
             self.commands.append(command)
             if "RepoDigests" in cmd:
-                value = json.dumps([self.target_digest]) if "json" in cmd else self.target_digest
+                digests = [self.target_digest, *self.extra_repo_digests]
+                value = json.dumps(digests) if "json" in cmd else self.target_digest
             else:
                 value = self.target_image_id
             return CommandResult(value + "\n", "", 0)

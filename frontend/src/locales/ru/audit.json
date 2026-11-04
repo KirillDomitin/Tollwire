@@ -108,7 +108,10 @@
     "bot_admin_link_events_updated": "События уведомлений изменены",
     "bot_notify_test_queued": "Пробное уведомление поставлено в очередь",
     "bot_key_deleted": "Удалён ключ Telegram-бота",
-    "bot_invite_deleted": "Удалено приглашение в бота"
+    "bot_invite_deleted": "Удалено приглашение в бота",
+    "protocol_update_started": "Обновление протокола запущено",
+    "protocol_update_completed": "Контейнер протокола обновлён",
+    "protocol_update_failed": "Обновление протокола не удалось"
   },
   "details": {
     "reason": "Причина",

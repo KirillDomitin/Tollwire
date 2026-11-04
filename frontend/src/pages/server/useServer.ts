@@ -11,6 +11,7 @@ export const keys = {
   server: (id: string) => ["server", id] as const,
   credential: (id: string) => ["server", id, "credential"] as const,
   protocols: (id: string) => ["server", id, "protocols"] as const,
+  protocolUpdates: (id: string) => ["server", id, "protocol-updates"] as const,
   jobs: (id: string) => ["server", id, "jobs"] as const,
   discovery: (id: string) => ["server", id, "discovery"] as const,
   /** Всё о шлюзе сервера (выходы, назначения): сбрасывается одним префиксом после задач. */
@@ -78,6 +79,7 @@ export function useServerData(serverId: string) {
     if (running < previous.current) {
       void queryClient.invalidateQueries({ queryKey: keys.server(serverId), exact: true });
       void queryClient.invalidateQueries({ queryKey: keys.protocols(serverId) });
+      void queryClient.invalidateQueries({ queryKey: keys.protocolUpdates(serverId) });
       void queryClient.invalidateQueries({ queryKey: keys.credential(serverId) }); // ключ панели меняет учётку
       void queryClient.invalidateQueries({ queryKey: keys.discovery(serverId) }); // поиск, установка и перенос клиентов
       void queryClient.invalidateQueries({ queryKey: keys.gateway(serverId) }); // выходы, назначения, failover
@@ -99,7 +101,10 @@ export type ServerAction =
   | "remove-protocol"
   | "ssh-key"
   | "gateway-install"
-  | "gateway-remove";
+  | "gateway-remove"
+  | "protocol-update"
+  | "gateway-update"
+  | "check-protocol-updates";
 
 /** Поставить серверную задачу (202 + Job) и сразу начать следить за ней. */
 export function useStartJob(serverId: string) {
@@ -107,6 +112,15 @@ export function useStartJob(serverId: string) {
   const path = { params: { path: { server_id: serverId } } };
   const enqueue = (action: ServerAction): Promise<Job> => {
     switch (action) {
+      case "check-protocol-updates":
+        return unwrap(api.POST("/api/v1/servers/{server_id}/protocol/updates/check", path), {
+          409: i18n.t("servers.protocolUpdates.conflict"),
+        });
+      case "protocol-update":
+      case "gateway-update":
+        return unwrap(api.POST("/api/v1/servers/{server_id}/protocol/update", {
+          ...path, body: { type: action === "gateway-update" ? "amnezia_gateway" : "amnezia_wg" },
+        }), { 409: i18n.t("servers.protocolUpdates.conflict") });
       case "gateway-install":
         return unwrap(
           api.POST("/api/v1/servers/{server_id}/protocol", { ...path, body: { type: "amnezia_gateway" } }),

@@ -1082,6 +1082,183 @@
         }
       }
     },
+    "/api/v1/servers/{server_id}/protocol/update": {
+      "post": {
+        "tags": [
+          "servers"
+        ],
+        "summary": "Protocol Update",
+        "operationId": "protocol_update_api_v1_servers__server_id__protocol_update_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Server Id"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ProtocolType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Type"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ProtocolRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/servers/{server_id}/protocol/updates": {
+      "get": {
+        "tags": [
+          "servers"
+        ],
+        "summary": "Protocol Updates Cached",
+        "operationId": "protocol_updates_cached_api_v1_servers__server_id__protocol_updates_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Server Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProtocolUpdatesRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/servers/{server_id}/protocol/updates/check": {
+      "post": {
+        "tags": [
+          "servers"
+        ],
+        "summary": "Protocol Updates Check",
+        "operationId": "protocol_updates_check_api_v1_servers__server_id__protocol_updates_check_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Server Id"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/servers/{server_id}/protocols": {
       "get": {
         "tags": [
@@ -6290,6 +6467,9 @@
           "protocol_remove_started",
           "protocol_remove_completed",
           "protocol_remove_failed",
+          "protocol_update_started",
+          "protocol_update_completed",
+          "protocol_update_failed",
           "vpn_user_created",
           "vpn_user_updated",
           "vpn_user_deleted",
@@ -8544,6 +8724,8 @@
           "remove_protocol",
           "uninstall_server",
           "install_protocol",
+          "update_protocol",
+          "check_protocol_updates",
           "install_ssh_key",
           "discover_vpn",
           "import_clients",
@@ -9432,6 +9614,132 @@
           "amnezia_gateway"
         ],
         "title": "ProtocolType"
+      },
+      "ProtocolUpdateObservation": {
+        "properties": {
+          "protocol_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Protocol Id"
+          },
+          "protocol_type": {
+            "$ref": "#/components/schemas/ProtocolType"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "current",
+              "available",
+              "unknown",
+              "unsupported"
+            ],
+            "title": "Status"
+          },
+          "stale": {
+            "type": "boolean",
+            "title": "Stale"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "last_attempt_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Attempt At"
+          },
+          "current_image_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Image Id"
+          },
+          "target_image_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Image Id"
+          },
+          "target_digest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Digest"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "server_unreachable",
+                  "registry_unavailable",
+                  "rate_limited",
+                  "platform_unknown",
+                  "container_missing",
+                  "update_in_progress"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "protocol_id",
+          "protocol_type",
+          "status",
+          "stale"
+        ],
+        "title": "ProtocolUpdateObservation"
+      },
+      "ProtocolUpdatesRead": {
+        "properties": {
+          "protocols": {
+            "items": {
+              "$ref": "#/components/schemas/ProtocolUpdateObservation"
+            },
+            "type": "array",
+            "title": "Protocols"
+          }
+        },
+        "type": "object",
+        "required": [
+          "protocols"
+        ],
+        "title": "ProtocolUpdatesRead"
       },
       "PublicConfigRead": {
         "properties": {

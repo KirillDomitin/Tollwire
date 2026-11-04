@@ -108,7 +108,10 @@
     "bot_admin_link_events_updated": "Notification events updated",
     "bot_notify_test_queued": "Test notification queued",
     "bot_key_deleted": "Telegram bot key deleted",
-    "bot_invite_deleted": "Bot invite deleted"
+    "bot_invite_deleted": "Bot invite deleted",
+    "protocol_update_started": "Protocol update started",
+    "protocol_update_completed": "Protocol container updated",
+    "protocol_update_failed": "Protocol update failed"
   },
   "details": {
     "reason": "Reason",
