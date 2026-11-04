@@ -35,6 +35,10 @@ class InvalidDataError(AppError):
 class SSHError(AppError): ...
 
 
+class ProtocolUpdateError(AppError):
+    """Container replacement failed; job_result contains safe rollback details."""
+
+
 class SSHConnectionError(SSHError): ...
 
 

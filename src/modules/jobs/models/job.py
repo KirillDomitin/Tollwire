@@ -30,6 +30,8 @@ class JobType(enum.Enum):
     REMOVE_PROTOCOL = "remove_protocol"
     UNINSTALL_SERVER = "uninstall_server"
     INSTALL_PROTOCOL = "install_protocol"
+    UPDATE_PROTOCOL = "update_protocol"
+    CHECK_PROTOCOL_UPDATES = "check_protocol_updates"
     INSTALL_SSH_KEY = "install_ssh_key"
     DISCOVER_VPN = "discover_vpn"
     IMPORT_CLIENTS = "import_clients"

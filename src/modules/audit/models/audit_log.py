@@ -52,6 +52,9 @@ class AuditAction(enum.Enum):
     PROTOCOL_REMOVE_STARTED = "protocol_remove_started"
     PROTOCOL_REMOVE_COMPLETED = "protocol_remove_completed"
     PROTOCOL_REMOVE_FAILED = "protocol_remove_failed"
+    PROTOCOL_UPDATE_STARTED = "protocol_update_started"
+    PROTOCOL_UPDATE_COMPLETED = "protocol_update_completed"
+    PROTOCOL_UPDATE_FAILED = "protocol_update_failed"
     # VPN-пользователи
     VPN_USER_CREATED = "vpn_user_created"
     VPN_USER_UPDATED = "vpn_user_updated"

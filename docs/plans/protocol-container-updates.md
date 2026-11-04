@@ -12,7 +12,7 @@
 
 - [x] `tests/`, `frontend/src/**/*.test.tsx` → красные тесты провайдеров, API/RBAC, фоновой задачи, миграции и UI; подтверждены пользователем «погнали».
 - [x] `src/infrastructure/vpn/{provider,config,amnezia,gateway}.py`, `container_update.py`, `registry.py` → контракт обновления, доверенный latest → digest, read-only metadata, проверка владельца, snapshot, откат и восстановление; 31 новый тест и 785 регрессионных прошли (2 shell через Git Bash), Ruff/mypy файлов PASS.
-- [ ] `src/modules/{servers,jobs,audit}`, `src/infrastructure/workers/`, `alembic/` → API 202 с правом servers:manage, UPDATE_PROTOCOL, исполнение и безопасный аудит; upgrade/downgrade, тесты через test-runner, коммит.
+- [x] `src/modules/{servers,jobs,audit}`, `src/infrastructure/workers/`, `alembic/` → API UPDATE_PROTOCOL/CHECK_PROTOCOL_UPDATES, кеш доступности, безопасный аудит, ежедневный календарный запуск 03:00 Europe/Moscow. Test-runner: 47 passed, включая upgrade/downgrade; Ruff всего проекта и mypy 197 файлов PASS. Расширенная регрессия выполняется отдельно.
 - [ ] `frontend/src/pages/server/`, API-типы и ru/en → действие обновления для каждого своего протокола, подтверждение краткого разрыва, отображение результата/ошибки; проверки, коммит.
 - [ ] Reviewer по diff master → исправления, полный прогон через test-runner, ruff/mypy и проверки frontend; показать итог пользователю.
 - [ ] Живой прогон на выделенном сервере только после отдельного явного согласия пользователя.

@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 import unicodedata
 from datetime import datetime, timezone
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self
 from uuid import UUID
 
 from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -24,6 +24,26 @@ Description = Annotated[str, Field(max_length=300)]
 # Имя пользователя SSH: только безопасные символы — оно уходит в подключение, логи и аудит.
 Username = Annotated[str, Field(min_length=1, max_length=50, pattern=r"^[A-Za-z0-9._-]+$")]
 Secret = Annotated[str, Field(min_length=1, max_length=16384)]  # пустой секрет SSHClient всё равно не примет
+
+
+class ProtocolUpdateObservation(BaseModel):
+    protocol_id: UUID
+    protocol_type: ProtocolType
+    status: Literal["current", "available", "unknown", "unsupported"]
+    stale: bool
+    checked_at: AwareDatetime | None = None
+    last_attempt_at: AwareDatetime | None = None
+    current_image_id: str | None = None
+    target_image_id: str | None = None
+    target_digest: str | None = None
+    reason: Literal[
+        "server_unreachable", "registry_unavailable", "rate_limited", "platform_unknown",
+        "container_missing", "update_in_progress",
+    ] | None = None
+
+
+class ProtocolUpdatesRead(BaseModel):
+    protocols: list[ProtocolUpdateObservation]
 
 
 class ServerCreate(BaseModel):

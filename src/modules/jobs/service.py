@@ -25,6 +25,7 @@ _STARTED: dict[JobType, AuditAction] = {
     JobType.INSTALL_SERVER: AuditAction.SERVER_INSTALL_STARTED,
     JobType.INSTALL_PROTOCOL: AuditAction.PROTOCOL_INSTALL_STARTED,
     JobType.REMOVE_PROTOCOL: AuditAction.PROTOCOL_REMOVE_STARTED,
+    JobType.UPDATE_PROTOCOL: AuditAction.PROTOCOL_UPDATE_STARTED,
     JobType.SYNC_SERVER: AuditAction.SERVER_SYNC_STARTED,
     JobType.INSTALL_SSH_KEY: AuditAction.SERVER_SSH_KEY_INSTALL_STARTED,
     JobType.DISCOVER_VPN: AuditAction.SERVER_DISCOVER_STARTED,
@@ -36,6 +37,7 @@ _COMPLETED: dict[JobType, AuditAction] = {
     JobType.INSTALL_SERVER: AuditAction.SERVER_INSTALL_COMPLETED,
     JobType.INSTALL_PROTOCOL: AuditAction.PROTOCOL_INSTALL_COMPLETED,
     JobType.REMOVE_PROTOCOL: AuditAction.PROTOCOL_REMOVE_COMPLETED,
+    JobType.UPDATE_PROTOCOL: AuditAction.PROTOCOL_UPDATE_COMPLETED,
     JobType.SYNC_SERVER: AuditAction.SERVER_SYNC_COMPLETED,
     JobType.INSTALL_SSH_KEY: AuditAction.SERVER_SSH_KEY_INSTALL_COMPLETED,
     JobType.DISCOVER_VPN: AuditAction.SERVER_DISCOVER_COMPLETED,
@@ -48,6 +50,7 @@ _FAILED: dict[JobType, AuditAction] = {
     JobType.INSTALL_SERVER: AuditAction.SERVER_INSTALL_FAILED,
     JobType.INSTALL_PROTOCOL: AuditAction.PROTOCOL_INSTALL_FAILED,
     JobType.REMOVE_PROTOCOL: AuditAction.PROTOCOL_REMOVE_FAILED,
+    JobType.UPDATE_PROTOCOL: AuditAction.PROTOCOL_UPDATE_FAILED,
     JobType.SYNC_SERVER: AuditAction.SERVER_SYNC_FAILED,
     JobType.CREATE_USER: AuditAction.CREDENTIAL_ISSUE_FAILED,
     JobType.REVOKE_ACCESS: AuditAction.CREDENTIAL_REVOKE_FAILED,
@@ -59,7 +62,7 @@ _FAILED: dict[JobType, AuditAction] = {
     JobType.GATEWAY_APPLY_RU: AuditAction.GATEWAY_RU_APPLY_FAILED,
 }
 # Задачи, чей result (без секретов) целиком попадает в meta аудита: итог виден в журнале, а не только в задаче.
-_RESULT_IN_AUDIT = frozenset({JobType.INSTALL_SSH_KEY})
+_RESULT_IN_AUDIT = frozenset({JobType.INSTALL_SSH_KEY, JobType.UPDATE_PROTOCOL})
 _IMPORT_COUNTED = ("imported", "already", "gone", "unsupported", "conflict")
 # Задачи выходов шлюза: в meta аудита идут только эти поля params (id выхода и сервера-выхода, слот, вес) - не ключи.
 _EXIT_JOBS = (JobType.GATEWAY_ADD_EXIT, JobType.GATEWAY_REMOVE_EXIT)
@@ -173,7 +176,7 @@ class JobService:
         params - обычный; другого в журнал не идёт). Задачи выходов шлюза: id выхода и сервера-выхода, слот и вес."""
         if job_type in _EXIT_JOBS:
             return {key: params[key] for key in _EXIT_META_FIELDS if params and key in params}
-        if job_type not in (JobType.INSTALL_PROTOCOL, JobType.REMOVE_PROTOCOL):
+        if job_type not in (JobType.INSTALL_PROTOCOL, JobType.REMOVE_PROTOCOL, JobType.UPDATE_PROTOCOL):
             return {}
         try:
             return {

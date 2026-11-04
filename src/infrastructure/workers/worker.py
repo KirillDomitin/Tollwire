@@ -31,7 +31,8 @@ from modules.jobs.service import JobService, job_error_text
 from modules.protocols.models.protocol import INSTALLABLE_PROTOCOLS, ProtocolType, VPNProtocol
 from modules.servers.discovery import ServerDiscoveryService
 from modules.servers.health import ServerHealthService
-from modules.servers.service import ServerConnectionService
+from modules.servers.protocol_updates import ProtocolUpdateCheckService, ProtocolUpdateService
+from modules.servers.service import ServerConnectionService, ServerService
 from modules.servers.ssh_key import ServerSshKeyService
 from modules.servers.sync import ServerSyncService
 
@@ -97,6 +98,8 @@ class JobWorker:
                 JobType.INSTALL_SERVER,
                 JobType.UNINSTALL_SERVER,
                 JobType.INSTALL_PROTOCOL,
+                JobType.UPDATE_PROTOCOL,
+                JobType.CHECK_PROTOCOL_UPDATES,
                 JobType.REMOVE_PROTOCOL,
                 JobType.CREATE_USER,
                 JobType.REVOKE_ACCESS,
@@ -200,6 +203,14 @@ class JobWorker:
                             async with ServerLock(server_id):
                                 await self.install_protocol(session, server_id, protocol_type)
 
+                        case JobType.UPDATE_PROTOCOL:
+                            protocol_type = self._protocol_type(job)
+                            async with ServerLock(server_id):
+                                job.result = await ProtocolUpdateService(session, actor).run(server_id, protocol_type)
+
+                        case JobType.CHECK_PROTOCOL_UPDATES:
+                            job.result = await ProtocolUpdateCheckService(session).check(server_id)
+
                         case JobType.INSTALL_SSH_KEY:
                             async with ServerLock(server_id):
                                 job.result = await ServerSshKeyService(session, actor).install(server_id)
@@ -246,6 +257,14 @@ class JobWorker:
                     await BotRegistrationService(session, actor).on_issue_finished(job)
                     await session.commit()
                     logger.info("job succeeded", extra={"duration_ms": _elapsed_ms(started)})
+                    if job.type == JobType.UPDATE_PROTOCOL:
+                        # Read latest again only after this Job stops being RUNNING. Cache was
+                        # invalidated by update; a registry outage cannot undo a successful update.
+                        try:
+                            await ServerService(session, actor).schedule(server_id, JobType.CHECK_PROTOCOL_UPDATES)
+                        except Exception:
+                            await session.rollback()
+                            logger.warning("post-update availability check could not be scheduled")
 
     @staticmethod
     async def _reject(session: AsyncSession, job: Job, reason: str) -> NoReturn:

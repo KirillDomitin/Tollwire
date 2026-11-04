@@ -5,7 +5,11 @@ import logging
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from uuid import UUID
+from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
+
+from redis.exceptions import RedisError
+from sqlalchemy.exc import SQLAlchemyError
 
 from core.config import Settings
 from core.database.postgres import session_factory
@@ -26,6 +30,8 @@ from modules.monitoring.service import MetricsCollector, rollup_and_prune
 from modules.protocols.models.protocol import ProtocolType
 from modules.protocols.repository import ProtocolRepository
 from modules.servers.maintenance import ServerMaintenanceService
+from modules.servers.protocol_updates import ProtocolUpdateCheckService
+from modules.servers.repository import ServerRepository
 
 logger = logging.getLogger("scheduler")
 
@@ -126,6 +132,59 @@ async def schedule_syncs() -> str:
     async with session_factory() as session:
         jobs = await ServerMaintenanceService(session).schedule_syncs()
     return f"queued {len(jobs)} syncs"
+
+
+async def collect_protocol_updates() -> str:
+    """Read-only availability scan; one slow/unreachable host cannot delay the others."""
+    async with session_factory() as session:
+        server_ids = await ServerRepository(session).list_checkable_ids(with_protocol=True)
+    limit = asyncio.Semaphore(5)
+
+    async def one(server_id: UUID) -> bool:
+        async with limit:
+            try:
+                async with asyncio.timeout(90), session_factory() as session:
+                    await ProtocolUpdateCheckService(session).check(server_id)
+                return True
+            except (RedisError, SQLAlchemyError):
+                # A shared infrastructure failure should release the daily claim for retry.
+                raise
+            except Exception as exc:
+                logger.warning(
+                    "protocol availability check failed",
+                    extra={"server_id": str(server_id), "error": type(exc).__name__},
+                )
+                return False
+
+    results = await asyncio.gather(*(one(server_id) for server_id in server_ids), return_exceptions=True)
+    for result in results:
+        if isinstance(result, BaseException):
+            raise result
+    return f"protocol updates checked on {sum(result is True for result in results)}/{len(server_ids)} servers"
+
+
+async def check_protocol_updates_daily(now: datetime | None = None) -> str:
+    """03:00 Moscow, once per calendar date, with same-day catch-up after downtime."""
+    moment = now or datetime.now(timezone.utc)
+    if moment.tzinfo is None:
+        raise ValueError("Daily protocol check requires a timezone-aware time")
+    local = moment.astimezone(ZoneInfo("Europe/Moscow"))
+    if local.hour < 3:
+        return "protocol updates not due before 03:00 Moscow"
+    redis = get_redis()
+    key = f"scheduler:protocol-updates:day:{local.date().isoformat()}"
+    token = uuid4().hex
+    if not await redis.set(key, token, nx=True, ex=2 * 86400):
+        return "protocol updates already checked today"
+    try:
+        return await collect_protocol_updates()
+    except BaseException:
+        # A cancelled/failed scan may retry today, without deleting another owner's claim.
+        await redis.eval(
+            "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) end return 0",
+            1, key, token,
+        )
+        raise
 
 
 async def schedule_geoip_update() -> str:
@@ -253,4 +312,5 @@ def build_rules(settings: Settings) -> list[Rule]:
         Rule("gateway_watch", settings.gateway_watch_interval_seconds, watch_gateways),
         Rule("metrics", settings.metrics_interval_seconds, MetricsCollector().collect_all),
         Rule("metrics_rollup", settings.metrics_rollup_interval_seconds, rollup_and_prune),
+        Rule("protocol_updates", 60, check_protocol_updates_daily),
     ]

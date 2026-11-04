@@ -1,5 +1,6 @@
 """Manual latest-image replacement must preserve existing VPN identity and be recoverable."""
 
+import json
 from dataclasses import asdict
 from ipaddress import IPv4Address, IPv4Network
 from types import SimpleNamespace
@@ -139,6 +140,22 @@ async def test_failed_rollback_is_reported_and_preserves_recovery_metadata() -> 
     assert error.value.job_result["rollback"] == "failed"  # type: ignore[attr-defined]
     assert f"{fake.layout.host_config_dir}/.container-update.json" in fake.files
     assert fake.layout.host_config_dir + "-update-snapshot" in fake.dirs
+
+
+async def test_interrupted_rollback_keeps_replacing_journal_and_next_update_recovers() -> None:
+    fake = await installed()
+    before = dict(fake.files)
+    directory = fake.layout.host_config_dir
+    fake.fail_new_start = fake.mutate_config_on_start = fake.crash_during_old_start = True
+    with pytest.raises(KeyboardInterrupt, match="during rollback"):
+        await update(fake)
+    assert json.loads(fake.files[directory + "/.container-update.json"])["phase"] == "replacing"
+    assert directory + "-update-snapshot/.container-update.json" not in fake.files
+    assert directory + "-update-snapshot/.container-update.json.tmp" not in fake.files
+    fake.fail_new_start = fake.mutate_config_on_start = False
+    result = await update(fake)
+    assert result.recovered and result.changed and fake.running
+    assert fake.files == before and fake.image_ids[fake.layout.container_name] == NEW_IMAGE
 
 
 async def test_running_new_image_that_changes_config_is_rolled_back() -> None:

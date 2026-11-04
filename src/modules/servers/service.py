@@ -3,6 +3,7 @@
 from collections.abc import Sequence
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
@@ -10,6 +11,7 @@ from core.database.postgres import session_factory
 from core.exceptions import (
     AlreadyExistsError,
     CredentialNotFound,
+    JobAlreadyRunningError,
     LiveCredentialExistsError,
     NotFoundError,
     SSHError,
@@ -29,6 +31,7 @@ from modules.audit.models.audit_log import AuditAction, AuditEntity
 from modules.audit.service import AuditService, diff_changes
 from modules.gateway.repository import GatewayExitRepository
 from modules.jobs.models.job import Job, JobType
+from modules.jobs.repository import JobRepository
 from modules.jobs.service import JobService
 from modules.protocols.models.protocol import ProtocolType, VPNProtocol
 from modules.protocols.repository import ProtocolRepository
@@ -143,6 +146,11 @@ class ServerService:
         (шлюз) уходит воркеру в Job.params; у обычного params нет - так задача выглядит, как до появления шлюза.
         """
         await self.get(server_id)
+        if job_type in (JobType.UPDATE_PROTOCOL, JobType.CHECK_PROTOCOL_UPDATES):
+            # Serialize scheduling with a row lock; two API requests cannot both pass dedup.
+            await self.session.execute(select(VPNServer.id).where(VPNServer.id == server_id).with_for_update())
+            if await JobRepository(self.session).has_unfinished_for_server(job_type, server_id):
+                raise JobAlreadyRunningError("This operation is already pending for the server")
         if not await self.credentials.get_by_server_id(server_id):
             raise CredentialNotFound("SSH credentials are not set for this server")
         if job_type == JobType.REMOVE_PROTOCOL:
@@ -150,6 +158,10 @@ class ServerService:
             if protocol_type == ProtocolType.AMNEZIA_WG:
                 await ensure_not_a_gateway_exit(self.session, server_id)
         params = None
+        if job_type == JobType.UPDATE_PROTOCOL:
+            if not await self.protocols.get_by_server_and_type(server_id, protocol_type):
+                raise NotFoundError("Installed protocol not found")
+            params = {"protocol_type": protocol_type.value}
         if job_type in (JobType.INSTALL_PROTOCOL, JobType.REMOVE_PROTOCOL) and protocol_type != ProtocolType.AMNEZIA_WG:
             params = {"protocol_type": protocol_type.value}
         return await JobService(self.session, self.actor).create(job_type, server_id=server_id, params=params)

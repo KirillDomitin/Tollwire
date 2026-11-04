@@ -25,6 +25,7 @@ class UpdateServer(FakeServer):
     mutate_config_on_start: bool = False
     crash_after_rename: bool = False
     fail_old_start: bool = False
+    crash_during_old_start: bool = False
 
     def container_name(self, value: str) -> str:
         return next((name for name, cid in self.container_ids.items() if cid == value), value)
@@ -171,6 +172,9 @@ class UpdateServer(FakeServer):
             resolved = self.container_name(match[1])
             if resolved == name:
                 self.commands.append(command)
+                if self.crash_during_old_start and self.image_ids.get(name) == OLD_IMAGE:
+                    self.crash_during_old_start = False
+                    raise KeyboardInterrupt("simulated worker death during rollback")
                 if self.fail_old_start and self.image_ids.get(name) == OLD_IMAGE:
                     return CommandResult("", "old start failed", 1)
                 self._start()

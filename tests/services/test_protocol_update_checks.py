@@ -11,6 +11,7 @@ import pytest
 
 from infrastructure.vpn import provider
 from infrastructure.vpn.amnezia import AmneziaWGProvider
+from modules.jobs.models.job import Job, JobStatus, JobType
 from modules.protocols.models.protocol import ProtocolType, VPNProtocol
 from tests.fakes.protocol_update import DIGEST, NEW_IMAGE, OLD_IMAGE
 from tests.fixtures import World
@@ -139,3 +140,55 @@ async def test_external_app_is_unsupported_and_deleted_protocol_cache_is_not_ret
     await world.session.commit()
     cached = await service.get_cached(server.id)
     assert str(removed_id) not in {str(item["protocol_id"]) for item in cached["protocols"]}
+
+
+@pytest.mark.parametrize("read_only", [False, True], ids=["explicit-check", "cached-read"])
+async def test_running_container_update_never_publishes_current_or_available(
+    world: World, monkeypatch: pytest.MonkeyPatch, read_only: bool
+) -> None:
+    checks, (server, protocol, _), metadata = await scene(world, monkeypatch)
+    metadata.image_id = NEW_IMAGE
+    moment = [NOW]
+    service = checks.ProtocolUpdateCheckService(world.session, registry=metadata, clock=lambda: moment[0])
+    successful = observation(await service.check(server.id), protocol.id)
+    assert successful["status"] == "available"
+    kind = getattr(JobType, "UPDATE_PROTOCOL", None)
+    assert kind is not None
+    world.session.add(
+        Job(type=kind, status=JobStatus.RUNNING, server_id=server.id, params={"protocol_type": "amnezia_wg"})
+    )
+    await world.session.commit()
+    moment[0] += timedelta(minutes=1)
+    result = await (service.get_cached(server.id) if read_only else service.check(server.id))
+    item = observation(result, protocol.id)
+    assert item["status"] == "unknown" and item["stale"] is True
+    assert item["reason"] == "update_in_progress" and item["checked_at"] == successful["checked_at"]
+    assert metadata.calls == 1
+
+
+@pytest.mark.parametrize("target,status", [(OLD_IMAGE, "current"), (NEW_IMAGE, "available")])
+async def test_update_finishing_between_generation_check_and_save_cannot_resurrect_old_observation(
+    world: World, monkeypatch: pytest.MonkeyPatch, target: str, status: str
+) -> None:
+    from core.redis import get_redis
+
+    checks, (server, protocol, _), metadata = await scene(world, monkeypatch)
+    metadata.image_id = target
+    service = checks.ProtocolUpdateCheckService(world.session, registry=metadata, clock=lambda: NOW)
+    original_save = service._save
+    publishing: list[str] = []
+
+    async def save_after_update(item: dict[str, Any], generation: str | None) -> None:
+        publishing.append(item["status"])
+        # The earlier busy/generation comparison has already accepted this observation.
+        # Simulate an entire container update starting and finishing before the save resumes:
+        # no active marker or RUNNING job remains, but its persistent generation changed.
+        await get_redis().incr(checks.generation_key(server.id))
+        await original_save(item, generation)
+
+    monkeypatch.setattr(service, "_save", save_after_update)
+    await service.check(server.id)
+    assert publishing == [status], "the race must occur after the initial comparison, not before it"
+    cached = observation(await service.get_cached(server.id), protocol.id)
+    assert cached["status"] == "unknown" and cached["stale"] is True
+    assert cached["reason"] == "update_in_progress"

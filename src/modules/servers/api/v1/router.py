@@ -22,6 +22,7 @@ from modules.servers.discovery import ServerDiscoveryService
 from modules.servers.host_key import ServerHostKeyService
 from modules.servers.models.credential import ServerCredential
 from modules.servers.models.server import VPNServer
+from modules.servers.protocol_updates import ProtocolUpdateCheckService
 from modules.servers.schemas import (
     ClientImportCreate,
     CredentialCreate,
@@ -29,6 +30,7 @@ from modules.servers.schemas import (
     DiscoveryRead,
     HostKeyPin,
     HostKeyScan,
+    ProtocolUpdatesRead,
     ServerCreate,
     ServerRead,
     ServerUpdate,
@@ -241,6 +243,42 @@ async def protocol_install(
     """Ставит протокол панели: без типа - обычный (`amnezia_wg`), шлюз - `{"type": "amnezia_gateway"}` в теле или
     `?type=amnezia_gateway` в адресе (если прокси отбрасывает тело); оба и разные - 422."""
     return await schedule(service, server_id, JobType.INSTALL_PROTOCOL, requested_protocol(body, query_type))
+
+
+@router.post(
+    "/{server_id}/protocol/update",
+    dependencies=[Depends(require(Permission.SERVERS_MANAGE))],
+    response_model=JobRead, status_code=202,
+)
+async def protocol_update(
+    server_id: UUID,
+    service: ServerService = Depends(get_server_service),
+    body: ProtocolRequest | None = None,
+    query_type: Annotated[ProtocolType | None, Query(alias="type")] = None,
+) -> Job:
+    return await schedule(service, server_id, JobType.UPDATE_PROTOCOL, requested_protocol(body, query_type))
+
+
+@router.get(
+    "/{server_id}/protocol/updates",
+    dependencies=[Depends(require(Permission.SERVERS_READ))],
+    response_model=ProtocolUpdatesRead,
+)
+async def protocol_updates_cached(
+    server_id: UUID, session: Annotated[AsyncSession, Depends(get_session)],
+) -> ProtocolUpdatesRead:
+    return ProtocolUpdatesRead.model_validate(await ProtocolUpdateCheckService(session).get_cached(server_id))
+
+
+@router.post(
+    "/{server_id}/protocol/updates/check",
+    dependencies=[Depends(require(Permission.SERVERS_CHECK))],
+    response_model=JobRead, status_code=202,
+)
+async def protocol_updates_check(
+    server_id: UUID, service: ServerService = Depends(get_server_service),
+) -> Job:
+    return await schedule(service, server_id, JobType.CHECK_PROTOCOL_UPDATES)
 
 
 @router.get(
