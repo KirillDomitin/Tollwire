@@ -22,6 +22,8 @@
 .qr {
   justify-self: center;
   max-width: 100%;
-  height: auto;
+  /* qrcode задаёт inline-высоту: при сужении canvas она тоже должна уменьшаться. */
+  height: auto !important;
+  aspect-ratio: 1;
   background: #fff;
 }

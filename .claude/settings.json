@@ -20,7 +20,6 @@
       "Read(./uv.lock)",
       "Read(./frontend/openapi.json)",
       "Read(./frontend/src/assets/**)",
-      "Read(./alembic/versions/**)",
       "Read(./frontend/dist/**)",
       "Read(./frontend/coverage/**)"
     ],
