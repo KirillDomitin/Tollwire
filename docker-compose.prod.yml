@@ -16,6 +16,8 @@ x-app-env: &app-env
   COOKIE_SECURE: "true"
   LOG_FORMAT: json  # одна JSON-строка на событие: docker compose logs | jq, сборщики логов
   DOCS_ENABLED: "false"  # /api/openapi в проде не публикуем
+  # Тот же внешний порт, что у nginx, включая HTTPS_PORT из окружения запуска Compose.
+  HTTPS_PORT: ${HTTPS_PORT:-443}
 
 # Ограничения для всех сервисов: процесс не может повысить себе права (setuid-бинарники и т.п.).
 x-hardened: &hardened

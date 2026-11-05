@@ -2,7 +2,11 @@
 
 import json
 import logging
+import os
 import re
+import shutil
+import subprocess
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -66,6 +70,35 @@ def test_a_public_url_with_a_port_is_kept() -> None:
 
 def test_without_url_and_domain_the_address_is_not_set() -> None:
     assert address() is None
+
+
+@pytest.mark.parametrize("port", [None, "443", "8443", "9443"])
+def test_compose_uses_the_nginx_port_for_config_links(tmp_path: Path, port: str | None) -> None:
+    """Resolve the production wiring with dummy settings, never the real production env file."""
+    if shutil.which("docker") is None:
+        pytest.skip("Docker Compose is required")
+    shutil.copyfile(Path(__file__).resolve().parents[2] / "docker-compose.prod.yml", tmp_path / "compose.yml")
+    (tmp_path / ".env.prod").write_text("PANEL_DOMAIN=vpn.example.org\n", encoding="utf-8")
+    environment = {key: value for key, value in os.environ.items() if key != "HTTPS_PORT"}
+    environment.update(POSTGRES_USER="test", POSTGRES_PASSWORD="test", POSTGRES_DB="test")
+    if port is not None:
+        environment["HTTPS_PORT"] = port
+    result = subprocess.run(
+        ["docker", "compose", "--env-file", ".env.prod", "-f", "compose.yml", "config", "--format", "json"],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+    )
+    services = json.loads(result.stdout)["services"]
+    published = next(item["published"] for item in services["nginx"]["ports"] if item["target"] == 443)
+    for service in ("api", "worker"):
+        settings = services[service]["environment"]
+        assert str(settings.get("HTTPS_PORT")) == str(published)
+        expected = "https://vpn.example.org" + (f":{published}" if str(published) != "443" else "")
+        assert address(panel_domain=settings["PANEL_DOMAIN"], https_port=int(settings["HTTPS_PORT"])) == expected
 
 
 @pytest.mark.parametrize("url", ["http://localhost", "http://localhost:8080", "http://127.0.0.1:3000"])
