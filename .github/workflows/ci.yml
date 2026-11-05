@@ -49,7 +49,7 @@ jobs:
       - name: Types
         run: uv run mypy src
       - name: Tests
-        run: uv run pytest -q
+        run: uv run pytest -q --tb=short
 
   bot:
     name: Telegram bot (ruff, mypy, pytest)
@@ -70,7 +70,7 @@ jobs:
       - name: Types
         run: uv run mypy
       - name: Tests
-        run: uv run pytest -q
+        run: uv run pytest -q --tb=short
 
   frontend:
     name: Frontend (typecheck, lint, test, build)

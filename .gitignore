@@ -18,6 +18,8 @@ bot/.env.*
 certs/
 *.stackdump
 backups/
+.deploy/
+.checks/
 
 # pytest-testmon: карта «код → тесты», локальная у каждого
 .testmondata*

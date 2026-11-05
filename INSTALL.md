@@ -125,6 +125,11 @@ cd frontend
 npm run typecheck && npm run lint && npm test && npm run build
 ```
 
+Для краткого результата с полным локальным логом используйте
+[`scripts/check.py`](docs/development/checks.md):
+`python scripts/check.py backend-unit -- uv run pytest tests/unit/test_release_deploy.py -q --tb=short`.
+Обёртка сохраняет код завершения и не заменяет выбор необходимых проверок.
+
 ### Changed the API? Update the frontend types
 
 The frontend takes request and response types from the backend's OpenAPI schema. After changing schemas or endpoints:
@@ -287,6 +292,11 @@ It asks for the email and offers a password: a **random** one (the default — s
 
 ### Telegram bot (optional)
 
+Команды установки и `panel bot` ниже относятся к первой установке и legacy-режиму.
+После перехода на готовые релизы `panel bot` блокируется: его старый Compose может
+перезапустить зависимости из прежних образов. Уже включённый бот сохраняется и обновляется
+вместе с релизом; изменение размещения требует обслуживания через текущий release snapshot.
+
 People get access by an invitation link: they open the bot through the link, give their name and email, and confirm. The panel registers them, and the bot tells them that the access is ready and sends a link to a personal page with the config. The link works while the access lasts; `/config` in the bot gives a new link, and the old one stops working. The link needs the panel's public address (see *Settings* below): without it the bot sends no links. The bot is a separate container. It talks to the panel only through the Bot API with its own key and never gets the panel's secrets.
 
 **1. Create the bot.** Write to [@BotFather](https://t.me/BotFather), send `/newbot` and keep the token (`123456789:AAF…`). The token is never written to `.env.prod`.
@@ -329,6 +339,27 @@ The installer adds `COMPOSE_PROFILES=bot` to `.env.prod`, so the bot is part of 
 
 ### Updating
 
+Для обновления готовыми проверенными образами используйте ручной workflow `Build release`
+из `.github/workflows/deploy.yml`: полный SHA из `master` с успешным push CI → сборка и
+изолированный smoke → GHCR и artifact → локальный запуск на сервере.
+Требуются Linux x86-64, Python 3.10+, Compose 2.24+ и доступ к образам GHCR.
+Архив распаковывается вне каталога установки:
+
+```bash
+TOLLWIRE_ROOT=/opt/tollwire bash /tmp/tollwire-release/release/scripts/deploy.sh /tmp/tollwire-release/release
+```
+
+Порядок, получение artifact и безопасный откат — [обновление готовыми релизами](docs/deploy/releases.md).
+GitHub не подключается к production. Первую установку по-прежнему выполняет `install.sh`.
+
+**После перехода на релизы не выполняйте команды legacy-режима ниже.** При первом запуске
+release-скрипт атомарно добавляет в существующий `panel` защиту от legacy update/restore/bot,
+сохраняя оригинал в `.deploy/legacy-panel`. Остальной корневой checkout и `install.sh` не
+обновляются. Повторный установщик и сборка через корневой Compose могут запустить прежний
+код. Для обновления и отката используйте скрипты выбранного bundle.
+
+#### Legacy update (до перехода на релизы)
+
 ```bash
 ./panel update
 ```
@@ -358,8 +389,15 @@ Passwords, keys, tokens and VPN configs are never written to logs. `LOG_LEVEL=de
 ```bash
 ./panel backup                           # backups/tollwire-YYYYMMDD-HHMMSS.dump (mode 600), the latest 14 are kept
 ./panel backup --keep 30 --dir /mnt/backups
-./panel restore backups/tollwire-20261016-030000.dump
+./panel restore backups/tollwire-20261016-030000.dump  # legacy installations only
 ```
+
+Для release-managed установки обычный `backup` сохраняется; `restore` через legacy-команду
+запрещён. Используйте [порядок восстановления релиза](docs/deploy/releases.md#откат).
+Новый `panel backup --print-path` выдаёт только путь дампа в stdout, сообщения — в stderr;
+этот флаг отсутствует в старых версиях `panel`. `scripts/backup.sh` делегирует корневому `panel`.
+Перед переключением release-скрипт отдельно сохраняет дамп в `.deploy/backups/` и проверяет
+его через `pg_restore --list`; эти копии не входят в обычную ротацию `backups/`.
 
 `backup` dumps the database in the custom `pg_dump -Fc` format, checks the file and only then puts it in place; older backups beyond `--keep` are removed (safety copies and foreign files in the folder are never touched). It is safe to run from cron:
 
@@ -372,6 +410,9 @@ Passwords, keys, tokens and VPN configs are never written to logs. `LOG_LEVEL=de
 **The backup does not contain `.env.prod`, on purpose.** A dump without the `ENCRYPTION_KEY` from your `.env.prod` is useless — and the other way round: someone who steals only the dump cannot read the SSH credentials and VPN configs in it. Keep a copy of `.env.prod` in a password manager or a safe, away from this server and from the backups.
 
 By hand:
+
+The restore command below is for legacy installations. For release-managed installations,
+use the selected release and the recovery procedure above; do not run old root-Compose migrations.
 
 ```bash
 docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres \
@@ -428,7 +469,7 @@ See [notification services](docs/bot/notify.md) and [panel watcher](docs/bot-ser
 | `JOB_RETENTION_DAYS`, `AUDIT_RETENTION_DAYS` | 90, 365 | how long to keep jobs and the audit log (0 — forever) |
 | `LOGIN_*`, `REFRESH_*` | see the template | login attempt limits |
 
-Without `PUBLIC_URL` and `PANEL_DOMAIN` the bot issues no config links: the API answers 409 `not_configured` and writes a warning to the log. The API reads `HTTPS_PORT` from `.env.prod`, but the installer does not write it there: for a non-standard port add `HTTPS_PORT=…` to `.env.prod` yourself, otherwise the links point to port 443.
+Without `PUBLIC_URL` and `PANEL_DOMAIN` the bot issues no config links: the API answers 409 `not_configured` and writes a warning to the log. Compose passes the effective `HTTPS_PORT` to the API and worker, so config links include a non-standard port such as `:8443`. Persist `HTTPS_PORT=8443` in `.env.prod` so subsequent starts keep the same port, then recreate the API, worker and nginx containers. An explicit `PUBLIC_URL` takes priority: include the externally accessible port there if needed (standard HTTPS port 443 may be omitted).
 
 ---
 

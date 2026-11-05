@@ -264,9 +264,13 @@ prune_backups() {
 is_number() { [[ $1 =~ ^[0-9]+$ ]]; }
 
 cmd_backup() {
-    local keep=$DEFAULT_KEEP dir=$DEFAULT_BACKUP_DIR
+    local keep=$DEFAULT_KEEP dir=$DEFAULT_BACKUP_DIR print_path=0
     while [ $# -gt 0 ]; do
         case "$1" in
+            --print-path)
+                print_path=1
+                shift
+                ;;
             --keep)
                 [ $# -ge 2 ] || die "$(t need_value --keep)"
                 keep=$2
@@ -284,12 +288,23 @@ cmd_backup() {
     preflight
     require_postgres
     make_backup tollwire "$dir"
-    say "$(t backup_done "$backup_path" "$(du -h "$backup_path" | cut -f1)")"
-    prune_backups "$dir" "$keep"
-    say "$(t backup_key_reminder "$ENV_FILE" "$ENV_FILE")"
+    if [ "$print_path" -eq 1 ]; then
+        say "$(t backup_done "$backup_path" "$(du -h "$backup_path" | cut -f1)")" >&2
+        prune_backups "$dir" "$keep" >&2
+        say "$(t backup_key_reminder "$ENV_FILE" "$ENV_FILE")" >&2
+        printf '%s\n' "$backup_path"
+    else
+        say "$(t backup_done "$backup_path" "$(du -h "$backup_path" | cut -f1)")"
+        prune_backups "$dir" "$keep"
+        say "$(t backup_key_reminder "$ENV_FILE" "$ENV_FILE")"
+    fi
 }
 
 cmd_restore() {
+    if [ -f .deploy/current.json ]; then
+        printf '%s\n' 'Release-managed installation: legacy restore is disabled; use the recorded release and manual database recovery.' >&2
+        return 1
+    fi
     local file="" assume_yes=0 safety=1 answer safety_path="-"
     while [ $# -gt 0 ]; do
         case "$1" in
@@ -347,6 +362,10 @@ cmd_restore() {
 }
 
 cmd_update() {
+    if [ -f .deploy/current.json ]; then
+        printf '%s\n' 'Release-managed installation: use scripts/deploy.sh RELEASE_DIR; legacy update is disabled.' >&2
+        return 1
+    fi
     local do_backup=1 do_pull=1 build_args=() taken="" status
     while [ $# -gt 0 ]; do
         case "$1" in
