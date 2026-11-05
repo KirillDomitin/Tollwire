@@ -82,9 +82,15 @@ class JobRepository:
         return (await self.session.execute(query)).first() is not None
 
     async def has_running_for_server(self, job_type: JobType, server_id: UUID) -> bool:
-        query = select(Job.id).where(
-            Job.type == job_type, Job.server_id == server_id, Job.status == JobStatus.RUNNING,
-        ).limit(1)
+        query = (
+            select(Job.id)
+            .where(
+                Job.type == job_type,
+                Job.server_id == server_id,
+                Job.status == JobStatus.RUNNING,
+            )
+            .limit(1)
+        )
         return (await self.session.execute(query)).first() is not None
 
     async def has_unfinished_for_grant(self, job_type: JobType, access_grant_id: UUID) -> bool:

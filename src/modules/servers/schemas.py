@@ -36,10 +36,17 @@ class ProtocolUpdateObservation(BaseModel):
     current_image_id: str | None = None
     target_image_id: str | None = None
     target_digest: str | None = None
-    reason: Literal[
-        "server_unreachable", "registry_unavailable", "rate_limited", "platform_unknown",
-        "container_missing", "update_in_progress",
-    ] | None = None
+    reason: (
+        Literal[
+            "server_unreachable",
+            "registry_unavailable",
+            "rate_limited",
+            "platform_unknown",
+            "container_missing",
+            "update_in_progress",
+        ]
+        | None
+    ) = None
 
 
 class ProtocolUpdatesRead(BaseModel):

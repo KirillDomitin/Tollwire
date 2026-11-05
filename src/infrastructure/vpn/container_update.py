@@ -49,9 +49,7 @@ class ContainerUpdater:
 
     async def container_id(self, name: str) -> str | None:
         # ps returning no row distinguishes absence from inspect/daemon failure.
-        output = await self.checked(
-            f"docker ps -a --no-trunc --filter 'name=^/?{name}$' --format '{{{{.ID}}}}'"
-        )
+        output = await self.checked(f"docker ps -a --no-trunc --filter 'name=^/?{name}$' --format '{{{{.ID}}}}'")
         if not output:
             return None
         if not _CONTAINER_ID.fullmatch(output):
@@ -97,14 +95,11 @@ class ContainerUpdater:
     async def cleanup(self) -> None:
         # Only fixed sibling paths belonging to this layout; never the live config directory.
         await self.checked(
-            f"rm -rf -- {self.snapshot} && "
-            f"rm -f -- {self.journal_path} {self.journal_path}.tmp {self.cid_path}"
+            f"rm -rf -- {self.snapshot} && rm -f -- {self.journal_path} {self.journal_path}.tmp {self.cid_path}"
         )
 
     async def peers(self) -> list[str]:
-        output = await self.checked(
-            f"docker exec {self.name} awg show {self.layout.interface_name} peers"
-        )
+        output = await self.checked(f"docker exec {self.name} awg show {self.layout.interface_name} peers")
         # Only used for equality, never interpolated into shell commands or exposed in a job.
         return sorted(output.split())
 
@@ -242,9 +237,9 @@ class ContainerUpdater:
             target = await self.checked(f"docker image inspect --format '{{{{.Id}}}}' {AMNEZIAWG_UPDATE_IMAGE}")
             if not valid_image_id(target):
                 raise DockerError("Invalid target image identity")
-            digests = json.loads(await self.checked(
-                f"docker image inspect --format '{{{{json .RepoDigests}}}}' {target}"
-            ))
+            digests = json.loads(
+                await self.checked(f"docker image inspect --format '{{{{json .RepoDigests}}}}' {target}")
+            )
             if not isinstance(digests, list):
                 raise DockerError("Invalid image digest metadata")
             valid = [digest for digest in digests if isinstance(digest, str) and _DIGEST.fullmatch(digest)]
@@ -277,10 +272,15 @@ class ContainerUpdater:
             if not 1 <= port <= 65535:
                 raise ValueError
             journal = {
-                "version": 1, "name": self.name, "old_container_id": old,
+                "version": 1,
+                "name": self.name,
+                "old_container_id": old,
                 "previous_image_id": self.result.previous_image_id,
-                "target_image_id": target, "target_digest": digest, "port": port,
-                "peers": await self.peers(), "runtime": await self.provider._update_runtime_state(),
+                "target_image_id": target,
+                "target_digest": digest,
+                "port": port,
+                "peers": await self.peers(),
+                "runtime": await self.provider._update_runtime_state(),
                 "phase": "preparing",
             }
         except Exception:

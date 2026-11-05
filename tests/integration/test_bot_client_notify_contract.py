@@ -134,7 +134,7 @@ async def test_claim_with_kinds_gets_a_notify_with_text_and_format_and_ack_close
     client: PanelClient, api: httpx.AsyncClient
 ) -> None:
     await link(client, api)
-    row = (await sql_link_id())
+    row = await sql_link_id()
     outbox_id = await queue_notify(row, "Сервер alpha недоступен")
 
     claim = await client.claim(10, kinds=["news", "config", "notify"])

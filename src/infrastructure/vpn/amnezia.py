@@ -242,8 +242,9 @@ class AmneziaWGProvider(VPNProvider):
                 raise ValueError
             os_name, architecture = data["Os"], data["Architecture"]
             variant, digests = data.get("Variant") or None, data.get("RepoDigests") or []
-            if not all(isinstance(value, str) and re.fullmatch(r"[a-z0-9_-]{1,32}", value)
-                       for value in (os_name, architecture)):
+            if not all(
+                isinstance(value, str) and re.fullmatch(r"[a-z0-9_-]{1,32}", value) for value in (os_name, architecture)
+            ):
                 raise ValueError
             if variant is not None and (not isinstance(variant, str) or not re.fullmatch(r"[a-z0-9_-]{1,32}", variant)):
                 raise ValueError
@@ -275,7 +276,8 @@ class AmneziaWGProvider(VPNProvider):
                         raise ValueError
                     actual_variant = platform.get("variant") or ("v8" if architecture == "arm64" else None)
                     if (
-                        platform.get("os") != os_name or platform.get("architecture") != architecture
+                        platform.get("os") != os_name
+                        or platform.get("architecture") != architecture
                         or actual_variant != expected_variant
                     ):
                         raise ValueError

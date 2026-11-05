@@ -28,14 +28,18 @@ MAX_METADATA_BYTES = 2 * 1024 * 1024
 REQUEST_TIMEOUT_SECONDS = 10
 CACHE_TTL_SECONDS = 300
 _DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
-_INDEX_TYPES = frozenset({
-    "application/vnd.oci.image.index.v1+json",
-    "application/vnd.docker.distribution.manifest.list.v2+json",
-})
-_MANIFEST_TYPES = frozenset({
-    "application/vnd.oci.image.manifest.v1+json",
-    "application/vnd.docker.distribution.manifest.v2+json",
-})
+_INDEX_TYPES = frozenset(
+    {
+        "application/vnd.oci.image.index.v1+json",
+        "application/vnd.docker.distribution.manifest.list.v2+json",
+    }
+)
+_MANIFEST_TYPES = frozenset(
+    {
+        "application/vnd.oci.image.manifest.v1+json",
+        "application/vnd.docker.distribution.manifest.v2+json",
+    }
+)
 _ACCEPT = ", ".join(sorted(_INDEX_TYPES | _MANIFEST_TYPES))
 
 
@@ -69,9 +73,7 @@ def _variant(value: Any, architecture: str) -> str | None:
     return value
 
 
-def select_platform_manifest(
-    index: dict[str, Any], os: str, architecture: str, variant: str | None = None
-) -> str:
+def select_platform_manifest(index: dict[str, Any], os: str, architecture: str, variant: str | None = None) -> str:
     """Return exactly one matching child, rejecting missing/ambiguous platforms."""
     if not os or not architecture or os == "unknown" or architecture == "unknown":
         raise RegistryError("platform_unknown")
@@ -227,7 +229,9 @@ class AmneziaImageRegistry:
         ):
             raise RegistryError()
         status, _, body = await self._request(
-            client, AUTH_URL, {"Accept": "application/json", "Accept-Encoding": "identity"},
+            client,
+            AUTH_URL,
+            {"Accept": "application/json", "Accept-Encoding": "identity"},
             params={"service": AUTH_SERVICE, "scope": AUTH_SCOPE},
         )
         self._check_status(status)

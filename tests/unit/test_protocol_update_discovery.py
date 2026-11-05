@@ -141,7 +141,8 @@ async def test_registry_compares_platform_config_digest_with_local_image_id() ->
 @pytest.mark.parametrize("gateway", [False, True], ids=["awg", "gateway"])
 @pytest.mark.parametrize("architecture", ["amd64", "arm64"], ids=["matching-platform", "wrong-platform"])
 async def test_containerd_image_info_reads_actual_container_platform_descriptor_without_mutation(
-    gateway: bool, architecture: str,
+    gateway: bool,
+    architecture: str,
 ) -> None:
     class DescriptorServer(FakeServer):
         def run(self, command: str) -> CommandResult:
@@ -152,8 +153,7 @@ async def test_containerd_image_info_reads_actual_container_platform_descriptor_
                 self.commands.append(command)
                 return CommandResult(json.dumps({"Id": INDEX_IMAGE, "Os": "linux", "Architecture": "amd64"}), "", 0)
             if command == (
-                "docker inspect --type container -f '{{json .ImageManifestDescriptor}}' "
-                + self.layout.container_name
+                "docker inspect --type container -f '{{json .ImageManifestDescriptor}}' " + self.layout.container_name
             ):
                 self.commands.append(command)
                 descriptor = {"digest": AMD_MANIFEST, "platform": {"os": "linux", "architecture": architecture}}

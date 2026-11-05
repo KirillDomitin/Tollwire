@@ -52,16 +52,24 @@ def active_key(server_id: UUID) -> str:
 
 def blank(protocol_id: UUID, kind: ProtocolType) -> dict[str, Any]:
     return {
-        "protocol_id": str(protocol_id), "protocol_type": kind.value,
+        "protocol_id": str(protocol_id),
+        "protocol_type": kind.value,
         "status": "unknown" if kind in INSTALLABLE_PROTOCOLS else "unsupported",
-        "stale": False, "checked_at": None, "last_attempt_at": None,
-        "current_image_id": None, "target_image_id": None, "target_digest": None, "reason": None,
+        "stale": False,
+        "checked_at": None,
+        "last_attempt_at": None,
+        "current_image_id": None,
+        "target_image_id": None,
+        "target_digest": None,
+        "reason": None,
     }
 
 
 class ProtocolUpdateCheckService:
     def __init__(
-        self, session: AsyncSession, registry: ImageRegistry | None = None,
+        self,
+        session: AsyncSession,
+        registry: ImageRegistry | None = None,
         clock: Callable[[], datetime] | None = None,
     ):
         self.session = session
@@ -153,9 +161,13 @@ class ProtocolUpdateCheckService:
                         installed_content = latest.current_image_id or image.image_id
                         item.update(
                             status="current" if installed_content == latest.image_id else "available",
-                            stale=False, checked_at=now, last_attempt_at=now,
-                            current_image_id=image.image_id, target_image_id=latest.image_id,
-                            target_digest=latest.digest, reason=None,
+                            stale=False,
+                            checked_at=now,
+                            last_attempt_at=now,
+                            current_image_id=image.image_id,
+                            target_image_id=latest.image_id,
+                            target_digest=latest.digest,
+                            reason=None,
                         )
                     except (SSHServerError, RegistryError, httpx.HTTPError, ValueError) as error:
                         self._failed(item, error, now)
@@ -230,7 +242,9 @@ class ProtocolUpdateService:
                 await redis.delete(cache_key(protocol_id))
                 await redis.eval(
                     "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) end return 0",
-                    1, active_key(server_id), token,
+                    1,
+                    active_key(server_id),
+                    token,
                 )
             except RedisError:
                 # The initial generation increment already invalidates all older observations;

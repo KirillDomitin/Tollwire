@@ -44,8 +44,10 @@ class UpdateServer(FakeServer):
         cid_path = directory + "/.container-update-new.cid"
         if cmd == f"test ! -e {snapshot} && test ! -L {snapshot} && test ! -e {cid_path}":
             self.commands.append(command)
-            exists = snapshot in self.dirs or cid_path in self.files or any(
-                path.startswith(snapshot + "/") for path in self.files
+            exists = (
+                snapshot in self.dirs
+                or cid_path in self.files
+                or any(path.startswith(snapshot + "/") for path in self.files)
             )
             return CommandResult("", "", int(exists))
         if cmd.startswith("docker ps -a --no-trunc "):
@@ -141,16 +143,15 @@ class UpdateServer(FakeServer):
             self.commands.append(command)
             descriptor = (
                 {"digest": self.manifest_digest, "platform": {"os": "linux", "architecture": "amd64"}}
-                if self.manifest_digest is not None else None
+                if self.manifest_digest is not None
+                else None
             )
             return CommandResult(json.dumps(descriptor) + "\n", "", 0)
         if cmd.startswith("docker image inspect --format '{{json .}}' "):
             self.commands.append(command)
             image = shlex.split(cmd)[-1]
             return CommandResult(json.dumps({"Id": image, "Os": "linux", "Architecture": "amd64"}), "", 0)
-        if cmd == (
-            "docker image inspect --platform linux/amd64 --format '{{.Id}}' " + self.target_image_id
-        ):
+        if cmd == ("docker image inspect --platform linux/amd64 --format '{{.Id}}' " + self.target_image_id):
             self.commands.append(command)
             return CommandResult((self.target_manifest_digest or self.target_image_id) + "\n", "", 0)
         if "inspect" in cmd and "{{range .Mounts}}" in cmd:

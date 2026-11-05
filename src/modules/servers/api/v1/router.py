@@ -248,7 +248,8 @@ async def protocol_install(
 @router.post(
     "/{server_id}/protocol/update",
     dependencies=[Depends(require(Permission.SERVERS_MANAGE))],
-    response_model=JobRead, status_code=202,
+    response_model=JobRead,
+    status_code=202,
 )
 async def protocol_update(
     server_id: UUID,
@@ -265,7 +266,8 @@ async def protocol_update(
     response_model=ProtocolUpdatesRead,
 )
 async def protocol_updates_cached(
-    server_id: UUID, session: Annotated[AsyncSession, Depends(get_session)],
+    server_id: UUID,
+    session: Annotated[AsyncSession, Depends(get_session)],
 ) -> ProtocolUpdatesRead:
     return ProtocolUpdatesRead.model_validate(await ProtocolUpdateCheckService(session).get_cached(server_id))
 
@@ -273,10 +275,12 @@ async def protocol_updates_cached(
 @router.post(
     "/{server_id}/protocol/updates/check",
     dependencies=[Depends(require(Permission.SERVERS_CHECK))],
-    response_model=JobRead, status_code=202,
+    response_model=JobRead,
+    status_code=202,
 )
 async def protocol_updates_check(
-    server_id: UUID, service: ServerService = Depends(get_server_service),
+    server_id: UUID,
+    service: ServerService = Depends(get_server_service),
 ) -> Job:
     return await schedule(service, server_id, JobType.CHECK_PROTOCOL_UPDATES)
 
