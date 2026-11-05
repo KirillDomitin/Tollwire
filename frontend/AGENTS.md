@@ -1,6 +1,6 @@
 # Веб-интерфейс
 
-Перед работой читать [CLAUDE.md](CLAUDE.md), [структуру](../docs/frontend/structure.md),
+По теме задачи читать [CLAUDE.md](CLAUDE.md), [структуру](../docs/frontend/structure.md),
 [контракт Bot API](../docs/bot/api.md) и [уведомления](../docs/bot/notify.md).
 
 - Видимость вкладок и действий определяют permissions; собственные уведомления — `bot:notify`.

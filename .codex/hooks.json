@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|MultiEdit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 'G:\\Projects\\Tollwire\\.codex\\hooks\\ruff_on_edit.py'",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
