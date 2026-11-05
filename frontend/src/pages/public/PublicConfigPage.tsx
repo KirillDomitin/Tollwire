@@ -162,10 +162,25 @@ function Config({ page }: { page: PublicConfig }) {
           )}
         </label>
         <div className={styles.actions}>
-          <Button variant="primary" onClick={() => void copy()}>
-            {copied ? t("public.key.copied") : shareLink ? t("public.key.copy") : t("public.key.copyConfig")}
+          <Button
+            variant="primary"
+            className={styles.copyButton}
+            onClick={() => void copy()}
+            icon={<span aria-hidden="true">{copied ? "✓" : "⧉"}</span>}
+          >
+            {copied
+              ? t("public.key.copied")
+              : shareLink
+                ? t("public.key.copy")
+                : t("public.key.copyConfig")}
           </Button>
-          <Button variant="secondary" onClick={download}>
+
+          <Button
+            variant="secondary"
+            className={styles.downloadButton}
+            onClick={download}
+            icon={<span aria-hidden="true">↓</span>}
+          >
             {t("public.download")}
           </Button>
         </div>

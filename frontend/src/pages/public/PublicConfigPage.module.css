@@ -83,22 +83,46 @@
 
 .actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-2);
+  grid-template-columns: 1fr;
+  gap: 12px;
+  width: 100%;
 }
 
-.actionButton {
-  width: 100%;
-  min-height: 44px;
+.copyButton,
+.downloadButton {
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 16px;
+  border-radius: var(--radius-control);
+  font-weight: 600;
+  line-height: 1.4;
   text-align: center;
   white-space: normal;
 }
 
-@media (max-width: 480px) {
-  .actions {
-    grid-template-columns: 1fr;
-  }
+.copyButton {
+  background: var(--accent);
+  color: var(--on-accent);
+  border: 1px solid var(--accent);
+}
+
+.copyButton:hover {
+  background: var(--accent-hover);
+}
+
+.downloadButton {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+}
+
+.downloadButton:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-2));
 }
 
 .hint {
