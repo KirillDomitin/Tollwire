@@ -162,10 +162,10 @@ function Config({ page }: { page: PublicConfig }) {
           )}
         </label>
         <div className={styles.actions}>
-          <Button variant="ghost" onClick={() => void copy()}>
+          <Button variant="primary" onClick={() => void copy()}>
             {copied ? t("public.key.copied") : shareLink ? t("public.key.copy") : t("public.key.copyConfig")}
           </Button>
-          <Button variant="ghost" onClick={download}>
+          <Button variant="secondary" onClick={download}>
             {t("public.download")}
           </Button>
         </div>
