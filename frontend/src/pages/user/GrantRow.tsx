@@ -13,6 +13,7 @@ import { formatDay, isLive } from "../../lib/access";
 import { isUnfinished } from "../../lib/jobs";
 import { keys } from "../server/useServer";
 import { GatewayExitNote } from "./GatewayExitNote";
+import { ClientMetrics } from "./ClientMetrics";
 import styles from "./UserPage.module.css";
 import { liveCredential, userKeys } from "./useUser";
 
@@ -138,6 +139,13 @@ export function GrantRow({
         <p className={styles.grantError}>{job.error}</p>
       )}
       {issue.isError && <Notice>{issue.error.message}</Notice>}
+      {credential && server && can("servers:read") && (
+        <ClientMetrics
+          serverId={grant.server_id}
+          protocolId={grant.protocol_id}
+          credentialId={credential.id}
+        />
+      )}
       {gateway && live && !busy && credential && !imported && (
         <GatewayExitNote serverId={grant.server_id} credentialId={credential.id} />
       )}

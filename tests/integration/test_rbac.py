@@ -397,6 +397,7 @@ CRITICAL = {
     "POST /api/v1/servers/{server_id}/sync": Permission.SERVERS_CHECK,
     "POST /api/v1/servers/{server_id}/discover": Permission.SERVERS_CHECK,  # как health: запуск проверки
     "GET /api/v1/servers/{server_id}/discovery": Permission.SERVERS_READ,
+    "GET /api/v1/servers/{server_id}/clients/monitoring": Permission.SERVERS_READ,
     "POST /api/v1/servers/{server_id}/import": Permission.SERVERS_MANAGE,  # пишет в БД панели: как установка
     "GET /api/v1/servers/{server_id}/gateway/exits": Permission.SERVERS_READ,
     "GET /api/v1/servers/{server_id}/gateway/assignments": Permission.SERVERS_READ,

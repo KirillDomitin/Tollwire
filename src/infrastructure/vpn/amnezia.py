@@ -33,6 +33,7 @@ from infrastructure.vpn.awg_config import (
     render_peer_block,
     used_peer_addresses,
 )
+from infrastructure.vpn.client_stats import read_client_stats
 from infrastructure.vpn.config import (
     ACTIVE_HANDSHAKE_WINDOW_SECONDS,
     AMNEZIAWG_IMAGE,
@@ -52,6 +53,7 @@ from infrastructure.vpn.provider import (
     SyncResult,
     VPNClientConfig,
     VPNClientInfo,
+    VPNClientStats,
     VPNProvider,
 )
 
@@ -468,6 +470,11 @@ class AmneziaWGProvider(VPNProvider):
         await self.ssh_client.write_file(self.layout.host_config_file, updated)
         await self._apply_config()
         return True
+
+    async def client_stats(self) -> list[VPNClientStats] | None:
+        if await self._is_foreign() or not await self._config_exists():
+            return None
+        return await read_client_stats(self.ssh_client, self.layout.container_name, "awg", self.layout.interface_name)
 
     async def list_clients(self) -> list[VPNClientInfo]:
         """Peer'ы из awg0.conf (источник правды о том, кого сервер пустит) + время последнего рукопожатия."""

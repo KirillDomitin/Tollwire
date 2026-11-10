@@ -19,6 +19,8 @@
   `docs/vpn/gateway.md`;
 - чужая установка приложения AmneziaVPN, отзыв/возврат peer'а, протокол записи — `docs/vpn/amnezia-app.md`;
 - полная карта файлов (поля структур, `ContainerLayout`) — `docs/vpn/files.md`.
+- текущие handshake/трафик клиентов — `docs/monitoring/client-metrics.md`: `client_stats()` читает только
+  `latest-handshakes` и `transfer`, не `dump` (содержит секреты); `None` — недоступно, `[]` — пустой успешный замер.
 
 **Справочник** (карта файлов, модели, API, операции: Операции провайдера, Формат vpn:// и QR) — `docs/vpn/provider.md`, читать по необходимости.
 

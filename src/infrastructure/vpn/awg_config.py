@@ -358,6 +358,23 @@ def parse_client_config(client_config: str) -> ClientPeerParams:
     return ClientPeerParams(public_key=public_key, psk=psk, address=address)
 
 
+def parse_client_transfers(output: str) -> dict[str, tuple[int, int]]:
+    """Parse bounded public `show <iface> transfer` output, ignoring malformed rows."""
+    if len(output) > 1024 * 1024:
+        return {}
+    transfers: dict[str, tuple[int, int]] = {}
+    for line in output.splitlines()[:4096]:
+        parts = line.split()
+        if len(parts) != 3 or not is_valid_public_key(parts[0]):
+            continue
+        if not all(re.fullmatch(r"[0-9]{1,19}", value) for value in parts[1:]):
+            continue
+        rx, tx = int(parts[1]), int(parts[2])
+        if max(rx, tx) <= 2**63 - 1:
+            transfers.setdefault(parts[0], (rx, tx))
+    return transfers
+
+
 def parse_latest_handshakes(output: str) -> dict[str, datetime | None]:
     """Разбирает `awg show <iface> latest-handshakes`: строки «ключ<TAB>unix-время», 0 — рукопожатий не было."""
     handshakes: dict[str, datetime | None] = {}

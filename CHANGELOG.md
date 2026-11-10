@@ -17,6 +17,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- Device activity in user cards: last VPN handshake, downloaded and uploaded traffic, sample time and stale-data
+  indicators. Traffic counters are measured from the client's perspective since the last VPN reset.
+
 - Protocol image updates: daily availability checks at 03:00 Moscow, status beside each server's protocol,
   manual checks and container updates with rollback while preserving VPN clients and configuration.
 

@@ -55,6 +55,16 @@ class VPNClientInfo:
 
 
 @dataclass
+class VPNClientStats:
+    """Runtime counters as seen by the server; no configuration or secret keys."""
+
+    public_key: str
+    latest_handshake: datetime | None
+    rx_bytes: int | None
+    tx_bytes: int | None
+
+
+@dataclass
 class VPNClientConfig:
     name: str
     public_key: str
@@ -144,6 +154,11 @@ class VPNProvider(ABC):
 
     @abstractmethod
     async def list_clients(self) -> list[VPNClientInfo]: ...
+
+    async def client_stats(self) -> list[VPNClientStats] | None:
+        """None means unavailable; an empty list is a successful sample without peers."""
+        return None
+
     @abstractmethod
     async def sync(self) -> SyncResult: ...
     @abstractmethod

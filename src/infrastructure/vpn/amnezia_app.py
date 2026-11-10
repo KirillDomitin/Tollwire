@@ -22,6 +22,7 @@ from infrastructure.vpn.awg_config import (
     render_app_peer_block,
     used_peer_addresses,
 )
+from infrastructure.vpn.client_stats import read_client_stats
 from infrastructure.vpn.config import ACTIVE_HANDSHAKE_WINDOW_SECONDS, HOST_CONFIG_DIR
 from infrastructure.vpn.provider import (
     DiscoveredClient,
@@ -34,6 +35,7 @@ from infrastructure.vpn.provider import (
     SyncResult,
     VPNClientConfig,
     VPNClientInfo,
+    VPNClientStats,
     VPNProvider,
 )
 
@@ -92,6 +94,12 @@ class AmneziaAppProvider(VPNProvider):
     async def _cat(self, path: str) -> str | None:
         result = await self.ssh_client.execute(f"docker exec {self.container} cat {path}")
         return result.stdout if result.exit_status == 0 else None
+
+    async def client_stats(self) -> list[VPNClientStats] | None:
+        found = await self._container()
+        if found is None or found[0] != ProviderState.RUNNING:
+            return None
+        return await read_client_stats(self.ssh_client, self.container, self.tool, self.interface)
 
     async def _handshakes(self) -> dict[str, datetime | None] | None:
         result = await self.ssh_client.execute(

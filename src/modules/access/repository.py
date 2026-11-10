@@ -127,6 +127,14 @@ class AccessGrantRepository:
 
 
 class VPNCredentialRepository:
+    async def live_by_server(self, server_id: UUID) -> list[tuple[VPNCredential, UUID]]:
+        rows = await self.session.execute(
+            select(VPNCredential, AccessGrant.protocol_id)
+            .join(AccessGrant, VPNCredential.access_grant_id == AccessGrant.id)
+            .where(AccessGrant.server_id == server_id, VPNCredential.revoked_at.is_(None))
+        )
+        return [(credential, protocol_id) for credential, protocol_id in rows.all()]
+
     def __init__(self, session: AsyncSession):
         self.session = session
 

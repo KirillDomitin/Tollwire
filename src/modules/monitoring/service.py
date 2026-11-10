@@ -12,6 +12,7 @@ from core.database.postgres import session_factory
 from core.exceptions import CredentialNotFound, NotFoundError, SSHError
 from core.log import bind
 from infrastructure.monitoring.host_metrics import HostCounters, compute_rates, read_host_sample
+from modules.monitoring.client_metrics import save_snapshot
 from modules.monitoring.models.metrics import ServerMetric, ServerMetricHourly
 from modules.monitoring.repository import MetricsRepository
 from modules.monitoring.schemas import LatestMetrics, MetricPoint, MetricsRange, MetricsSeries
@@ -65,6 +66,7 @@ class MetricsCollector:
             ssh_client = await ServerConnectionService(session).create_ssh_client(server_id)
             protocols = await ProtocolRepository(session).list_by_server_id(server_id)
             protocol_types = [protocol.type for protocol in protocols]  # обычный протокол и шлюз бывают рядом
+            protocol_ids = [protocol.id for protocol in protocols]
             previous = await MetricsRepository(session).latest(server_id)
             previous_counters = _counters(previous) if previous else None
             # Всё прочитано — соединение с БД обратно в пул до похода по сети. После отката объекты из БД
@@ -78,6 +80,14 @@ class MetricsCollector:
             if protocol_types:
                 counts = [await provider_class(item)(ssh_client).client_counts(now) for item in protocol_types]
                 clients = (sum(total for total, _ in counts), sum(online for _, online in counts))
+                for protocol_id, kind in zip(protocol_ids, protocol_types):
+                    try:
+                        peers = await provider_class(kind)(ssh_client).client_stats()
+                        if peers is not None:
+                            await save_snapshot(protocol_id, datetime.now(timezone.utc), peers)
+                    except (SSHError, ValueError):
+                        # Keep the last successful snapshot and let its timestamp signal staleness.
+                        logger.warning("client metrics sample failed", extra={"protocol_id": str(protocol_id)})
 
         rates = compute_rates(previous_counters, sample.counters) if previous_counters else None
         counters = sample.counters

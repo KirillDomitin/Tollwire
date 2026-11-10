@@ -1,7 +1,8 @@
 # modules/monitoring — метрики серверов
 
-Сбор без агента: раз в минуту одна фиксированная команда только для чтения по SSH. Команда и разбор вывода —
-`src/infrastructure/monitoring/` (свой `CLAUDE.md`); здесь — хранение, сбор по серверам и API.
+Сбор без агента: раз в минуту фиксированные команды только для чтения по SSH. Метрики хоста и разбор вывода —
+`src/infrastructure/monitoring/` (свой `CLAUDE.md`); статистика peer'ов — через `VPNProvider.client_stats()`.
+Здесь — хранение, сбор по серверам и API.
 
 ## Хранение
 
@@ -17,17 +18,22 @@
 - `MetricsService.series(range)` — 1h/24h из сырых (поминутно), 7d/30d из почасовых (среднее + пик);
   `latest()` — последний замер каждого сервера (DISTINCT ON).
 - Правила планировщика `metrics` (60 с) и `metrics_rollup` (300 с) — `rollup_and_prune`.
+- `client_metrics.py`: текущие peer-счётчики в Redis, отдельно от исторических метрик хоста. Сборщик сохраняет
+  только успешный снимок; сбой не подменяет предыдущий замер нулями. `client_counts()` остаётся отдельным.
 
 ## API
 
 `GET /api/v1/servers/{id}/monitoring?range=1h|24h|7d|30d` → `MetricsSeries` (`resolution` minute/hour, `points`),
 `GET /api/v1/monitoring/latest` → `list[LatestMetrics]`. Право `servers:read`; неизвестный сервер → 404.
 
+`GET /api/v1/servers/{id}/clients/monitoring` → `ServerClientMetrics`, право `servers:read`, только БД/Redis,
+без SSH. Сопоставление — протокол + публичный ключ живого credential, не имя; скачано = TX сервера,
+отправлено = RX сервера. Контракт, свежесть и ограничения — [статистика клиентов](../../../docs/monitoring/client-metrics.md).
+
 ## Фронтенд
 
 `frontend/src/pages/server/MonitoringSection.tsx` (графики uPlot, ленивая загрузка), колонки «Клиенты»/«CPU» в
 `ServersPage.tsx` (замер старше 5 минут показывается как «—»). Подробнее — `frontend/CLAUDE.md`.
 
-## Расширение
-
-Онлайн и трафик по каждому клиенту можно брать из `awg show dump` — там рукопожатия и байты по peer'ам.
+Статистика устройства в `pages/user/ClientMetrics.tsx`: общий запрос на сервер раз в 60 с, только для живого
+credential и с `servers:read`. Нет данных не означает нулевой трафик или отсутствие рукопожатий.

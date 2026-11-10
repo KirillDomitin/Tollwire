@@ -3778,6 +3778,54 @@
         ]
       }
     },
+    "/api/v1/servers/{server_id}/clients/monitoring": {
+      "get": {
+        "tags": [
+          "monitoring"
+        ],
+        "summary": "Client Metrics",
+        "operationId": "client_metrics_api_v1_servers__server_id__clients_monitoring_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Server Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerClientMetrics"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/servers/{server_id}/monitoring": {
       "get": {
         "tags": [
@@ -7329,6 +7377,59 @@
         "title": "ClientImportCreate",
         "description": "Тело POST /servers/{id}/import."
       },
+      "ClientMetric": {
+        "properties": {
+          "credential_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Credential Id"
+          },
+          "latest_handshake": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Handshake"
+          },
+          "downloaded_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Downloaded Bytes"
+          },
+          "uploaded_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uploaded Bytes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "credential_id",
+          "latest_handshake",
+          "downloaded_bytes",
+          "uploaded_bytes"
+        ],
+        "title": "ClientMetric"
+      },
       "ConfigLinkQueued": {
         "properties": {
           "outbox_id": {
@@ -9552,6 +9653,44 @@
         ],
         "title": "OverrideRead"
       },
+      "ProtocolClientMetrics": {
+        "properties": {
+          "protocol_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Protocol Id"
+          },
+          "sampled_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sampled At"
+          },
+          "stale": {
+            "type": "boolean",
+            "title": "Stale",
+            "default": false
+          },
+          "clients": {
+            "items": {
+              "$ref": "#/components/schemas/ClientMetric"
+            },
+            "type": "array",
+            "title": "Clients"
+          }
+        },
+        "type": "object",
+        "required": [
+          "protocol_id"
+        ],
+        "title": "ProtocolClientMetrics"
+      },
       "ProtocolRead": {
         "properties": {
           "id": {
@@ -10028,6 +10167,28 @@
           "failed"
         ],
         "title": "RegistrationStatus"
+      },
+      "ServerClientMetrics": {
+        "properties": {
+          "server_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Server Id"
+          },
+          "protocols": {
+            "items": {
+              "$ref": "#/components/schemas/ProtocolClientMetrics"
+            },
+            "type": "array",
+            "title": "Protocols"
+          }
+        },
+        "type": "object",
+        "required": [
+          "server_id",
+          "protocols"
+        ],
+        "title": "ServerClientMetrics"
       },
       "ServerCreate": {
         "properties": {

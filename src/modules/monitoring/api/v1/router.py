@@ -10,7 +10,8 @@ from core.database.postgres import get_session
 from core.exceptions import NotFoundError
 from modules.auth.dependencies import get_current_admin, require
 from modules.auth.permissions import Permission
-from modules.monitoring.schemas import LatestMetrics, MetricsRange, MetricsSeries
+from modules.monitoring.client_metrics import ClientMetricsService
+from modules.monitoring.schemas import LatestMetrics, MetricsRange, MetricsSeries, ServerClientMetrics
 from modules.monitoring.service import MetricsService
 
 router = APIRouter(prefix="/api/v1", tags=["monitoring"], dependencies=[Depends(get_current_admin)])
@@ -20,6 +21,18 @@ READ = [Depends(require(Permission.SERVERS_READ))]
 
 def get_metrics_service(session: Annotated[AsyncSession, Depends(get_session)]) -> MetricsService:
     return MetricsService(session)
+
+
+def get_client_metrics_service(session: Annotated[AsyncSession, Depends(get_session)]) -> ClientMetricsService:
+    return ClientMetricsService(session)
+
+
+@router.get("/servers/{server_id}/clients/monitoring", dependencies=READ, response_model=ServerClientMetrics)
+async def client_metrics(
+    server_id: UUID,
+    service: Annotated[ClientMetricsService, Depends(get_client_metrics_service)],
+) -> ServerClientMetrics:
+    return await service.get_cached(server_id)
 
 
 @router.get("/servers/{server_id}/monitoring", dependencies=READ, response_model=MetricsSeries)

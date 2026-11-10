@@ -86,7 +86,7 @@ APP_LAYOUT = {
 }
 # docker exec, которые только читают: файл приложения и рукопожатия. Любой иной docker exec — изменяющий.
 _READ_ONLY_EXEC = re.compile(
-    rf"docker exec \S+ (?:cat {re.escape(APP_CONFIG_DIR)}/[\w.-]+|(?:wg|awg) show \w+ latest-handshakes)"
+    rf"docker exec \S+ (?:cat {re.escape(APP_CONFIG_DIR)}/[\w.-]+|(?:wg|awg) show \w+ (?:latest-handshakes|transfer))"
 )
 
 
@@ -245,6 +245,7 @@ class AmneziaApp:
     peers: list[AppPeer]
     files: dict[str, str] = field(default_factory=dict)
     interface_up: bool = True  # False — как контейнер, где интерфейс не поднялся: `<tool> show <iface>` падает
+    transfers: dict[str, tuple[int, int]] = field(default_factory=dict)
     # Запись (23.3). `peers` — «живые» peer'ы интерфейса: после успешного syncconf они берутся из конфига.
     apply_fails: bool = False  # syncconf падает (код 1, stderr без содержимого конфига), интерфейс не меняется
     docker_cp_fails: set[str] = field(default_factory=set)  # пути ВНУТРИ контейнера, `docker cp` в которые падает
@@ -324,6 +325,7 @@ class FakeServer:
     restart_policy: str = "no"  # RestartPolicy.Name контейнера: no / unless-stopped / always / on-failure
     interface_peers: set[str] = field(default_factory=set)  # ключи, применённые к живому интерфейсу
     handshakes: dict[str, int] = field(default_factory=dict)  # ключ → unix-время последнего рукопожатия
+    transfers: dict[str, tuple[int, int]] = field(default_factory=dict)
     commands: list[str] = field(default_factory=list)
     # Раскладка контейнера панели на этом «сервере»: по умолчанию как у обычного протокола; шлюз и другие подклассы
     # провайдера с иной раскладкой — свой FakeServer(layout=...). Все ответы фейка собираются только из неё.
@@ -829,12 +831,20 @@ class FakeServer:
             if match.group(1) not in app.files:
                 return _fail(f"cat: can't open '{match.group(1)}': No such file or directory", 1)
             return _ok(app.files[match.group(1)])
-        if match := re.fullmatch(r"(wg|awg) show (\S+) latest-handshakes", inner):
+        if match := re.fullmatch(r"(wg|awg) show (\S+) (latest-handshakes|transfer)", inner):
             if match.group(1) != app.tool:  # в контейнере другой утилиты нет
                 return _fail(f'exec: "{match.group(1)}": executable file not found in $PATH', 126)
             if match.group(2) != app.interface or not app.interface_up:
                 return _fail(f"Unable to access interface: No such device ({match.group(2)})", 1)
-            return _ok(app.handshakes_output())
+            if match.group(3) == "latest-handshakes":
+                return _ok(app.handshakes_output())
+            return _ok(
+                "".join(
+                    f"{peer.public_key}\t{app.transfers.get(peer.public_key, (0, 0))[0]}\t"
+                    f"{app.transfers.get(peer.public_key, (0, 0))[1]}\n"
+                    for peer in app.peers
+                )
+            )
         raise AssertionError(f"FakeServer: unexpected docker exec in {app.container}: {inner!r}")
 
     def _apply_ru(self) -> CommandResult:
@@ -1014,6 +1024,13 @@ class FakeServer:
             return _ok(self._port() + "\n")
         if inner == f"awg show {iface} latest-handshakes":
             return _ok("".join(f"{key}\t{self.handshakes.get(key, 0)}\n" for key in sorted(self.interface_peers)))
+        if inner == f"awg show {iface} transfer":
+            return _ok(
+                "".join(
+                    f"{key}\t{self.transfers.get(key, (0, 0))[0]}\t{self.transfers.get(key, (0, 0))[1]}\n"
+                    for key in sorted(self.interface_peers)
+                )
+            )
         stripped = f"/tmp/{iface}.stripped"
         if inner == (
             f"sh -c 'awg-quick strip {layout.container_config_file} > {stripped}"

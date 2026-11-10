@@ -1,4 +1,16 @@
 {
+  "metrics": {
+    "title": "Device activity",
+    "loading": "Loading device statistics…",
+    "unavailable": "Device statistics are not available yet",
+    "stale": "Data is out of date",
+    "handshake": "Last handshake",
+    "never": "Has not connected yet",
+    "downloaded": "Downloaded",
+    "uploaded": "Uploaded",
+    "period": "Traffic from the client's perspective since the last VPN reset. Counters may reset when the VPN restarts or the client is recreated.",
+    "updated": "Sampled:"
+  },
   "list": {
     "title": "Users",
     "loading": "Loading users…",

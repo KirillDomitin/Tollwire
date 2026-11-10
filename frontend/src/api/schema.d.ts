@@ -990,6 +990,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/servers/{server_id}/clients/monitoring": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Client Metrics */
+        get: operations["client_metrics_api_v1_servers__server_id__clients_monitoring_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/servers/{server_id}/monitoring": {
         parameters: {
             query?: never;
@@ -2294,6 +2311,20 @@ export interface components {
             /** Clients */
             clients: components["schemas"]["ImportClient"][];
         };
+        /** ClientMetric */
+        ClientMetric: {
+            /**
+             * Credential Id
+             * Format: uuid
+             */
+            credential_id: string;
+            /** Latest Handshake */
+            latest_handshake: string | null;
+            /** Downloaded Bytes */
+            downloaded_bytes: number | null;
+            /** Uploaded Bytes */
+            uploaded_bytes: number | null;
+        };
         /** ConfigLinkQueued */
         ConfigLinkQueued: {
             /**
@@ -3053,6 +3084,23 @@ export interface components {
              */
             created_at: string;
         };
+        /** ProtocolClientMetrics */
+        ProtocolClientMetrics: {
+            /**
+             * Protocol Id
+             * Format: uuid
+             */
+            protocol_id: string;
+            /** Sampled At */
+            sampled_at?: string | null;
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /** Clients */
+            clients?: components["schemas"]["ClientMetric"][];
+        };
         /** ProtocolRead */
         ProtocolRead: {
             /**
@@ -3224,6 +3272,16 @@ export interface components {
          * @enum {string}
          */
         RegistrationStatus: "payment_pending" | "provisioning" | "active" | "failed";
+        /** ServerClientMetrics */
+        ServerClientMetrics: {
+            /**
+             * Server Id
+             * Format: uuid
+             */
+            server_id: string;
+            /** Protocols */
+            protocols: components["schemas"]["ProtocolClientMetrics"][];
+        };
         /** ServerCreate */
         ServerCreate: {
             /** Name */
@@ -5776,6 +5834,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuditActorRead"][];
+                };
+            };
+        };
+    };
+    client_metrics_api_v1_servers__server_id__clients_monitoring_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerClientMetrics"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -4,7 +4,26 @@ from datetime import datetime
 from enum import Enum
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+
+class ClientMetric(BaseModel):
+    credential_id: UUID
+    latest_handshake: datetime | None
+    downloaded_bytes: int | None = Field(ge=0)
+    uploaded_bytes: int | None = Field(ge=0)
+
+
+class ProtocolClientMetrics(BaseModel):
+    protocol_id: UUID
+    sampled_at: datetime | None = None
+    stale: bool = False
+    clients: list[ClientMetric] = Field(default_factory=list)
+
+
+class ServerClientMetrics(BaseModel):
+    server_id: UUID
+    protocols: list[ProtocolClientMetrics]
 
 
 class MetricsRange(str, Enum):
