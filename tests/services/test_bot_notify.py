@@ -55,6 +55,9 @@ async def scene(world: World, **link: Any) -> tuple[UUID, UUID, Any]:
     admin = await admin_login()
     link_id = await make_link(admin.admin.id, **link)
     server, _, _ = await world.server()
+    # Random UUID prefixes can be all digits and correctly redacted as private data.
+    server.name = "notify-server"
+    await world.session.commit()
     await set_cursor(minutes_ago(10))
     return admin.admin.id, link_id, server
 

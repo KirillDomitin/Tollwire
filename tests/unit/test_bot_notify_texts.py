@@ -6,11 +6,15 @@ from uuid import UUID
 
 import pytest
 
-from modules.bot.notify_texts import render_notification
+from modules.bot.notify_texts import render_notification, sanitize_name
 
 SINCE = datetime(2026, 11, 1, 23, 59, tzinfo=timezone.utc)
 UNTIL = datetime(2026, 11, 2, 0, 1, tzinfo=timezone.utc)
 SERVER_ID = UUID("fbd45968-3e4e-4192-8a52-d1d3d71106fe")
+
+
+def test_numeric_server_suffix_is_redacted_as_private_data() -> None:
+    assert sanitize_name("srv-32218758") == "srv-"
 
 
 def test_single_entity_link_filters_the_existing_audit_page() -> None:
