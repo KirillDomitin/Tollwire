@@ -5,6 +5,8 @@
 Список ожидающих лежит в хранилище: после рестарта бота опрос продолжается.
 Время виртуальное (FakeClock): три минуты проходят за доли секунды, моменты запросов точны."""
 
+import asyncio
+
 import pytest
 from aiogram.exceptions import TelegramForbiddenError
 from aiogram.methods import SendMessage
@@ -176,6 +178,10 @@ async def test_a_failed_send_is_retried_with_a_new_link_and_the_old_one_is_dead(
     first, second = world.panel.links
     assert not first.live and second.live and second.url == url  # человек получил ту ссылку, что действует
     assert first.url not in "\n".join(ivan.texts)
+    # Sending is observed before the watcher finishes its asynchronous SQLite cleanup.
+    async with asyncio.timeout(10):
+        while await watch_ids(world.storage):
+            await asyncio.sleep(0.005)
     assert await watch_ids(world.storage) == []
 
 
