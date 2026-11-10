@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import QRCode from "qrcode";
+import { Route, Routes } from "react-router";
 
 import i18n from "../../i18n";
 import { json, renderWithProviders } from "../../test/render";
@@ -67,17 +68,25 @@ function mockApi({
   grants = [grant] as unknown[],
   patchStatus = 200,
   userPatch = {} as Record<string, unknown>,
+  otherUsers = [] as Record<string, unknown>[],
+  deleteStatus = 204,
   serverProtocols = [{ id: "p1", server_id: SERVER, type: "amnezia_wg", port: 51820 }] as unknown[],
   /** Если задан, сервер отвечает как шлюз: выходы и назначения клиентов. */
   gateway = null as { exits: unknown[]; assignments: unknown[] } | null,
 } = {}) {
   const calls: string[] = [];
   let currentUser: Record<string, unknown> = { ...user, ...userPatch };
+  let deleted = false;
   vi.stubGlobal(
     "fetch",
     vi.fn(async (request: Request) => {
       const path = new URL(request.url).pathname;
       calls.push(`${request.method} ${path}`);
+      if (request.method === "DELETE" && path === `/api/v1/vpn-users/${USER}`) {
+        if (deleteStatus !== 204) return json({ detail: "live clients" }, deleteStatus);
+        deleted = true;
+        return new Response(null, { status: 204 });
+      }
       if (request.method === "PATCH" && path === `/api/v1/vpn-users/${USER}`) {
         const body = (await request.json()) as Record<string, unknown>;
         calls.push(`PATCH body ${JSON.stringify(body)}`);
@@ -104,7 +113,11 @@ function mockApi({
           202,
         );
       }
-      if (path === "/api/v1/vpn-users") return json([{ ...currentUser, access: subscriptions[0] ?? null }]);
+      if (path === "/api/v1/vpn-users")
+        return json([
+          ...(deleted ? [] : [{ ...currentUser, access: subscriptions[0] ?? null }]),
+          ...otherUsers,
+        ]);
       if (path === `/api/v1/vpn-users/${USER}`) return json(currentUser);
       if (path === `/api/v1/vpn-users/${USER}/subscriptions`) return json(subscriptions);
       if (path === `/api/v1/subscriptions/${SUB}/grants`) return json(grants);
@@ -167,6 +180,68 @@ describe("UsersPage search", () => {
     await userEvent.clear(search);
     await userEvent.type(search, "ALICE@exa");
     expect(screen.getByRole("link", { name: "alice" })).toBeInTheDocument();
+  });
+});
+
+describe("User deletion through the web interface", () => {
+  it.each([
+    "alice",
+    "Admin [Android (16.0)]",
+    "Admin [Android  (16.0)]",
+    "Admin\u00a0[Android (16.0)]\u200b",
+  ])("deletes only the selected ID when two users are named %s", async (username) => {
+    const displayedName = username.replace(/ {2,}/g, " ");
+    const otherId = "66666666-6666-4666-8666-666666666666";
+    const calls = mockApi({
+      subscriptions: [],
+      userPatch: { username },
+      otherUsers: [{ ...user, id: otherId, username, email: "other@example.com", access: null }],
+    });
+    renderWithProviders(
+      <Routes>
+        <Route path="/users" element={<UsersPage />} />
+        <Route path="/users/:userId" element={<UserPage />} />
+      </Routes>,
+      { route: "/users" },
+    );
+
+    const links = await screen.findAllByRole("link", { name: displayedName });
+    await userEvent.click(links.find((link) => link.getAttribute("href") === `/users/${USER}`)!);
+    await screen.findByRole("heading", { level: 1, name: `Пользователь: ${displayedName}` });
+    await userEvent.click(screen.getByRole("tab", { name: "Основное" }));
+    await userEvent.click(screen.getByRole("button", { name: "Удалить пользователя" }));
+    const dialog = within(screen.getByRole("alertdialog"));
+    const confirm = dialog.getByRole("button", { name: "Удалить пользователя" });
+    expect(confirm).toBeDisabled();
+    expect(calls.filter((call) => call.startsWith("DELETE"))).toEqual([]);
+    const input = dialog.getByRole("textbox", { name: `Введите «${USER}», чтобы подтвердить` });
+    await userEvent.click(input);
+    await userEvent.paste(username);
+    expect(confirm).toBeDisabled();
+    await userEvent.clear(input);
+    await userEvent.paste(USER);
+    expect(confirm).toBeEnabled();
+    await userEvent.click(confirm);
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    const remaining = await screen.findByRole("link", { name: displayedName });
+    expect(remaining).toHaveAttribute("href", `/users/${otherId}`);
+    expect(calls.filter((call) => call.startsWith("DELETE"))).toEqual([`DELETE /api/v1/vpn-users/${USER}`]);
+  });
+
+  it("keeps the card open and explains a refusal to delete a user with live clients", async () => {
+    const calls = mockApi({ deleteStatus: 409 });
+    renderCard();
+    await screen.findByRole("heading", { level: 1, name: "Пользователь: alice" });
+    await userEvent.click(screen.getByRole("tab", { name: "Основное" }));
+    await userEvent.click(screen.getByRole("button", { name: "Удалить пользователя" }));
+    const dialog = within(screen.getByRole("alertdialog"));
+    await userEvent.type(dialog.getByRole("textbox"), USER);
+    await userEvent.click(dialog.getByRole("button", { name: "Удалить пользователя" }));
+    expect(await dialog.findByText(i18n.t("users.card.delete.conflict"))).toBeInTheDocument();
+    await userEvent.click(dialog.getByRole("button", { name: "Отмена" }));
+    expect(screen.getByRole("heading", { level: 1, name: "Пользователь: alice" })).toBeInTheDocument();
+    expect(calls.filter((call) => call.startsWith("DELETE"))).toEqual([`DELETE /api/v1/vpn-users/${USER}`]);
   });
 });
 
@@ -675,7 +750,7 @@ describe("users in English", () => {
     await userEvent.click(screen.getByRole("button", { name: "Delete user" }));
     const dialog = await screen.findByRole("alertdialog");
     expect(within(dialog).getByText("Delete user “alice”?")).toBeInTheDocument();
-    expect(within(dialog).getByLabelText("Type “alice” to confirm")).toBeInTheDocument();
+    expect(within(dialog).getByLabelText(`Type “${USER}” to confirm`)).toBeInTheDocument();
   });
 
   it("explains granting access and the term choices in English", async () => {

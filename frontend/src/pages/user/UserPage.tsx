@@ -332,7 +332,7 @@ function DeleteUser({ userId, username }: { userId: string; username: string }) 
           consequences={t("users.card.delete.consequences")}
           actionLabel={t("users.card.delete.action")}
           busyLabel={t("users.card.delete.busy")}
-          confirmText={username}
+          confirmText={userId}
           onConfirm={async () => {
             await unwrap(
               api.DELETE("/api/v1/vpn-users/{user_id}", { params: { path: { user_id: userId } } }),
