@@ -8,6 +8,8 @@ import { useAuth } from "../auth/AuthContext";
 import { Avatar } from "../components/Avatar";
 import { Button } from "../components/Button";
 import table from "../components/DataTable.module.css";
+import { SortHeader } from "../components/SortHeader";
+import { accessRank, nextSort, sortRows, type Sort } from "../lib/tableSort";
 import { SearchIcon } from "../components/icons";
 import { Notice } from "../components/Notice";
 import { PageHeader } from "../components/PageHeader";
@@ -37,10 +39,13 @@ export function usersSummary(users: VPNUserListItem[], now: Date = new Date()): 
   return `${total} — ${parts.join(", ")}`;
 }
 
+type UserSort = "name" | "access" | "until";
+
 export function UsersPage() {
   const { t } = useTranslation();
   const { can } = useAuth();
   const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<Sort<UserSort>>(null);
   const users = useQuery({
     queryKey: ["vpn-users"],
     queryFn: () => unwrap(api.GET("/api/v1/vpn-users")),
@@ -94,7 +99,7 @@ export function UsersPage() {
           {shown.length === 0 ? (
             <p className={styles.quiet}>{t("users.list.noMatches")}</p>
           ) : (
-            <UserTable users={shown} />
+            <UserTable users={shown} sort={sort} onSort={(field) => setSort(nextSort(sort, field))} />
           )}
           <div className={`${table.foot} ${styles.foot}`}>
             <span>{t("users.list.shown", { shown: shown.length, total: all.length })}</span>
@@ -106,16 +111,33 @@ export function UsersPage() {
   );
 }
 
-function UserTable({ users }: { users: VPNUserListItem[] }) {
+function UserTable({
+  users,
+  sort,
+  onSort,
+}: {
+  users: VPNUserListItem[];
+  sort: Sort<UserSort>;
+  onSort: (field: UserSort) => void;
+}) {
   const { t } = useTranslation();
   // Сначала те, у кого доступ скоро кончится, затем по имени — так список работает как напоминание о продлении.
   const order = { warn: 0, ok: 1, process: 2, down: 3, idle: 4 };
-  const rows = users
+  const now = new Date();
+  const sorted = sort
+    ? sortRows(users, sort.direction, (user) => {
+        if (sort.field === "name") return user.username;
+        if (sort.field === "access") return accessRank(user, now);
+        return user.access && user.access.status !== "revoked" ? Date.parse(user.access.valid_until) : null;
+      })
+    : users;
+  const rows = sorted
     .map((user) => ({ user, ...accessSignal(user.access ?? null) }))
-    .sort(
-      (a, b) =>
-        order[a.signal] - order[b.signal] ||
-        a.user.username.localeCompare(b.user.username, currentLanguage()),
+    .sort((a, b) =>
+      sort
+        ? 0
+        : order[a.signal] - order[b.signal] ||
+          a.user.username.localeCompare(b.user.username, currentLanguage()),
     );
 
   return (
@@ -123,9 +145,15 @@ function UserTable({ users }: { users: VPNUserListItem[] }) {
       <table className={`${table.table} ${table.stack}`}>
         <thead>
           <tr>
-            <th scope="col">{t("users.list.columns.user")}</th>
-            <th scope="col">{t("users.list.columns.access")}</th>
-            <th scope="col">{t("users.list.columns.until")}</th>
+            <SortHeader field="name" sort={sort} onSort={onSort}>
+              {t("users.list.columns.user")}
+            </SortHeader>
+            <SortHeader field="access" sort={sort} onSort={onSort}>
+              {t("users.list.columns.access")}
+            </SortHeader>
+            <SortHeader field="until" sort={sort} onSort={onSort}>
+              {t("users.list.columns.until")}
+            </SortHeader>
             <th scope="col">{t("users.list.columns.note")}</th>
           </tr>
         </thead>

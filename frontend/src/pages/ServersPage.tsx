@@ -8,6 +8,8 @@ import { useAuth } from "../auth/AuthContext";
 import { Button } from "../components/Button";
 import table from "../components/DataTable.module.css";
 import { ActivityIcon, SearchIcon, ServerIcon, UsersIcon } from "../components/icons";
+import { SortHeader } from "../components/SortHeader";
+import { nextSort, serverRank, sortRows, type Sort } from "../lib/tableSort";
 import { Notice } from "../components/Notice";
 import { PageHeader } from "../components/PageHeader";
 import { StatCard } from "../components/StatCard";
@@ -28,10 +30,13 @@ export { freshMetrics };
 /** Состояние парка меняют фоновые задачи (health, sync) — список подтягивается сам раз в 30 секунд. */
 const REFRESH_MS = 30_000;
 
+type ServerSort = "name" | "status" | "clients";
+
 export function ServersPage() {
   const { t } = useTranslation();
   const { can } = useAuth();
   const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<Sort<ServerSort>>(null);
   const servers = useQuery({
     queryKey: ["servers"],
     queryFn: () => unwrap(api.GET("/api/v1/servers")),
@@ -89,7 +94,12 @@ export function ServersPage() {
           {shown.length === 0 ? (
             <p className={styles.quiet}>{t("servers.list.noMatches")}</p>
           ) : (
-            <ServerTable servers={shown} metrics={latest} />
+            <ServerTable
+              servers={shown}
+              metrics={latest}
+              sort={sort}
+              onSort={(field) => setSort(nextSort(sort, field))}
+            />
           )}
           <div className={`${table.foot} ${styles.foot}`}>
             <span>{t("servers.list.shown", { shown: shown.length, total: all.length })}</span>
@@ -142,24 +152,47 @@ function Stats({ servers, metrics }: { servers: Server[]; metrics: Map<string, L
   );
 }
 
-function ServerTable({ servers, metrics }: { servers: Server[]; metrics: Map<string, LatestMetrics> }) {
+function ServerTable({
+  servers,
+  metrics,
+  sort,
+  onSort,
+}: {
+  servers: Server[];
+  metrics: Map<string, LatestMetrics>;
+  sort: Sort<ServerSort>;
+  onSort: (field: ServerSort) => void;
+}) {
   const { t } = useTranslation();
+  const rows = sort
+    ? sortRows(servers, sort.direction, (server) => {
+        if (sort.field === "name") return server.name;
+        if (sort.field === "status") return serverRank(server);
+        return metrics.get(server.id)?.clients_online;
+      })
+    : servers;
   return (
     <div className={table.wrap}>
       <table className={`${table.table} ${table.stack}`}>
         <thead>
           <tr>
-            <th scope="col">{t("servers.list.columns.state")}</th>
-            <th scope="col">{t("servers.list.columns.server")}</th>
+            <SortHeader field="status" sort={sort} onSort={onSort}>
+              {t("servers.list.columns.state")}
+            </SortHeader>
+            <SortHeader field="name" sort={sort} onSort={onSort}>
+              {t("servers.list.columns.server")}
+            </SortHeader>
             <th scope="col">{t("servers.list.columns.address")}</th>
-            <th scope="col">{t("servers.list.columns.clients")}</th>
+            <SortHeader field="clients" sort={sort} onSort={onSort}>
+              {t("servers.list.columns.clients")}
+            </SortHeader>
             <th scope="col">{t("servers.list.columns.cpu")}</th>
             <th scope="col">{t("servers.list.columns.check")}</th>
             <th scope="col">{t("servers.list.columns.hostKey")}</th>
           </tr>
         </thead>
         <tbody>
-          {servers.map((server) => {
+          {rows.map((server) => {
             const { signal, label } = serverSignal(server);
             const metric = metrics.get(server.id);
             const { flag, rest } = splitFlag(server.name);

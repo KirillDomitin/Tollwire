@@ -130,3 +130,31 @@
     padding-bottom: var(--space-2);
   }
 }
+
+.sortButton {
+  padding: 0;
+  min-width: 0;
+  color: inherit;
+  font: inherit;
+  white-space: normal;
+}
+
+/* Keep sorting available above stacked cards without widening the mobile table. */
+@media (max-width: 760px) {
+  .stack thead:has(.sortable) {
+    display: block;
+  }
+  .stack thead:has(.sortable) tr {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .stack thead:has(.sortable) th {
+    display: none;
+  }
+  .stack thead:has(.sortable) th.sortable {
+    display: block;
+    padding: var(--space-2);
+    white-space: normal;
+    min-width: 0;
+  }
+}

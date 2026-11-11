@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { api, unwrap, type Schemas } from "../api/client";
 
@@ -27,5 +27,19 @@ export function useLatestMetrics(): Map<string, LatestMetrics> {
     refetchInterval: 60_000,
   });
   const { data, dataUpdatedAt } = metrics;
-  return useMemo(() => freshMetrics(data ?? [], dataUpdatedAt), [data, dataUpdatedAt]);
+  // Expire cached samples even while refresh requests fail.
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => {
+    const deadlines = (data ?? [])
+      .map((item) => Date.parse(item.ts) + STALE_MS + 1)
+      .filter((deadline) => deadline > clock);
+    if (!deadlines.length) return;
+    const timer = window.setTimeout(
+      () => setClock(Date.now()),
+      Math.max(1, Math.min(...deadlines) - Date.now()),
+    );
+    return () => window.clearTimeout(timer);
+  }, [data, clock]);
+  const receivedAt = Math.max(clock, dataUpdatedAt);
+  return useMemo(() => freshMetrics(data ?? [], receivedAt), [data, receivedAt]);
 }
