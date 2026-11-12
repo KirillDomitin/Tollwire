@@ -5,14 +5,15 @@ from datetime import datetime
 from typing import Sequence
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from modules.access.models import AccessGrantStatus
+from modules.access.models import AccessGrantStatus, CredentialState
 from modules.access.models.access_grant import AccessGrant
 from modules.access.models.subscription import Subscription
 from modules.access.models.vpn_credential import VPNCredential
 from modules.protocols.models.protocol import ProtocolType, VPNProtocol
+from modules.vpn_users.models.user import VPNUser
 
 _ACTIVE_STATUSES = (AccessGrantStatus.PENDING, AccessGrantStatus.ACTIVE)
 
@@ -127,11 +128,32 @@ class AccessGrantRepository:
 
 
 class VPNCredentialRepository:
+    async def lock_user(self, user_id: UUID) -> VPNUser | None:
+        return await self.session.get(VPNUser, user_id, with_for_update=True, populate_existing=True)
+
+    async def count_gateway_for_user(self, user_id: UUID) -> int:
+        query = (select(func.count()).select_from(VPNCredential)
+                 .join(AccessGrant, VPNCredential.access_grant_id == AccessGrant.id)
+                 .join(Subscription, AccessGrant.subscription_id == Subscription.id)
+                 .join(VPNProtocol, AccessGrant.protocol_id == VPNProtocol.id)
+                 .where(Subscription.user_id == user_id, VPNProtocol.type == ProtocolType.AMNEZIA_GATEWAY,
+                        VPNCredential.revoked_at.is_(None)))
+        return int((await self.session.execute(query)).scalar_one())
+
+    async def by_request_id(self, request_id: UUID) -> VPNCredential | None:
+        return (await self.session.execute(select(VPNCredential).where(
+            VPNCredential.request_id == request_id))).scalar_one_or_none()
+
+    async def live_for_grant(self, grant_id: UUID) -> Sequence[VPNCredential]:
+        return (await self.session.execute(select(VPNCredential).where(
+            VPNCredential.access_grant_id == grant_id, VPNCredential.revoked_at.is_(None)))).scalars().all()
+
     async def live_by_server(self, server_id: UUID) -> list[tuple[VPNCredential, UUID]]:
         rows = await self.session.execute(
             select(VPNCredential, AccessGrant.protocol_id)
             .join(AccessGrant, VPNCredential.access_grant_id == AccessGrant.id)
-            .where(AccessGrant.server_id == server_id, VPNCredential.revoked_at.is_(None))
+            .where(AccessGrant.server_id == server_id, VPNCredential.revoked_at.is_(None),
+                   VPNCredential.state == CredentialState.ACTIVE)
         )
         return [(credential, protocol_id) for credential, protocol_id in rows.all()]
 
@@ -162,7 +184,7 @@ class VPNCredentialRepository:
             VPNCredential.revoked_at.is_(None),
         )
         result = await self.session.execute(sql_request)
-        return result.scalar_one_or_none()
+        return result.scalars().first()
 
     async def list_with_access_by_protocol_id(
         self, protocol_id: UUID

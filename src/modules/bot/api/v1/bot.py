@@ -11,9 +11,11 @@ from fastapi.responses import JSONResponse
 
 from core.exceptions import ReasonConflictError
 from core.rate_limit import RateLimiter
+from modules.access.schemas import GatewayDeviceCreate, GatewayDevicesRead
 from modules.bot.admin_links import AdminLinkService
 from modules.bot.config_links import ConfigLinkService
 from modules.bot.dependencies import BotKeyContext
+from modules.bot.devices import BotDeviceService
 from modules.bot.invites import BotInviteService
 from modules.bot.keys import BotKeyService
 from modules.bot.models.registration import BotRegistration
@@ -36,9 +38,42 @@ from modules.bot.schemas import (
     RegistrationCreate,
     UserStatusRead,
 )
+from modules.jobs.schemas import JobRead
 
 # Нет router-level зависимости: ключ - параметр каждого маршрута, ровно одна зависимость на маршрут (её проверяет тест).
 router = APIRouter(prefix="/api/v1/bot", tags=["bot"])
+
+
+@router.get("/users/by-telegram/{telegram_id}/devices", response_model=GatewayDevicesRead)
+async def devices(telegram_id: Annotated[int, Path(ge=1, le=2**63 - 1)], context: BotKeyContext) -> GatewayDevicesRead:
+    return await BotDeviceService(context.session, context.actor).list(telegram_id)
+
+
+@router.post("/users/by-telegram/{telegram_id}/devices", response_model=JobRead, status_code=202)
+async def add_device(
+    telegram_id: Annotated[int, Path(ge=1, le=2**63 - 1)], data: GatewayDeviceCreate, context: BotKeyContext
+) -> JobRead:
+    return JobRead.model_validate(await BotDeviceService(context.session, context.actor).add(telegram_id, data))
+
+
+@router.post("/users/by-telegram/{telegram_id}/devices/{credential_id}/revoke")
+async def revoke_device(
+    telegram_id: Annotated[int, Path(ge=1, le=2**63 - 1)], credential_id: UUID, context: BotKeyContext
+) -> dict[str, str]:
+    await BotDeviceService(context.session, context.actor).revoke(telegram_id, credential_id)
+    return {"status": "accepted"}
+
+
+@router.post("/users/by-telegram/{telegram_id}/devices/{credential_id}/config-link", response_model=ConfigLinkRead)
+async def device_config_link(
+    telegram_id: Annotated[int, Path(ge=1, le=2**63 - 1)],
+    credential_id: UUID, context: BotKeyContext, response: Response
+) -> ConfigLinkRead:
+    await BotDeviceService(context.session, context.actor).owned(telegram_id, credential_id)
+    service = ConfigLinkService(context.session, context.actor)
+    link, token = await service.issue_for_telegram(telegram_id, credential_id)
+    response.headers["Cache-Control"] = "no-store"
+    return await service.url_of(link, token)
 
 
 def _read(registration: BotRegistration) -> BotRegistrationRead:

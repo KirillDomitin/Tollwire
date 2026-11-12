@@ -129,6 +129,10 @@ def test_every_bot_api_route_requires_the_bot_key_and_no_admin_permission() -> N
         ("GET", "registrations/{}"),
         ("GET", "users/by-telegram/{}"),
         ("POST", "users/by-telegram/{}/config-link"),
+        ("GET", "users/by-telegram/{}/devices"),
+        ("POST", "users/by-telegram/{}/devices"),
+        ("POST", "users/by-telegram/{}/devices/{}/revoke"),
+        ("POST", "users/by-telegram/{}/devices/{}/config-link"),
         ("POST", "outbox/claim"),
         ("POST", "outbox/ack"),
         ("POST", "admin-links"),  # 25.5: привязка Telegram админа по коду
@@ -386,6 +390,8 @@ async def test_two_superadmins_cannot_demote_each_other_at_once(session: AsyncSe
 
 
 CRITICAL = {
+    "GET /api/v1/vpn-users/{user_id}/gateway-devices": Permission.ACCESS_READ,
+    "POST /api/v1/vpn-users/{user_id}/gateway-devices": Permission.ACCESS_MANAGE,
     "POST /api/v1/credentials/{credential_id}/config": Permission.CONFIG_REVEAL,
     "PUT /api/v1/servers/{server_id}/credentials": Permission.SERVERS_MANAGE,
     "POST /api/v1/servers/{server_id}/test-connection": Permission.SERVERS_MANAGE,

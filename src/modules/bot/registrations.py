@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions import AppError, NotFoundError, RegistrationConflictError, StateConflictError
 from core.security import hash_token
+from modules.access.models import CredentialState
 from modules.access.repository import AccessGrantRepository, SubscriptionRepository, VPNCredentialRepository
 from modules.access.schemas import AccessGrantCreate, SubscriptionCreate
 from modules.access.service import AccessGrantService, SubscriptionService, VPNCredentialService
@@ -24,6 +25,7 @@ from modules.bot.repository import BotInviteRepository, BotRegistrationRepositor
 from modules.bot.schemas import RegistrationCreate, UserStatusRead
 from modules.jobs.models.job import Job, JobStatus, JobType
 from modules.jobs.repository import JobRepository
+from modules.jobs.service import JobService
 from modules.protocols.repository import ProtocolRepository
 from modules.vpn_users.models.user import VPNUserStatus
 from modules.vpn_users.repository import VPNUserRepository
@@ -196,17 +198,30 @@ class BotRegistrationService:
         Регистрация по этому гранту (если она есть и ждёт выдачи) становится active или failed. Грант не из бота:
         один запрос по уникальному индексу, больше ничего.
         """
-        if job.type != JobType.CREATE_USER or job.access_grant_id is None:
+        if job.type not in (JobType.CREATE_USER, JobType.CREATE_DEVICE) or job.access_grant_id is None:
             return
         registration = await self.registrations.get_by_grant_id(job.access_grant_id, lock=True)
         if registration is None or registration.status != RegistrationStatus.PROVISIONING:
             return
         if job.status == JobStatus.SUCCESS:
-            self._activate(registration)
+            credentials = await VPNCredentialRepository(self.session).live_for_grant(job.access_grant_id)
+            target = (job.params or {}).get("credential_id")
+            ready = next((item for item in credentials if item.state == CredentialState.ACTIVE
+                          and (target is None or str(item.id) == str(target))), None)
+            if ready is not None:
+                try:
+                    await VPNCredentialService(self.session, self.actor)._ensure_grant_is_live(job.access_grant_id)
+                except AppError:
+                    self._fail(registration, "Access ended before credential was issued", job.id)
+                else:
+                    self._activate(registration)
+            else:
+                self._fail(registration, "Credential was revoked before issue completed", job.id)
         elif job.status == JobStatus.FAILED:
             # Админ мог повторить выдачу, пока эта (зависшая) задача ещё шла: итог решает новая, а не старая.
             # Запрос сам сбрасывает в БД статус этой задачи (autoflush), так что она не считается незавершённой.
-            if await JobRepository(self.session).has_unfinished_for_grant(JobType.CREATE_USER, job.access_grant_id):
+            if any([await JobRepository(self.session).has_unfinished_for_grant(kind, job.access_grant_id)
+                    for kind in (JobType.CREATE_USER, JobType.CREATE_DEVICE)]):
                 return
             self._fail(registration, job.error, job.id)
 
@@ -241,12 +256,15 @@ class BotRegistrationService:
             grant_id = registration.access_grant_id
             if grant_id is None:
                 self._fail(registration, None)
-            elif await jobs.has_unfinished_for_grant(JobType.CREATE_USER, grant_id):
+            elif any([await jobs.has_unfinished_for_grant(kind, grant_id)
+                      for kind in (JobType.CREATE_USER, JobType.CREATE_DEVICE)]):
                 continue
-            elif await credentials.get_live_by_access_grant_id(grant_id):
+            elif any(item.state == CredentialState.ACTIVE for item in await credentials.live_for_grant(grant_id)):
                 self._activate(registration)
             else:
-                last = await jobs.get_last_for_grant(JobType.CREATE_USER, grant_id)
+                candidates = [await jobs.get_last_for_grant(kind, grant_id)
+                              for kind in (JobType.CREATE_USER, JobType.CREATE_DEVICE)]
+                last = max((item for item in candidates if item), key=lambda item: item.created_at, default=None)
                 self._fail(registration, last.error if last else None, last.id if last else None)
             changed += 1
         await self.session.commit()
@@ -268,7 +286,8 @@ class BotRegistrationService:
             await self.session.rollback()
             raise StateConflictError("The user or the access of this registration was removed: issue it manually")
 
-        if await VPNCredentialRepository(self.session).get_live_by_access_grant_id(grant_id):
+        existing = await VPNCredentialRepository(self.session).live_for_grant(grant_id)
+        if any(item.state == CredentialState.ACTIVE for item in existing):
             # Клиент уже есть (задачу закрыли как упавшую, но выдача успела): это не сбой.
             self._activate(registration)
             await self.session.commit()
@@ -279,7 +298,24 @@ class BotRegistrationService:
         registration.finished_at = None
         self.audit.record(AuditAction.BOT_REGISTRATION_RETRIED, AuditEntity.BOT_REGISTRATION, registration.id)
         try:
-            await VPNCredentialService(self.session, self.actor).schedule_issue(grant_id)
+            pending = next((item for item in existing if item.state in (
+                CredentialState.RESERVED, CredentialState.PROVISIONING
+            )), None)
+            if pending is None:
+                await VPNCredentialService(self.session, self.actor).schedule_issue(grant_id)
+            else:
+                grant = await AccessGrantRepository(self.session).get_by_id(grant_id)
+                assert grant is not None
+                await VPNCredentialService(self.session, self.actor)._ensure_grant_is_live(grant_id)
+                jobs = JobRepository(self.session)
+                if any([await jobs.has_unfinished_for_grant(kind, grant_id)
+                        for kind in (JobType.CREATE_USER, JobType.CREATE_DEVICE)]):
+                    raise StateConflictError("Credential is already being issued")
+                await JobService(self.session, self.actor).create(
+                    JobType.CREATE_DEVICE if pending.is_gateway else JobType.CREATE_USER,
+                    server_id=grant.server_id, access_grant_id=grant_id,
+                    params={"credential_id": str(pending.id)}
+                )
         except AppError:
             await self.session.rollback()  # доступ отозван / выдача уже идёт: статус остаётся failed
             raise

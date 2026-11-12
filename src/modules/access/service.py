@@ -1,10 +1,12 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
+from base64 import b32encode
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from uuid import UUID
+from uuid import UUID, uuid4
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions import (
@@ -14,25 +16,31 @@ from core.exceptions import (
     InvalidDataError,
     LiveCredentialExistsError,
     NotFoundError,
+    ReasonConflictError,
     UnsupportedProtocolError,
 )
 from core.security import decrypt_secret, encrypt_secret
-from modules.access.models import AccessGrantStatus
+from infrastructure.vpn.provider import VPNProvider
+from modules.access.models import AccessGrantStatus, CredentialState
 from modules.access.models.access_grant import AccessGrant
 from modules.access.models.subscription import Subscription
 from modules.access.models.vpn_credential import VPNCredential
 from modules.access.repository import AccessGrantRepository, SubscriptionRepository, VPNCredentialRepository
 from modules.access.schemas import (
     AccessGrantCreate,
+    GatewayDeviceCreate,
+    GatewayDeviceGateway,
+    GatewayDevicesRead,
     SubscriptionCreate,
     SubscriptionUpdate,
     VPNCredentialConfigRead,
+    VPNCredentialRead,
 )
 from modules.audit.actor import AuditActor
 from modules.audit.models.audit_log import AuditAction, AuditEntity
 from modules.audit.service import AuditService, diff_changes
 from modules.gateway.assignment import GatewayAssignmentService
-from modules.jobs.models.job import Job, JobType
+from modules.jobs.models.job import Job, JobStatus, JobType
 from modules.jobs.repository import JobRepository
 from modules.jobs.service import JobService
 from modules.protocols.models.protocol import ProtocolType
@@ -368,125 +376,198 @@ class VPNCredentialService:
         self.audit = AuditService(session, actor)
         self.actor = actor
 
-    async def schedule_issue(self, access_grant_id: UUID) -> Job:
-        """Ставит задачу CREATE_USER: воркер создаст клиента на сервере и сохранит credential.
-
-        Быстрые проверки делаем здесь, чтобы сразу ответить 404/409, а не получить
-        упавшую задачу. Воркер всё равно перепроверит — за время в очереди всё могло измениться.
-        """
+    async def stage_issue(
+        self, access_grant_id: UUID, device_name: str | None = None, request_id: UUID | None = None
+    ) -> tuple[VPNCredential, Job]:
+        """Reserve capacity and its targeted job in one transaction, before any SSH."""
         grant = await self._ensure_grant_is_live(access_grant_id)
-        if await self.credentials.get_live_by_access_grant_id(access_grant_id):
-            raise AlreadyExistsError("Access grant already has a live credential")
-        if await self.job_repository.has_unfinished_for_grant(JobType.CREATE_USER, access_grant_id):
-            raise AlreadyExistsError("Credential is already being issued")
-        return await self.jobs.create(JobType.CREATE_USER, server_id=grant.server_id, access_grant_id=grant.id)
-
-    async def provision(self, access_grant_id: UUID) -> VPNCredential:
-        """Создаёт клиента на сервере и сохраняет его конфиг в зашифрованном виде.
-
-        Вызывается воркером под ServerLock сервера гранта. Идемпотентно: если живой
-        credential уже есть (повтор задачи), возвращает его, второго клиента не создаёт.
-        """
+        subscription = await self.subscriptions.get_by_id(grant.subscription_id)
+        assert subscription is not None
+        await self.credentials.lock_user(subscription.user_id)
+        await self.session.refresh(grant)
+        await self.session.refresh(subscription)
         grant = await self._ensure_grant_is_live(access_grant_id)
-        live = await self.credentials.get_live_by_access_grant_id(access_grant_id)
-        if live:
-            await self._attach_to_gateway(live, grant.protocol_id)  # повтор после сбоя назначения чинит его
-            return live
         protocol = await self.protocols.get_by_id(grant.protocol_id)
-        if not protocol:
-            raise NotFoundError(f"Protocol '{grant.protocol_id}' not found")
+        if protocol is None:
+            raise NotFoundError("Protocol not found")
+        if request_id is not None:
+            previous = await self.credentials.by_request_id(request_id)
+            if previous is not None:
+                if previous.access_grant_id != grant.id:
+                    raise NotFoundError("Device not found")
+                job = (await self.session.execute(select(Job).where(
+                    Job.type.in_((JobType.CREATE_DEVICE, JobType.CREATE_USER)),
+                    Job.params["credential_id"].astext == str(previous.id),
+                ).order_by(Job.created_at.desc()).limit(1))).scalar_one_or_none()
+                if job is None:
+                    raise AlreadyExistsError("Device request has already completed")
+                return previous, job
+        gateway = protocol.type == ProtocolType.AMNEZIA_GATEWAY
+        if gateway:
+            if await self.credentials.count_gateway_for_user(subscription.user_id) >= 5:
+                raise ReasonConflictError("device_limit")
+        else:
+            existing = await self.credentials.live_for_grant(grant.id)
+            if existing:
+                if any(item.state in (CredentialState.RESERVED, CredentialState.PROVISIONING) for item in existing):
+                    raise AlreadyExistsError("Credential is already being issued")
+                raise AlreadyExistsError("Access grant already has a live credential")
+        credential_id = uuid4()
+        credential = VPNCredential(
+            id=credential_id, access_grant_id=grant.id, state=CredentialState.RESERVED,
+            is_gateway=gateway, device_name=device_name, request_id=request_id,
+            peer_name=("dev-" + b32encode(credential_id.bytes).decode().rstrip("=").lower()
+                       if gateway else client_name(grant.id)),
+            encrypted_config=None, client_address=None, client_public_key=None,
+        )
+        await self.credentials.create(credential)
+        job = Job(type=JobType.CREATE_DEVICE if gateway else JobType.CREATE_USER,
+                  server_id=grant.server_id, access_grant_id=grant.id,
+                  admin_id=self.actor.admin_id, params={"credential_id": str(credential.id)})
+        self.session.add(job)
+        await self.session.flush()
+        return credential, job
 
+    async def schedule_issue(
+        self, access_grant_id: UUID, device_name: str | None = None, request_id: UUID | None = None
+    ) -> Job:
+        _, job = await self.stage_issue(access_grant_id, device_name, request_id)
+        await self.session.commit()
+        await self.jobs.job_queue.enqueue(job.id)
+        return job
+
+    async def provision(self, access_grant_id: UUID, credential_id: UUID | None = None) -> VPNCredential:
+        # Legacy CREATE_USER targets a grant. New jobs always target the reserved credential.
+        if credential_id is None:
+            await self._ensure_grant_is_live(access_grant_id)
+            live = await self.credentials.live_for_grant(access_grant_id)
+            if live:
+                credential_id = live[0].id
+            else:
+                reserved, staged_job = await self.stage_issue(access_grant_id)
+                await self.session.delete(staged_job)  # legacy job already owns this operation
+                credential_id = reserved.id
+                await self.session.commit()
+        credential = await self.session.get(
+            VPNCredential, credential_id, with_for_update=True, populate_existing=True
+        )
+        if credential is None:
+            raise NotFoundError("Device not found")
+        if credential.access_grant_id != access_grant_id:
+            raise NotFoundError("Device not found")
+        if credential.revoked_at is not None or credential.state == CredentialState.REVOKING:
+            return credential
+        try:
+            grant = await self._ensure_grant_is_live(access_grant_id)
+        except InactiveAccessError:
+            await self.deprovision(access_grant_id, credential.id)
+            raise
+        if credential.state == CredentialState.ACTIVE:
+            await self._attach_to_gateway(credential, grant.protocol_id)
+            return credential
+        protocol = await self.protocols.get_by_id(grant.protocol_id)
+        if protocol is None:
+            raise NotFoundError("Protocol not found")
+        recovering = credential.state == CredentialState.PROVISIONING
+        credential.state = CredentialState.PROVISIONING
+        await self.session.commit()  # durable intent: failure or worker death must retain the slot
         ssh_client = await self.connections.create_ssh_client(grant.server_id)
         provider = self.connections.build_provider(ssh_client, protocol.type)
         async with ssh_client:
-            client = await provider.create_client(client_name(grant.id))
-            # Пока шёл SSH, грант могли отозвать (или подписка истекла). Перечитываем под блокировкой строк:
-            # иначе ниже мы записали бы ACTIVE поверх REVOKED из устаревшего объекта. Блокировка держится до
-            # commit — отзыв, пришедший сейчас, дождётся и увидит готового клиента (и снимет его своей задачей).
+            name = credential.peer_name or client_name(grant.id)
+            if recovering:
+                await self._cleanup_peer(provider, credential, name)
+            client = await provider.create_client(name)
             try:
                 grant = await self._ensure_grant_is_live(access_grant_id, lock=True)
+                refreshed = await self.session.get(VPNCredential, credential_id, populate_existing=True,
+                                                    with_for_update=True)
+                assert refreshed is not None
+                credential = refreshed
+                if credential.state == CredentialState.REVOKING or credential.revoked_at is not None:
+                    raise InactiveAccessError("Device is revoked")
             except InactiveAccessError:
-                await provider.revoke_client(client.public_key)  # сервер и так под нашей ServerLock
+                await provider.revoke_client(client.public_key)
+                credential.state = CredentialState.REVOKED
+                credential.revoked_at = datetime.now(timezone.utc)
+                await self.session.commit()
                 raise
-        # Если коммит ниже упадёт, на сервере останется peer без записи в БД — его подберёт sync (блок 13).
-        credential = VPNCredential(
-            access_grant_id=grant.id,
-            encrypted_config=encrypt_secret(client.config),
-            client_address=client.address,
-            client_public_key=client.public_key,
-        )
-        await self.credentials.create(credential)
+        credential.encrypted_config = encrypt_secret(client.config)
+        credential.client_address = client.address
+        credential.client_public_key = client.public_key
+        credential.state = CredentialState.ACTIVE
         grant.status = AccessGrantStatus.ACTIVE
-        self.audit.record(
-            AuditAction.CREDENTIAL_ISSUED,
-            AuditEntity.VPN_CREDENTIAL,
-            credential.id,
-            {
-                "access_grant_id": grant.id,
-                "server_id": grant.server_id,
-                "address": client.address,
-                "public_key": client.public_key,
-            },
-        )
+        self.audit.record(AuditAction.CREDENTIAL_ISSUED, AuditEntity.VPN_CREDENTIAL, credential.id,
+                          {"access_grant_id": grant.id, "server_id": grant.server_id,
+                           "address": client.address, "public_key": client.public_key})
         await self.session.commit()
-        # Конфиг выдан и сохранён; выход шлюза назначается уже после commit: нет исправных выходов - клиент остаётся без
-        # назначения (и без интернета), выход ему назначат при появлении (assign_unassigned), конфиг не теряется.
         await self._attach_to_gateway(credential, grant.protocol_id)
         return credential
+
+    async def _cleanup_peer(self, provider: VPNProvider, credential: VPNCredential, name: str) -> None:
+        # A timed out create may have persisted a peer whose key never reached the database.
+        peers = await provider.list_clients()
+        keys = {peer.public_key for peer in peers if peer.name == name}
+        if credential.client_public_key is not None:
+            keys.add(credential.client_public_key)
+        for public_key in keys:
+            await provider.revoke_client(public_key)
+        remaining = await provider.list_clients()
+        if any(peer.name == name or peer.public_key in keys for peer in remaining):
+            raise InactiveAccessError("Peer cleanup was not confirmed")
 
     async def _attach_to_gateway(self, credential: VPNCredential, protocol_id: UUID) -> None:
         protocol = await self.protocols.get_by_id(protocol_id)
         if protocol is not None and protocol.type == ProtocolType.AMNEZIA_GATEWAY:
             await GatewayAssignmentService(self.session, self.actor).attach(credential)
 
-    async def deprovision(self, access_grant_id: UUID) -> VPNCredential | None:
-        """Удаляет клиента гранта с сервера и помечает credential отозванным.
-
-        Вызывается воркером под ServerLock. Идемпотентно: нет живого credential — ничего не делает.
-        Состояние гранта не проверяем: отзывать нужно как раз у отозванных/истёкших.
-        """
+    async def deprovision(
+        self, access_grant_id: UUID, credential_id: UUID | None = None
+    ) -> VPNCredential | None:
         grant = await self.grants.get_by_id(access_grant_id)
-        if not grant:
-            raise NotFoundError(f"Access grant '{access_grant_id}' not found")
-        credential = await self.credentials.get_live_by_access_grant_id(access_grant_id)
-        if not credential:
-            return None
+        if grant is None:
+            raise NotFoundError("Access grant not found")
+        if credential_id is None:
+            result = None
+            for credential in await self.credentials.live_for_grant(grant.id):
+                result = await self.deprovision(grant.id, credential.id)
+            return result
+        credential = await self.get(credential_id)
+        if credential.access_grant_id != grant.id:
+            raise NotFoundError("Device not found")
+        if credential.revoked_at is not None:
+            return credential
+        was_reserved = credential.state == CredentialState.RESERVED
+        credential.state = CredentialState.REVOKING
+        await self.session.commit()
         protocol = await self.protocols.get_by_id(grant.protocol_id)
-        if not protocol:
-            raise NotFoundError(f"Protocol '{grant.protocol_id}' not found")
-
-        ssh_client = await self.connections.create_ssh_client(grant.server_id)
-        provider = self.connections.build_provider(ssh_client, protocol.type)
-        async with ssh_client:
-            await provider.revoke_client(credential.client_public_key)
+        if protocol is None:
+            raise NotFoundError("Protocol not found")
+        if not was_reserved:
+            ssh_client = await self.connections.create_ssh_client(grant.server_id)
+            provider = self.connections.build_provider(ssh_client, protocol.type)
+            async with ssh_client:
+                await self._cleanup_peer(provider, credential, credential.peer_name or client_name(grant.id))
         credential.revoked_at = datetime.now(timezone.utc)
-        self.audit.record(
-            AuditAction.CREDENTIAL_REVOKED,
-            AuditEntity.VPN_CREDENTIAL,
-            credential.id,
-            {"access_grant_id": grant.id, "server_id": grant.server_id, "public_key": credential.client_public_key},
-        )
+        credential.state = CredentialState.REVOKED
+        self.audit.record(AuditAction.CREDENTIAL_REVOKED, AuditEntity.VPN_CREDENTIAL, credential.id,
+                          {"access_grant_id": grant.id, "server_id": grant.server_id})
         await self.session.commit()
         if protocol.type == ProtocolType.AMNEZIA_GATEWAY:
-            # Назначение снимается после commit: карта шлюза строится из БД без отозванных (остальное чинит sync).
             await GatewayAssignmentService(self.session, self.actor).detach(credential)
         return credential
 
     async def schedule_revoke_for_grants(self, grants: Sequence[AccessGrant]) -> list[Job]:
-        """Ставит REVOKE_ACCESS тем грантам, у которых на сервере есть (или вот-вот появится) клиент.
-
-        «Вот-вот появится» — незавершённая CREATE_USER. Порядок выполнения не важен: если она
-        успеет первой, REVOKE_ACCESS увидит свежий credential и уберёт его; если опоздает —
-        provision откажет сам, потому что грант уже не живой.
-        """
         jobs = []
         for grant in grants:
-            if await self.credentials.get_live_by_access_grant_id(
-                grant.id
-            ) or await self.job_repository.has_unfinished_for_grant(JobType.CREATE_USER, grant.id):
-                jobs.append(
-                    await self.jobs.create(JobType.REVOKE_ACCESS, server_id=grant.server_id, access_grant_id=grant.id)
-                )
+            credentials = await self.credentials.live_for_grant(grant.id)
+            for credential in credentials:
+                result = await self.schedule_revoke(credential.id)
+                if isinstance(result, Job):
+                    jobs.append(result)
+            if not credentials and await self.job_repository.has_unfinished_for_grant(JobType.CREATE_USER, grant.id):
+                jobs.append(await self.jobs.create(JobType.REVOKE_ACCESS, server_id=grant.server_id,
+                                                   access_grant_id=grant.id))
         return jobs
 
     async def get(self, credential_id: UUID) -> VPNCredential:
@@ -503,7 +584,7 @@ class VPNCredentialService:
 
         У импортированного клиента конфига нет: ConfigUnavailableError (409), аудита не пишется."""
         credential = await self.get(credential_id)
-        if credential.revoked_at is not None:
+        if credential.revoked_at is not None or credential.state == CredentialState.REVOKING:
             raise InactiveAccessError("Credential is revoked")
         grant = await self._ensure_grant_is_live(credential.access_grant_id)
         if credential.encrypted_config is None:
@@ -555,17 +636,61 @@ class VPNCredentialService:
             return None, None
 
     async def schedule_revoke(self, credential_id: UUID) -> VPNCredential | Job:
-        """Уже отозванный credential возвращается как есть (идемпотентно), иначе ставится REVOKE_ACCESS.
-
-        Грант при этом остаётся живым: по нему можно выпустить новый credential (ротация ключей).
-        """
         credential = await self.get(credential_id)
         if credential.revoked_at is not None:
             return credential
         grant = await self.grants.get_by_id(credential.access_grant_id)
-        if not grant:
-            raise NotFoundError(f"Access grant '{credential.access_grant_id}' not found")
-        return await self.jobs.create(JobType.REVOKE_ACCESS, server_id=grant.server_id, access_grant_id=grant.id)
+        if grant is None:
+            raise NotFoundError("Access grant not found")
+        # Serialize request/revoke against completion of an in-flight create.
+        locked = await self.session.get(VPNCredential, credential_id, with_for_update=True,
+                                        populate_existing=True)
+        assert locked is not None
+        credential = locked
+        if credential.revoked_at is not None:
+            await self.session.commit()
+            return credential
+        credential.state = CredentialState.REVOKING
+        existing = (await self.session.execute(select(Job).where(
+            Job.type.in_((JobType.REVOKE_DEVICE, JobType.REVOKE_ACCESS)),
+            Job.params["credential_id"].astext == str(credential.id),
+            Job.status.in_((JobStatus.PENDING, JobStatus.RUNNING)),
+        ).limit(1))).scalar_one_or_none()
+        if existing is not None:
+            await self.session.commit()
+            return existing
+        return await self.jobs.create(JobType.REVOKE_DEVICE if credential.is_gateway else JobType.REVOKE_ACCESS,
+                                      server_id=grant.server_id,
+                                      access_grant_id=grant.id, params={"credential_id": str(credential.id)})
+
+    async def gateway_devices(self, user_id: UUID) -> GatewayDevicesRead:
+        if await VPNUserRepository(self.session).get_by_id(user_id) is None:
+            raise NotFoundError("User not found")
+        devices: list[VPNCredentialRead] = []
+        gateways: list[GatewayDeviceGateway] = []
+        for subscription in await self.subscriptions.list_by_user_id(user_id):
+            for grant in await self.grants.list_by_subscription_id(subscription.id):
+                protocol = await self.protocols.get_by_id(grant.protocol_id)
+                if protocol is None or protocol.type != ProtocolType.AMNEZIA_GATEWAY:
+                    continue
+                devices.extend(VPNCredentialRead.model_validate(item)
+                               for item in await self.credentials.live_for_grant(grant.id))
+                if inactive_reason(grant, subscription, datetime.now(timezone.utc)) is None:
+                    server = await ServerRepository(self.session).get_by_id(grant.server_id)
+                    if server is not None:
+                        gateways.append(GatewayDeviceGateway(grant_id=grant.id, protocol_id=protocol.id,
+                            server_id=server.id, server_name=server.name))
+        return GatewayDevicesRead(occupied=len(devices), devices=devices, gateways=gateways)
+
+    async def add_gateway_device(self, user_id: UUID, data: GatewayDeviceCreate) -> Job:
+        grant = await self.grants.get_by_id(data.grant_id)
+        subscription = await self.subscriptions.get_by_id(grant.subscription_id) if grant else None
+        protocol = await self.protocols.get_by_id(grant.protocol_id) if grant else None
+        if subscription is None or subscription.user_id != user_id or protocol is None or (
+            protocol.type != ProtocolType.AMNEZIA_GATEWAY
+        ):
+            raise NotFoundError("Gateway access not found")
+        return await self.schedule_issue(data.grant_id, data.device_name, data.request_id)
 
     async def _ensure_grant_is_live(self, access_grant_id: UUID, *, lock: bool = False) -> AccessGrant:
         # Проверяем и грант, и подписку: отзыв/истечение подписки каскадят на гранты,

@@ -21,6 +21,8 @@ class JobStatus(enum.Enum):
 
 
 class JobType(enum.Enum):
+    CREATE_DEVICE = "create_device"
+    REVOKE_DEVICE = "revoke_device"
     CREATE_USER = "create_user"
     DELETE_USER = "delete_user"
     SYNC_SERVER = "sync_server"

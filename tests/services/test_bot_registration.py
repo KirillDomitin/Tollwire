@@ -19,7 +19,7 @@ from infrastructure.workers.worker import JobWorker
 from modules.access.models import AccessGrantStatus
 from modules.access.models.access_grant import AccessGrant
 from modules.access.models.subscription import Subscription
-from modules.access.service import AccessGrantService
+from modules.access.service import AccessGrantService, VPNCredentialService
 from modules.audit.actor import SYSTEM_ACTOR
 from modules.audit.models.audit_log import AuditAction
 from modules.bot.models.invite import BotInvite
@@ -516,10 +516,12 @@ async def test_failed_issue_makes_the_registration_failed_keeping_user_and_grant
 async def test_ssh_error_text_with_a_secret_is_redacted_in_the_registration(
     world: World, worker: JobWorker, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def leaking(self: JobWorker, session: Any, access_grant_id: UUID, actor: Any) -> None:
+    async def leaking(
+        self: VPNCredentialService, access_grant_id: UUID, credential_id: UUID | None = None
+    ) -> None:
         raise RuntimeError("awg: bad line 'PrivateKey = aGVsbG8gd29ybGQgaGVsbG8gd29ybGQgaGVsbG8=' in config")
 
-    monkeypatch.setattr(JobWorker, "create_user", leaking)
+    monkeypatch.setattr(VPNCredentialService, "provision", leaking)
     scene = await bot_scene(world)
     registration = await register(world.session, await new_invite(world, scene), key=scene.key)
     await drain(worker)

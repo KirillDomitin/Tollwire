@@ -13,6 +13,7 @@ from core.exceptions import NotFoundError
 from core.ssh_exception import CommandExecutionError
 from infrastructure.vpn.gateway import AmneziaGatewayProvider
 from infrastructure.vpn.gateway_config import ExitTunnelStatus
+from modules.access.models import CredentialState
 from modules.access.models.vpn_credential import VPNCredential
 from modules.access.repository import AccessGrantRepository, VPNCredentialRepository
 from modules.audit.actor import AuditActor
@@ -160,6 +161,8 @@ class GatewayAssignmentService:
         остаётся без назначения (и без интернета), выданный конфиг не теряется; выход назначит `assign_unassigned`,
         когда появится исправный. Идемпотентно: уже назначенный клиент остаётся на своём выходе (карта применяется
         заново - так повтор задачи после сбоя применения чинит шлюз)."""
+        if credential.revoked_at is not None or credential.state != CredentialState.ACTIVE:
+            return None
         gateway = await self._gateway_of(credential)
         async with self._provider(gateway, provider) as gw:
             await self._ready(gateway, gw)
@@ -204,7 +207,8 @@ class GatewayAssignmentService:
         """Назначает выходы всем живым клиентам шлюза без назначения (после добавления выхода, при сверке). Возвращает,
         скольким назначены; карта применяется один раз."""
         rows = await self.credentials.list_with_access_by_protocol_id(gateway.id)
-        pending = [credential for credential, _, _ in rows if credential.revoked_at is None]
+        pending = [credential for credential, _, _ in rows
+                   if credential.revoked_at is None and credential.state == CredentialState.ACTIVE]
         pending = [credential for credential in pending if await self.assignments.get(credential.id) is None]
         if not pending:
             return 0

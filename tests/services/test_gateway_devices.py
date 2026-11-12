@@ -145,17 +145,19 @@ async def test_individual_revoke_keeps_other_device_and_frees_only_one_slot(worl
     ids = [target(await world.credentials().schedule_issue(grant.id)) for _ in range(5)]
     first = await world.credentials().provision(grant.id, credential_id=ids[0])
     second = await world.credentials().provision(grant.id, credential_id=ids[1])
+    grant_id, first_id = grant.id, first.id
+    first_key, second_key = first.client_public_key, second.client_public_key
     job = await world.credentials().schedule_revoke(first.id)
     assert isinstance(job, Job) and job.type == JobType.REVOKE_DEVICE
     assert job.params is not None and job.params["credential_id"] == str(first.id)
     with pytest.raises(AppError):
         await world.credentials().schedule_issue(grant.id)
     await world.session.rollback()
-    await world.credentials().deprovision(grant.id, credential_id=first.id)
-    assert second.client_public_key in fake.interface_peers
-    assert first.client_public_key not in fake.interface_peers
+    await world.credentials().deprovision(grant_id, credential_id=first_id)
+    assert second_key in fake.interface_peers
+    assert first_key not in fake.interface_peers
     assert len(await occupied(world)) == 4
-    replacement = target(await world.credentials().schedule_issue(grant.id))
+    replacement = target(await world.credentials().schedule_issue(grant_id))
     assert replacement not in ids
     assert len(await occupied(world)) == 5
 
@@ -169,8 +171,8 @@ async def test_subscription_revoke_includes_ready_and_reserved_devices(world: Wo
     for credential_id in ids:
         await world.credentials().deprovision(grant.id, credential_id=credential_id)
     assert not fake.interface_peers and not await occupied(world)
-    with pytest.raises(AppError):
-        await world.credentials().provision(grant.id, credential_id=ids[1])
+    retried = await world.credentials().provision(grant.id, credential_id=ids[1])
+    assert retried.revoked_at is not None
     assert not fake.interface_peers
 
 
@@ -180,6 +182,7 @@ async def test_lost_ssh_result_keeps_reservation_and_retry_cleans_old_peer(
     protocol, fake = await gateway(world)
     _, _, grant = await world.access(protocol)
     ids = [target(await world.credentials().schedule_issue(grant.id)) for _ in range(5)]
+    grant_id = grant.id
     original = AmneziaGatewayProvider.create_client
 
     async def create_then_lose_response(self: AmneziaGatewayProvider, name: str) -> VPNClientConfig:
@@ -192,10 +195,10 @@ async def test_lost_ssh_result_keeps_reservation_and_retry_cleans_old_peer(
     await world.session.rollback()
     assert len(fake.interface_peers) == 1 and len(await occupied(world)) == 5
     with pytest.raises(AppError):
-        await world.credentials().schedule_issue(grant.id)
+        await world.credentials().schedule_issue(grant_id)
     await world.session.rollback()
     monkeypatch.setattr(AmneziaGatewayProvider, "create_client", original)
-    ready = await world.credentials().provision(grant.id, credential_id=ids[0])
+    ready = await world.credentials().provision(grant_id, credential_id=ids[0])
     assert ready.id == ids[0] and fake.interface_peers == {ready.client_public_key}
 
 
@@ -206,18 +209,19 @@ async def test_failed_cleanup_does_not_free_slot_or_create_another_peer(
     _, _, grant = await world.access(protocol)
     ids = [target(await world.credentials().schedule_issue(grant.id)) for _ in range(5)]
     ready = await world.credentials().provision(grant.id, credential_id=ids[0])
+    grant_id, ready_id, ready_key = grant.id, ready.id, ready.client_public_key
 
     async def cannot_confirm_cleanup(self: AmneziaGatewayProvider, public_key: str) -> None:
         raise TimeoutError("cleanup not confirmed")
 
     monkeypatch.setattr(AmneziaGatewayProvider, "revoke_client", cannot_confirm_cleanup)
-    await world.credentials().schedule_revoke(ready.id)
+    await world.credentials().schedule_revoke(ready_id)
     with pytest.raises(TimeoutError, match="cleanup not confirmed"):
-        await world.credentials().deprovision(grant.id, credential_id=ready.id)
+        await world.credentials().deprovision(grant_id, credential_id=ready_id)
     await world.session.rollback()
-    assert len(await occupied(world)) == 5 and fake.interface_peers == {ready.client_public_key}
+    assert len(await occupied(world)) == 5 and fake.interface_peers == {ready_key}
     with pytest.raises(AppError):
-        await world.credentials().schedule_issue(grant.id)
+        await world.credentials().schedule_issue(grant_id)
 
 
 async def test_sync_restores_two_devices_without_replacing_existing_config(world: World) -> None:

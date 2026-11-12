@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.config import settings
 from core.exceptions import NotFoundError, ReasonConflictError
 from core.security import generate_token, hash_token
-from modules.access.models import CredentialSource
+from modules.access.models import CredentialSource, CredentialState
 from modules.access.models.access_grant import AccessGrant
 from modules.access.models.vpn_credential import VPNCredential
 from modules.access.service import VPNCredentialService, inactive_reason, is_terminal
@@ -63,27 +63,27 @@ class ConfigLinkService:
 
     # --- выпуск ----------------------------------------------------------------------------------------------------
 
-    async def issue_for_telegram(self, telegram_id: int) -> tuple[ConfigLink, str]:
+    async def issue_for_telegram(self, telegram_id: int, credential_id: UUID | None = None) -> tuple[ConfigLink, str]:
         """Новая ссылка на конфиг человека; прежняя живая ссылка того же клиента отзывается. Токен - только здесь."""
         if await OutboxRepository(self.session).unmark_blocked(telegram_id):
             await self.session.commit()  # человек сам написал боту: пометка «заблокировал» снимается и при отказе
         try:
-            return await self._issue(telegram_id)
+            return await self._issue(telegram_id, credential_id)
         except IntegrityError:
             # Частичный уникальный индекс поймал гонку двух выпусков: повтор видит чужую ссылку и заменяет её.
             await self.session.rollback()
         try:
-            return await self._issue(telegram_id)
+            return await self._issue(telegram_id, credential_id)
         except IntegrityError:
             await self.session.rollback()
             raise ReasonConflictError(NO_ACCESS) from None
 
-    async def _issue(self, telegram_id: int) -> tuple[ConfigLink, str]:
+    async def _issue(self, telegram_id: int, credential_id: UUID | None = None) -> tuple[ConfigLink, str]:
         user = await self.users.get_by_telegram_id(telegram_id)
         if user is None:
             raise NotFoundError("User not found")
         try:
-            result = await self.stage_issue(user.id, source="bot")
+            result = await self.stage_issue(user.id, source="bot", credential_id=credential_id)
         except ReasonConflictError:
             await self.session.rollback()
             raise
@@ -106,6 +106,7 @@ class ConfigLinkService:
         *,
         source: str,
         meta: Mapping[str, Any] | None = None,
+        credential_id: UUID | None = None,
     ) -> tuple[ConfigLink, str]:
         """Выпуск ссылки человеку БЕЗ commit: ссылка, отзыв прежней и запись в аудит живут в транзакции вызывающего.
         grant_id - выпустить на клиента этого доступа (рассылка «по протоколу»); иначе клиент - как для бота."""
@@ -115,11 +116,11 @@ class ConfigLinkService:
         user = await self.users.get_by_id(user_id)
         if user is None:
             raise NotFoundError("User not found")
-        credential = await self._choose_credential(user.id, user.telegram_id, grant_id)
+        credential = await self._choose_credential(user.id, user.telegram_id, grant_id, credential_id)
 
         # Клиент блокируется до конца транзакции: два одновременных выпуска идут по очереди, и живая ссылка одна.
         locked = await self.links.lock_credential(credential.id)
-        if locked is None or locked.revoked_at is not None:
+        if locked is None or locked.revoked_at is not None or locked.state != CredentialState.ACTIVE:
             raise ReasonConflictError(NO_ACCESS)
         replaced = False
         for old in await self.links.live_links(credential.id):
@@ -144,15 +145,32 @@ class ConfigLinkService:
         return link, token
 
     async def _choose_credential(
-        self, user_id: UUID, telegram_id: int | None, grant_id: UUID | None = None
+        self, user_id: UUID, telegram_id: int | None, grant_id: UUID | None = None, credential_id: UUID | None = None
     ) -> VPNCredential:
         """Клиент, на которого выпускается ссылка: выданный панелью (с конфигом) и с живым доступом. С grant_id -
         только клиент этого доступа."""
         now = datetime.now(timezone.utc)
+        if credential_id is not None:
+            credential = await VPNCredentialService(self.session, self.actor).get(credential_id)
+            rows = await self.links.credentials_of_user(user_id)
+            owned = next((row for row in rows if row[0].id == credential_id), None)
+            if owned is None:
+                raise NotFoundError("Device not found")
+            _, grant, subscription = owned
+            if inactive_reason(grant, subscription, now) or credential.state in (
+                CredentialState.REVOKING, CredentialState.REVOKED
+            ):
+                raise ReasonConflictError(NO_ACCESS)
+            if credential.state != CredentialState.ACTIVE:
+                raise ReasonConflictError(NOT_READY)
+            if credential.encrypted_config is None:
+                raise ReasonConflictError(CONFIG_UNAVAILABLE)
+            return credential
         live: list[tuple[VPNCredential, AccessGrant]] = [
             (credential, grant)
             for credential, grant, subscription in await self.links.credentials_of_user(user_id)
             if inactive_reason(grant, subscription, now) is None and (grant_id is None or grant.id == grant_id)
+            and credential.state == CredentialState.ACTIVE
         ]
         issued = [
             (credential, grant)
@@ -179,7 +197,8 @@ class ConfigLinkService:
                 continue
             if grant_id is not None and grant.id != grant_id:
                 continue
-            if await jobs.has_unfinished_for_grant(JobType.CREATE_USER, grant.id):
+            if any([await jobs.has_unfinished_for_grant(kind, grant.id)
+                    for kind in (JobType.CREATE_USER, JobType.CREATE_DEVICE)]):
                 return True
         return False
 
@@ -203,7 +222,7 @@ class ConfigLinkService:
         if found is None:
             raise NotFoundError("Not found")
         link, credential, grant, subscription, username, server_name = found
-        if inactive_reason(grant, subscription, now) is not None:
+        if inactive_reason(grant, subscription, now) is not None or credential.state != CredentialState.ACTIVE:
             raise NotFoundError("Not found")  # расшифровка - только после всех проверок
 
         rendered = await VPNCredentialService(self.session, self.actor).render_config(credential, grant)

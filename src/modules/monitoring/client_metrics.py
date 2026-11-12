@@ -86,7 +86,7 @@ class ClientMetricsService:
             item.stale = age >= STALE_SECONDS or age < 0
             by_key = {peer.public_key: peer for peer in snapshot.peers}
             for credential, protocol_id in credentials:
-                if protocol_id != protocol.id:
+                if protocol_id != protocol.id or credential.client_public_key is None:
                     continue
                 peer = by_key.get(credential.client_public_key)
                 if peer is not None:

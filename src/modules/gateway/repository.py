@@ -10,6 +10,7 @@ from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from infrastructure.vpn.gateway_config import GATEWAY_LAYOUT
+from modules.access.models import CredentialState
 from modules.access.models.vpn_credential import VPNCredential
 from modules.gateway.models.gateway_assignment import AssignReason, GatewayAssignment
 from modules.gateway.models.gateway_exit import MAX_SLOT, ExitState, GatewayExit
@@ -201,6 +202,7 @@ class GatewayAssignmentRepository:
                 GatewayExit.gateway_protocol_id == gateway_protocol_id,
                 GatewayExit.state.in_((ExitState.ACTIVE, ExitState.DRAINING)),
                 VPNCredential.revoked_at.is_(None),
+                VPNCredential.state == CredentialState.ACTIVE,
             )
         )
         network = ip_network(GATEWAY_LAYOUT.tunnel_subnet)

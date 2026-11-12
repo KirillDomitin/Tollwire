@@ -103,6 +103,8 @@ class JobWorker:
                 JobType.REMOVE_PROTOCOL,
                 JobType.CREATE_USER,
                 JobType.REVOKE_ACCESS,
+                JobType.CREATE_DEVICE,
+                JobType.REVOKE_DEVICE,
                 JobType.SYNC_SERVER,
                 JobType.HEALTH_CHECK,
                 JobType.INSTALL_SSH_KEY,
@@ -117,7 +119,7 @@ class JobWorker:
                     await self._reject(session, job, f"Job with type '{job.type.value}' must have server_id")
                 else:
                     server_id = UUID(str(job.server_id))
-            if job.type in [JobType.CREATE_USER, JobType.REVOKE_ACCESS]:
+            if job.type in [JobType.CREATE_USER, JobType.REVOKE_ACCESS, JobType.CREATE_DEVICE, JobType.REVOKE_DEVICE]:
                 if not job.access_grant_id:
                     await self._reject(session, job, f"Job with type '{job.type.value}' must have access_grant_id")
                 else:
@@ -134,9 +136,26 @@ class JobWorker:
 
                 try:
                     match job.type:
+                        case JobType.CREATE_DEVICE | JobType.REVOKE_DEVICE:
+                            raw_id = (job.params or {}).get("credential_id")
+                            credential_id = UUID(str(raw_id))
+                            credential_service = VPNCredentialService(session, actor)
+                            credential = await credential_service.get(credential_id)
+                            grant = await credential_service.grants.get_by_id(credential.access_grant_id)
+                            if grant is None or grant.id != access_grant_id or grant.server_id != server_id:
+                                raise ValueError("Device job target does not match its access grant and server")
+                            async with ServerLock(server_id):
+                                if job.type == JobType.CREATE_DEVICE:
+                                    await credential_service.provision(access_grant_id, credential_id)
+                                else:
+                                    await credential_service.deprovision(access_grant_id, credential_id)
+
                         case JobType.CREATE_USER:
                             async with ServerLock(server_id):
-                                await self.create_user(session, access_grant_id, actor)
+                                if (job.params or {}).get("credential_id"):
+                                    await self._targeted_credential(session, job, server_id, access_grant_id, actor)
+                                else:
+                                    await self.create_user(session, access_grant_id, actor)
 
                         case JobType.DELETE_USER:
                             await self.delete_user()
@@ -179,7 +198,10 @@ class JobWorker:
 
                         case JobType.REVOKE_ACCESS:
                             async with ServerLock(server_id):
-                                await self.revoke_access(session, access_grant_id, actor)
+                                if (job.params or {}).get("credential_id"):
+                                    await self._targeted_credential(session, job, server_id, access_grant_id, actor)
+                                else:
+                                    await self.revoke_access(session, access_grant_id, actor)
 
                         case JobType.INSTALL_SERVER:
                             async with ServerLock(server_id):
@@ -273,6 +295,20 @@ class JobWorker:
         job.finished_at = datetime.now(timezone.utc)
         await session.commit()
         raise JobTypeError(reason)
+
+    async def _targeted_credential(
+        self, session: AsyncSession, job: Job, server_id: UUID, grant_id: UUID, actor: AuditActor
+    ) -> None:
+        credential_id = UUID(str((job.params or {}).get("credential_id")))
+        service = VPNCredentialService(session, actor)
+        credential = await service.get(credential_id)
+        grant = await service.grants.get_by_id(credential.access_grant_id)
+        if grant is None or grant.id != grant_id or grant.server_id != server_id:
+            raise ValueError("Device job target does not match its access grant and server")
+        if job.type in (JobType.CREATE_USER, JobType.CREATE_DEVICE):
+            await service.provision(grant_id, credential_id)
+        else:
+            await service.deprovision(grant_id, credential_id)
 
     async def create_user(self, session: AsyncSession, access_grant_id: UUID, actor: AuditActor) -> VPNCredential:
         return await VPNCredentialService(session, actor).provision(access_grant_id)

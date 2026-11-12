@@ -12,7 +12,7 @@ from core.ssh_exception import CommandExecutionError, SSHServerError, Unsupporte
 from infrastructure.vpn.amnezia import AmneziaInstaller
 from infrastructure.vpn.gateway import AmneziaGatewayProvider
 from infrastructure.vpn.provider import ProviderState, VPNClientInfo, VPNProvider
-from modules.access.models import CredentialSource
+from modules.access.models import CredentialSource, CredentialState
 from modules.access.models.vpn_credential import VPNCredential
 from modules.access.repository import VPNCredentialRepository
 from modules.access.service import CLIENT_NAME_PREFIX, client_name, inactive_reason
@@ -178,6 +178,27 @@ class ServerSyncService:
         revoked_keys: set[str] = set()
         now = datetime.now(timezone.utc)
         for credential, grant, subscription in await self.credentials.list_with_access_by_protocol_id(protocol.id):
+            if credential.revoked_at is None and credential.state != CredentialState.ACTIVE:
+                if credential.state == CredentialState.RESERVED and inactive_reason(grant, subscription, now) is None:
+                    continue
+                # ServerLock excludes create/revoke jobs while sync confirms an interrupted operation's cleanup.
+                name = credential.peer_name or client_name(grant.id)
+                peers = [peer for peer in on_server if peer.name == name or (
+                    credential.client_public_key is not None and peer.public_key == credential.client_public_key
+                )]
+                for peer in peers:
+                    await provider.revoke_client(peer.public_key)
+                remaining = await provider.list_clients()
+                if any(peer.name == name or (credential.client_public_key is not None and
+                       peer.public_key == credential.client_public_key) for peer in remaining):
+                    issues.append(f"Credential {credential.id} cleanup was not confirmed")
+                    continue
+                credential.state = CredentialState.REVOKED
+                credential.revoked_at = datetime.now(timezone.utc)
+                await self.session.commit()
+                continue
+            if credential.client_public_key is None:
+                continue
             if credential.revoked_at is not None:
                 revoked_keys.add(credential.client_public_key)
             elif inactive_reason(grant, subscription, now):
@@ -207,6 +228,7 @@ class ServerSyncService:
             if credential.client_public_key in server_keys:
                 await provider.revoke_client(credential.client_public_key)
             credential.revoked_at = datetime.now(timezone.utc)
+            credential.state = CredentialState.REVOKED
             await self.session.commit()
             result["revocations_completed"].append(_credential(credential))
         stale_keys = {credential.client_public_key for credential in stale}
@@ -225,7 +247,10 @@ class ServerSyncService:
                 # Наш внутренний клиент без записи о выходе (выход снят, пока сервер был недоступен; commit не дошёл).
                 await provider.revoke_client(client.public_key)
                 result["removed_orphans"].append(_client(client))
-            elif client.name and client.name.startswith(CLIENT_NAME_PREFIX) and protocol.type not in APP_PROTOCOLS:
+            elif client.name and (client.name.startswith(CLIENT_NAME_PREFIX) or (
+                client.name.startswith("dev-") and len(client.name) == 30 and
+                all(char in "abcdefghijklmnopqrstuvwxyz234567" for char in client.name[4:])
+            )) and protocol.type not in APP_PROTOCOLS:
                 # Наш peer без записи в БД: упал commit после create_client или запись удалили.
                 await provider.revoke_client(client.public_key)
                 result["removed_orphans"].append(_client(client))
@@ -240,12 +265,12 @@ class ServerSyncService:
             try:
                 if credential.source == CredentialSource.IMPORTED:
                     # Конфига нет (приватный ключ остался в приложении клиента): peer возвращается по PSK и адресу.
-                    if credential.encrypted_psk is None:
+                    if credential.encrypted_psk is None or credential.client_address is None:
                         issues.append(f"Credential {credential.id} was not restored: no PSK stored")
                         continue
                     await provider.restore_peer(
-                        client_name(access_grant_id),
-                        credential.client_public_key,
+                        credential.peer_name or client_name(access_grant_id),
+                        public_key,
                         decrypt_secret(credential.encrypted_psk),
                         credential.client_address,
                     )
@@ -254,7 +279,8 @@ class ServerSyncService:
                         issues.append(f"Credential {credential.id} was not restored: no config stored")
                         continue
                     await provider.restore_client(
-                        client_name(access_grant_id), decrypt_secret(credential.encrypted_config)
+                        credential.peer_name or client_name(access_grant_id),
+                        decrypt_secret(credential.encrypted_config),
                     )
             except (CommandExecutionError, UnsupportedOperationError, ValueError) as exc:
                 # Один битый клиент (адрес занят чужим peer'ом, повреждённый конфиг) не должен срывать весь sync.

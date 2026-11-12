@@ -13,3 +13,11 @@ class AccessGrantStatus(enum.Enum):
 class CredentialSource(enum.Enum):
     ISSUED = "issued"  # клиента создала панель: в БД есть его конфиг
     IMPORTED = "imported"  # клиент создан в приложении AmneziaVPN и подхвачен панелью: конфига (приватного ключа) нет
+
+
+class CredentialState(enum.Enum):
+    RESERVED = "reserved"
+    PROVISIONING = "provisioning"
+    ACTIVE = "active"
+    REVOKING = "revoking"
+    REVOKED = "revoked"

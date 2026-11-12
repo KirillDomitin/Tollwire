@@ -4,10 +4,10 @@ from datetime import datetime
 from typing import Self
 from uuid import UUID
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
 from core.schemas import PatchModel
-from modules.access.models import AccessGrantStatus, CredentialSource
+from modules.access.models import AccessGrantStatus, CredentialSource, CredentialState
 
 
 # AwareDatetime — только с часовым поясом: «2026-10-01T00:00» без пояса непонятно чьё время, а сравнение
@@ -53,6 +53,34 @@ class VPNCredentialRead(BaseModel):
     created_at: datetime
     source: CredentialSource
     external_name: str | None = None  # имя клиента в AmneziaVPN (у импортированного)
+    state: CredentialState = CredentialState.ACTIVE
+    device_name: str | None = None
+    is_gateway: bool = False
+    has_config: bool = False
+
+
+class VPNCredentialCreate(BaseModel):
+    device_name: str | None = Field(default=None, min_length=1, max_length=100)
+    request_id: UUID | None = None
+
+
+class GatewayDeviceCreate(VPNCredentialCreate):
+    grant_id: UUID
+    request_id: UUID
+
+
+class GatewayDeviceGateway(BaseModel):
+    grant_id: UUID
+    protocol_id: UUID
+    server_id: UUID
+    server_name: str
+
+
+class GatewayDevicesRead(BaseModel):
+    limit: int = 5
+    occupied: int
+    devices: list[VPNCredentialRead]
+    gateways: list[GatewayDeviceGateway]
 
 
 class VPNCredentialConfigRead(BaseModel):
