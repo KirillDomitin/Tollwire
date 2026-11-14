@@ -117,8 +117,8 @@ export function useGatewayClients(serverId: string, gatewayProtocolId: string, e
     for (const credential of credentialQueries[index]?.data ?? []) {
       clients.set(credential.id, {
         userId: user.id,
-        username: user.username,
-        live: credential.revoked_at === null,
+        username: credential.device_name ? `${user.username} · ${credential.device_name}` : user.username,
+        live: credential.revoked_at === null && (credential.state ?? "active") === "active",
       });
     }
   });

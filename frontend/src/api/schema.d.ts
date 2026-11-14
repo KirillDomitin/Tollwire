@@ -781,6 +781,24 @@ export interface paths {
         patch: operations["patch_api_v1_vpn_users__user_id__patch"];
         trace?: never;
     };
+    "/api/v1/vpn-users/{user_id}/gateway-devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Gateway Devices */
+        get: operations["gateway_devices_api_v1_vpn_users__user_id__gateway_devices_get"];
+        put?: never;
+        /** Add Gateway Device */
+        post: operations["add_gateway_device_api_v1_vpn_users__user_id__gateway_devices_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/vpn-users/{user_id}/subscriptions": {
         parameters: {
             query?: never;
@@ -1035,6 +1053,58 @@ export interface paths {
         get: operations["latest_metrics_api_v1_monitoring_latest_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot/users/by-telegram/{telegram_id}/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Devices */
+        get: operations["devices_api_v1_bot_users_by_telegram__telegram_id__devices_get"];
+        put?: never;
+        /** Add Device */
+        post: operations["add_device_api_v1_bot_users_by_telegram__telegram_id__devices_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot/users/by-telegram/{telegram_id}/devices/{credential_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke Device */
+        post: operations["revoke_device_api_v1_bot_users_by_telegram__telegram_id__devices__credential_id__revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot/users/by-telegram/{telegram_id}/devices/{credential_id}/config-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Device Config Link */
+        post: operations["device_config_link_api_v1_bot_users_by_telegram__telegram_id__devices__credential_id__config_link_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2390,6 +2460,11 @@ export interface components {
          * @enum {string}
          */
         CredentialSource: "issued" | "imported";
+        /**
+         * CredentialState
+         * @enum {string}
+         */
+        CredentialState: "reserved" | "provisioning" | "active" | "revoking" | "revoked";
         /** DiscoveredClientRead */
         DiscoveredClientRead: {
             /** Public Key */
@@ -2473,6 +2548,55 @@ export interface components {
             assigned_at: string;
             /** Pinned Exit Id */
             pinned_exit_id?: string | null;
+        };
+        /** GatewayDeviceCreate */
+        GatewayDeviceCreate: {
+            /** Device Name */
+            device_name?: string | null;
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+            /**
+             * Grant Id
+             * Format: uuid
+             */
+            grant_id: string;
+        };
+        /** GatewayDeviceGateway */
+        GatewayDeviceGateway: {
+            /**
+             * Grant Id
+             * Format: uuid
+             */
+            grant_id: string;
+            /**
+             * Protocol Id
+             * Format: uuid
+             */
+            protocol_id: string;
+            /**
+             * Server Id
+             * Format: uuid
+             */
+            server_id: string;
+            /** Server Name */
+            server_name: string;
+        };
+        /** GatewayDevicesRead */
+        GatewayDevicesRead: {
+            /**
+             * Limit
+             * @default 5
+             */
+            limit: number;
+            /** Occupied */
+            occupied: number;
+            /** Devices */
+            devices: components["schemas"]["VPNCredentialRead"][];
+            /** Gateways */
+            gateways: components["schemas"]["GatewayDeviceGateway"][];
         };
         /**
          * GatewayExitCreate
@@ -2815,7 +2939,7 @@ export interface components {
          * JobType
          * @enum {string}
          */
-        JobType: "create_user" | "delete_user" | "sync_server" | "health_check" | "revoke_access" | "install_server" | "remove_protocol" | "uninstall_server" | "install_protocol" | "update_protocol" | "check_protocol_updates" | "install_ssh_key" | "discover_vpn" | "import_clients" | "gateway_add_exit" | "gateway_remove_exit" | "geoip_update" | "gateway_apply_ru" | "gateway_apply";
+        JobType: "create_device" | "revoke_device" | "create_user" | "delete_user" | "sync_server" | "health_check" | "revoke_access" | "install_server" | "remove_protocol" | "uninstall_server" | "install_protocol" | "update_protocol" | "check_protocol_updates" | "install_ssh_key" | "discover_vpn" | "import_clients" | "gateway_add_exit" | "gateway_remove_exit" | "geoip_update" | "gateway_apply_ru" | "gateway_apply";
         /**
          * LatestMetrics
          * @description Последний замер сервера — для списка серверов.
@@ -3449,6 +3573,13 @@ export interface components {
             /** Share Qr */
             share_qr?: string[] | null;
         };
+        /** VPNCredentialCreate */
+        VPNCredentialCreate: {
+            /** Device Name */
+            device_name?: string | null;
+            /** Request Id */
+            request_id?: string | null;
+        };
         /**
          * VPNCredentialRead
          * @description Метаданные credential. Конфига здесь нет намеренно — его отдаёт только отдельный эндпоинт.
@@ -3474,6 +3605,20 @@ export interface components {
             source: components["schemas"]["CredentialSource"];
             /** External Name */
             external_name?: string | null;
+            /** @default active */
+            state: components["schemas"]["CredentialState"];
+            /** Device Name */
+            device_name?: string | null;
+            /**
+             * Is Gateway
+             * @default false
+             */
+            is_gateway: boolean;
+            /**
+             * Has Config
+             * @default false
+             */
+            has_config: boolean;
         };
         /** VPNUserCreate */
         VPNUserCreate: {
@@ -5296,6 +5441,72 @@ export interface operations {
             };
         };
     };
+    gateway_devices_api_v1_vpn_users__user_id__gateway_devices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GatewayDevicesRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_gateway_device_api_v1_vpn_users__user_id__gateway_devices_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GatewayDeviceCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_subscriptions_api_v1_vpn_users__user_id__subscriptions_get: {
         parameters: {
             query?: never;
@@ -5654,7 +5865,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["VPNCredentialCreate"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             202: {
@@ -5918,6 +6133,138 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LatestMetrics"][];
+                };
+            };
+        };
+    };
+    devices_api_v1_bot_users_by_telegram__telegram_id__devices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                telegram_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GatewayDevicesRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_device_api_v1_bot_users_by_telegram__telegram_id__devices_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                telegram_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GatewayDeviceCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_device_api_v1_bot_users_by_telegram__telegram_id__devices__credential_id__revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                telegram_id: number;
+                credential_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    device_config_link_api_v1_bot_users_by_telegram__telegram_id__devices__credential_id__config_link_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                telegram_id: number;
+                credential_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigLinkRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

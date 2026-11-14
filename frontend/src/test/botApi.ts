@@ -349,6 +349,8 @@ export function mockBot(options: BotBackend = {}) {
         });
       }
       if (path === `/api/v1/vpn-users/${USER_ID}/subscriptions`) return json([]);
+      if (path === `/api/v1/vpn-users/${USER_ID}/gateway-devices`)
+        return json({ limit: 5, occupied: 0, devices: [], gateways: [] });
       if (path === "/api/v1/servers") return json([]);
     }
 

@@ -114,6 +114,7 @@ export function GrantAccessDialog({
     },
     // Даже если упал шаг посередине, уже сделанное надо показать на карточке.
     onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ["vpn-user", userId, "gateway-devices"] });
       void queryClient.invalidateQueries({ queryKey: userKeys.subscriptions(userId) });
       void queryClient.invalidateQueries({ queryKey: ["subscription"] });
       void queryClient.invalidateQueries({ queryKey: ["vpn-users"] });

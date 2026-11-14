@@ -18,7 +18,9 @@
     "gateway_apply_ru": "Применение «России напрямую»",
     "geoip_update": "Обновление списка «России напрямую»",
     "update_protocol": "Обновление контейнера протокола",
-    "check_protocol_updates": "Проверка обновлений протоколов"
+    "check_protocol_updates": "Проверка обновлений протоколов",
+    "create_device": "Выдача устройства",
+    "revoke_device": "Отзыв устройства"
   },
   "statuses": {
     "pending": "В очереди",

@@ -51,6 +51,9 @@ export function grantState(
     };
   }
   if (credential) {
+    if (credential.state && credential.state !== "active") {
+      return { tone: "process", text: i18n.t(`users.devices.states.${credential.state}`) };
+    }
     return {
       tone: "ok",
       text:
@@ -72,8 +75,10 @@ export function GrantRow({
   job,
   userName,
   onJob,
+  gatewayDevicesManaged = false,
 }: {
   grant: Grant;
+  gatewayDevicesManaged?: boolean;
   server: Server | undefined;
   credentials: VPNCredential[] | undefined;
   job: Job | undefined;
@@ -84,11 +89,15 @@ export function GrantRow({
   const { can } = useAuth();
   const queryClient = useQueryClient();
   const [configOpen, setConfigOpen] = useState(false);
-  const credential = liveCredential(credentials);
+  const credential = gatewayDevicesManaged ? null : liveCredential(credentials);
+  const credentialReady = credential !== null && (credential.state ?? "active") === "active";
   // История credential'ов: подхваченный клиент остаётся признаком доступа к установке приложения и после отзыва.
   const fromApp = credentials?.some((item) => item.source === "imported") ?? false;
   const imported = credential?.source === "imported";
-  const state = grantState(grant, credential, job, fromApp);
+  const state =
+    gatewayDevicesManaged && isLive(grant)
+      ? { tone: "ok" as const, text: t("users.devices.gatewayAccess") }
+      : grantState(grant, credential, job, fromApp);
   const live = isLive(grant);
   const busy = job !== undefined && isUnfinished(job);
   const manage = can("access:manage");
@@ -139,14 +148,14 @@ export function GrantRow({
         <p className={styles.grantError}>{job.error}</p>
       )}
       {issue.isError && <Notice>{issue.error.message}</Notice>}
-      {credential && server && can("servers:read") && (
+      {credentialReady && credential && server && can("servers:read") && (
         <ClientMetrics
           serverId={grant.server_id}
           protocolId={grant.protocol_id}
           credentialId={credential.id}
         />
       )}
-      {gateway && live && !busy && credential && !imported && (
+      {gateway && live && !busy && credentialReady && credential && !imported && (
         <GatewayExitNote serverId={grant.server_id} credentialId={credential.id} />
       )}
       {live && !busy && fromApp && (
@@ -157,12 +166,12 @@ export function GrantRow({
 
       {live && !busy && (
         <div className={styles.row}>
-          {credential && !imported && can("config:reveal") && (
+          {credentialReady && credential && !imported && can("config:reveal") && (
             <Button size="sm" onClick={() => setConfigOpen(true)}>
               {t("users.grant.showConfig")}
             </Button>
           )}
-          {!credential && !fromApp && manage && (
+          {!gatewayDevicesManaged && !credential && !fromApp && manage && (
             <Button
               size="sm"
               busy={issue.isPending}
@@ -216,13 +225,14 @@ export function GrantRow({
                   }),
                 );
                 await queryClient.invalidateQueries({ queryKey: userKeys.grants(grant.subscription_id) });
+                await queryClient.invalidateQueries({ queryKey: ["vpn-user"] });
                 await queryClient.invalidateQueries({ queryKey: userKeys.credentials(grant.id) });
               }}
             />
           )}
         </div>
       )}
-      {credential && !imported && configOpen && (
+      {credentialReady && credential && !imported && configOpen && (
         <Suspense fallback={null}>
           <ConfigDialog
             credentialId={credential.id}

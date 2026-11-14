@@ -120,6 +120,8 @@ function mockApi({
         ]);
       if (path === `/api/v1/vpn-users/${USER}`) return json(currentUser);
       if (path === `/api/v1/vpn-users/${USER}/subscriptions`) return json(subscriptions);
+      if (path === `/api/v1/vpn-users/${USER}/gateway-devices`)
+        return json({ limit: 5, occupied: 0, devices: [], gateways: [] });
       if (path === `/api/v1/subscriptions/${SUB}/grants`) return json(grants);
       if (path === `/api/v1/access/${GRANT}/credentials`) return json(credentials);
       if (gateway && path === `/api/v1/servers/${SERVER}/gateway/exits`) return json(gateway.exits);
@@ -391,6 +393,21 @@ describe("granting access to a server", () => {
 
 const wgProtocol = { id: "p1", server_id: SERVER, type: "amnezia_wg", port: 51820 };
 const gatewayProtocol = { id: "pg", server_id: SERVER, type: "amnezia_gateway", port: 51821 };
+
+describe("persisted direct protocol reservations", () => {
+  it.each(["reserved", "provisioning", "revoking"])(
+    "does not treat a %s credential as a ready config after reload",
+    async (state) => {
+      const calls = mockApi({ credentials: [{ ...credential, state, has_config: false }] });
+      renderCard();
+      await screen.findByRole("button", { name: "Отозвать конфиг" });
+      expect(screen.queryByRole("button", { name: "Показать конфиг" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Выдать конфиг" })).not.toBeInTheDocument();
+      expect(screen.queryByText(/Конфиг выдан/)).not.toBeInTheDocument();
+      expect(calls.some((call) => call.includes("/clients/monitoring"))).toBe(false);
+    },
+  );
+});
 
 describe("granting access to a gateway", () => {
   const openDialog = async () => {

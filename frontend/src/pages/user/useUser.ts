@@ -59,7 +59,10 @@ export function useUserData(userId: string) {
         ),
       // Доступ отозван, а конфиг ещё жив — значит, воркер как раз убирает клиента с сервера: следим до конца.
       refetchInterval: (query: { state: { data?: VPNCredential[] } }) =>
-        !isLive(grant) && liveCredential(query.state.data) ? POLL_MS : false,
+        (!isLive(grant) && liveCredential(query.state.data)) ||
+        query.state.data?.some((item) => item.revoked_at === null && item.state !== "active")
+          ? POLL_MS
+          : false,
     })),
   });
 
@@ -105,6 +108,7 @@ export function useAccessJobs() {
   useEffect(() => {
     for (const grantId of finishedKey.split(",").filter(Boolean)) {
       void queryClient.invalidateQueries({ queryKey: userKeys.credentials(grantId) });
+      void queryClient.invalidateQueries({ queryKey: ["vpn-user"] });
       void queryClient.invalidateQueries({ queryKey: ["subscription"] }); // статус доступа (pending → active)
       void queryClient.invalidateQueries({ queryKey: ["vpn-users"] });
     }

@@ -247,5 +247,28 @@
       "failed": "Could not send the link",
       "skipped": "The link was not sent: the bot skipped this message"
     }
+  },
+  "devices": {
+    "title": "Gateway devices",
+    "occupied": "Occupied {{count}} / {{limit}}",
+    "explanation": "Up to {{limit}} separate configurations across all gateways. Pending issuance and revocation occupy a slot until cleanup is confirmed.",
+    "empty": "No devices yet.",
+    "name": "Device name",
+    "gateway": "Gateway",
+    "chooseGateway": "Choose a gateway",
+    "add": "Add device",
+    "limitReached": "Device limit reached. Revoke an unused device and wait for revocation to finish.",
+    "unnamed": "Device {{id}}",
+    "revoke": "Revoke device",
+    "revokeTitle": "Revoke “{{name}}”?",
+    "revokeConsequences": "Only this device will be disconnected. Other configurations will continue working.",
+    "states": {
+      "reserved": "Waiting for issuance",
+      "provisioning": "Issuance incomplete",
+      "active": "Ready",
+      "revoking": "Waiting for revocation",
+      "revoked": "Revoked"
+    },
+    "gatewayAccess": "Gateway access"
   }
 }

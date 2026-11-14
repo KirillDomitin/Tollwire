@@ -19,6 +19,7 @@ import { ChangePeriodDialog } from "./ChangePeriodDialog";
 import { EditUserDialog } from "./EditUserDialog";
 import { GrantAccessDialog } from "./GrantAccessDialog";
 import { GrantRow } from "./GrantRow";
+import { GatewayDevices, useGatewayDevices } from "./GatewayDevices";
 import { TelegramLink } from "./TelegramLink";
 import styles from "./UserPage.module.css";
 import { liveCredential, useAccessJobs, userKeys, useUserData } from "./useUser";
@@ -35,6 +36,7 @@ export function UserPage() {
   const { userId = "" } = useParams();
   const { can } = useAuth();
   const data = useUserData(userId);
+  const devices = useGatewayDevices(userId);
   const jobs = useAccessJobs();
   const [grantOpen, setGrantOpen] = useState(false);
   const [periodOpen, setPeriodOpen] = useState(false);
@@ -237,6 +239,10 @@ export function UserPage() {
         </TabPanel>
 
         <TabPanel idPrefix="user" id="access" value={tab}>
+          {devices.isError && <Notice>{devices.error.message}</Notice>}
+          {devices.data && (devices.data.gateways.length > 0 || devices.data.devices.length > 0) && (
+            <GatewayDevices userId={userId} userName={user.username} data={devices.data} onJob={jobs.track} />
+          )}
           <section className={styles.section} aria-labelledby="access-title">
             <h2 id="access-title" className={styles.sectionTitle}>
               {t("users.card.access")}
@@ -261,6 +267,10 @@ export function UserPage() {
                       <GrantRow
                         key={grant.id}
                         grant={grant}
+                        gatewayDevicesManaged={
+                          devices.data?.gateways.some((item) => item.grant_id === grant.id) ||
+                          devices.data?.devices.some((item) => item.access_grant_id === grant.id)
+                        }
                         server={servers.get(grant.server_id)}
                         credentials={data.credentialsByGrant.get(grant.id)}
                         job={jobs.jobFor(grant)}
@@ -310,6 +320,7 @@ function RevokeAccess({ subscription, userId }: { subscription: Subscription; us
           }),
         );
         await queryClient.invalidateQueries({ queryKey: userKeys.subscriptions(userId) });
+        await queryClient.invalidateQueries({ queryKey: ["vpn-user", userId, "gateway-devices"] });
         await queryClient.invalidateQueries({ queryKey: ["vpn-users"] });
       }}
     />

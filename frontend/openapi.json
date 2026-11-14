@@ -2790,6 +2790,110 @@
         }
       }
     },
+    "/api/v1/vpn-users/{user_id}/gateway-devices": {
+      "get": {
+        "tags": [
+          "access"
+        ],
+        "summary": "Gateway Devices",
+        "operationId": "gateway_devices_api_v1_vpn_users__user_id__gateway_devices_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayDevicesRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "access"
+        ],
+        "summary": "Add Gateway Device",
+        "operationId": "add_gateway_device_api_v1_vpn_users__user_id__gateway_devices_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GatewayDeviceCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/vpn-users/{user_id}/subscriptions": {
       "post": {
         "tags": [
@@ -3310,6 +3414,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/VPNCredentialCreate"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
           "202": {
             "description": "Successful Response",
@@ -3911,6 +4032,234 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/api/v1/bot/users/by-telegram/{telegram_id}/devices": {
+      "get": {
+        "tags": [
+          "bot"
+        ],
+        "summary": "Devices",
+        "operationId": "devices_api_v1_bot_users_by_telegram__telegram_id__devices_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "telegram_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "title": "Telegram Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayDevicesRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "bot"
+        ],
+        "summary": "Add Device",
+        "operationId": "add_device_api_v1_bot_users_by_telegram__telegram_id__devices_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "telegram_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "title": "Telegram Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GatewayDeviceCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bot/users/by-telegram/{telegram_id}/devices/{credential_id}/revoke": {
+      "post": {
+        "tags": [
+          "bot"
+        ],
+        "summary": "Revoke Device",
+        "operationId": "revoke_device_api_v1_bot_users_by_telegram__telegram_id__devices__credential_id__revoke_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "telegram_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "title": "Telegram Id"
+            }
+          },
+          {
+            "name": "credential_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Credential Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Revoke Device Api V1 Bot Users By Telegram  Telegram Id  Devices  Credential Id  Revoke Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bot/users/by-telegram/{telegram_id}/devices/{credential_id}/config-link": {
+      "post": {
+        "tags": [
+          "bot"
+        ],
+        "summary": "Device Config Link",
+        "operationId": "device_config_link_api_v1_bot_users_by_telegram__telegram_id__devices__credential_id__config_link_post",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "telegram_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "title": "Telegram Id"
+            }
+          },
+          {
+            "name": "credential_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Credential Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigLinkRead"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/bot/heartbeat": {
@@ -7555,6 +7904,17 @@
         ],
         "title": "CredentialSource"
       },
+      "CredentialState": {
+        "type": "string",
+        "enum": [
+          "reserved",
+          "provisioning",
+          "active",
+          "revoking",
+          "revoked"
+        ],
+        "title": "CredentialState"
+      },
       "DiscoveredClientRead": {
         "properties": {
           "public_key": {
@@ -7781,6 +8141,104 @@
         ],
         "title": "GatewayAssignmentRead",
         "description": "Назначение выхода клиенту шлюза. Без адреса и ключей клиента: клиент определяется по credential_id."
+      },
+      "GatewayDeviceCreate": {
+        "properties": {
+          "device_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Name"
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          },
+          "grant_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Grant Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "grant_id"
+        ],
+        "title": "GatewayDeviceCreate"
+      },
+      "GatewayDeviceGateway": {
+        "properties": {
+          "grant_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Grant Id"
+          },
+          "protocol_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Protocol Id"
+          },
+          "server_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Server Id"
+          },
+          "server_name": {
+            "type": "string",
+            "title": "Server Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "grant_id",
+          "protocol_id",
+          "server_id",
+          "server_name"
+        ],
+        "title": "GatewayDeviceGateway"
+      },
+      "GatewayDevicesRead": {
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "title": "Limit",
+            "default": 5
+          },
+          "occupied": {
+            "type": "integer",
+            "title": "Occupied"
+          },
+          "devices": {
+            "items": {
+              "$ref": "#/components/schemas/VPNCredentialRead"
+            },
+            "type": "array",
+            "title": "Devices"
+          },
+          "gateways": {
+            "items": {
+              "$ref": "#/components/schemas/GatewayDeviceGateway"
+            },
+            "type": "array",
+            "title": "Gateways"
+          }
+        },
+        "type": "object",
+        "required": [
+          "occupied",
+          "devices",
+          "gateways"
+        ],
+        "title": "GatewayDevicesRead"
       },
       "GatewayExitCreate": {
         "properties": {
@@ -8816,6 +9274,8 @@
       "JobType": {
         "type": "string",
         "enum": [
+          "create_device",
+          "revoke_device",
           "create_user",
           "delete_user",
           "sync_server",
@@ -10648,6 +11108,37 @@
         ],
         "title": "VPNCredentialConfigRead"
       },
+      "VPNCredentialCreate": {
+        "properties": {
+          "device_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Name"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          }
+        },
+        "type": "object",
+        "title": "VPNCredentialCreate"
+      },
       "VPNCredentialRead": {
         "properties": {
           "id": {
@@ -10690,6 +11181,31 @@
               }
             ],
             "title": "External Name"
+          },
+          "state": {
+            "$ref": "#/components/schemas/CredentialState",
+            "default": "active"
+          },
+          "device_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Name"
+          },
+          "is_gateway": {
+            "type": "boolean",
+            "title": "Is Gateway",
+            "default": false
+          },
+          "has_config": {
+            "type": "boolean",
+            "title": "Has Config",
+            "default": false
           }
         },
         "type": "object",
