@@ -27,9 +27,20 @@
 | `registration(registration_id)` | `GET /registrations/{id}` | `Registration` или `None` (404) |
 | `user_by_telegram(telegram_id)` | `GET /users/by-telegram/{id}` | `UserStatus(name, valid_until, protocol)` или `None` (404) |
 | `config_link(telegram_id)` | `POST /users/by-telegram/{id}/config-link` | `ConfigLink(config_url, valid_until)` или `None` (404) |
+| `devices(telegram_id)` | `GET /users/by-telegram/{id}/devices` | Проверенные `limit`, `occupied`, `devices`, `gateways` или `None` (404) |
+| `add_device(telegram_id, grant_id, device_name, request_id)` | `POST /users/by-telegram/{id}/devices` | Принятая выдача; 404 → `Conflict(no_access)` |
+| `revoke_device(telegram_id, credential_id)` | `POST /users/by-telegram/{id}/devices/{credential_id}/revoke` | Принятый отзыв; 404 → `Conflict(no_access)` |
+| `device_config_link(telegram_id, credential_id)` | `POST /users/by-telegram/{id}/devices/{credential_id}/config-link` | `ConfigLink` выбранного устройства или `None` (404) |
 
 Ответ, который не объект, не JSON, или без обязательного поля (`status`, `registration_id`, `name`; у `config_link` —
 непустой `config_url`), — `PanelUnexpected`. `ConfigLink` в `repr` адрес не показывает: в нём токен.
+
+Список устройств проверяется целиком до передачи обработчику: `limit` строго 5,
+`occupied` — неотрицательный int (bool не принимается), идентификаторы — UUID,
+состояние — `reserved/provisioning/active/revoking/revoked`, `has_config` — bool,
+подпись — строка до 100 символов или NULL; у шлюза обязательны UUID гранта и имя.
+Некорректный элемент вызывает `PanelUnexpected` без содержимого ответа. Конфиги/ключи
+из ответа списка не сохраняются и не передаются обработчику.
 
 ## Повторы
 
@@ -43,6 +54,8 @@
   ссылку и гасит прежнюю; токен, который не дошёл до бота, мёртв и никуда не утёк.
 - 429: `Retry-After` в секундах. Если заголовка нет, он больше 10 с или это уже второй 429 в запросе — `RateLimited`
   (бот говорит «подождите минуту»). Иначе ждём и повторяем один раз.
+- Добавление устройства повторяет то же тело с `request_id`; панель возвращает ту же резервацию.
+  Адресный отзыв идемпотентен. Адресная ссылка заменяет только ссылку выбранного устройства.
 - Паузы — через `sleep`, подменяемый в тестах.
 
 ## Коды ответов
@@ -51,8 +64,8 @@
 |---|---|---|
 | 2xx | ответ | — |
 | 401 | `PanelAuthError` | без повтора; ERROR в лог один раз, пока панель не ответит иначе |
-| 404 | `None` (у `registration`, `user_by_telegram` и `config_link`), иначе `PanelUnexpected` | |
-| 409 | `Conflict(reason)` | `reason` из списка `CONFLICT_REASONS` (в нём и `config_unavailable`, `not_ready`, `no_access`, `not_configured`), незнакомый → `conflict` |
+| 404 | `None` (у `registration`, `user_by_telegram` и `config_link`, `devices`, `device_config_link`); мутации устройств → `Conflict(no_access)`, иначе `PanelUnexpected` | |
+| 409 | `Conflict(reason)` | `reason` из списка `CONFLICT_REASONS` (в нём и `config_unavailable`, `not_ready`, `no_access`, `not_configured`, `device_limit`), незнакомый → `conflict` |
 | 422 | `Rejected(field)` | `field` — последний элемент `loc` из `detail[0]`; `detail` целиком не читается и не логируется |
 | 429 | `RateLimited` или повтор | см. выше |
 | 502, 503, 504 | повторы, затем `PanelUnavailable` | |

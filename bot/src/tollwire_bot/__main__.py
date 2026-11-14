@@ -72,6 +72,7 @@ async def run(settings: Settings) -> int:
             [
                 BotCommand(command="status", description=t("cmd_status")),
                 BotCommand(command="config", description=t("cmd_config")),
+                BotCommand(command="devices", description=t("cmd_devices")),
                 BotCommand(command="help", description=t("cmd_help")),
             ]
         )

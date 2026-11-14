@@ -432,6 +432,7 @@ class IssuedLink:
     token: str
     url: str
     live: bool = True
+    credential_id: str | None = None
 
 
 @dataclass
@@ -493,6 +494,9 @@ class FakePanel:
         self.invites: dict[str, str] = {}  # код -> valid / used / expired / revoked
         self.invite_users: dict[str, int] = {}  # код -> telegram_id, который его занял
         self.users: dict[int, dict[str, Any]] = {}  # telegram_id -> {name, valid_until, protocol}
+        self.device_rows: dict[int, list[dict[str, Any]]] = {}
+        self.device_gateways: dict[int, list[dict[str, Any]]] = {}
+        self.device_requests: dict[str, tuple[int, str, str, str]] = {}  # request -> owner, grant, device, job
         self.links: list[IssuedLink] = []  # все выданные ссылки по порядку; живая у человека одна (последняя)
         self.link_refusal: dict[int, str] = {}  # telegram_id -> reason 409 на config-link (пока не уберут)
         self.registrations: dict[str, dict[str, Any]] = {}
@@ -523,6 +527,30 @@ class FakePanel:
 
     def add_user(self, telegram_id: int, name: str = "Иван Петров") -> None:
         self.users[telegram_id] = {"name": name, "valid_until": _FAR_DATE, "protocol": "amneziawg"}
+
+    def add_gateway(self, telegram_id: int, name: str = "Gateway") -> dict[str, Any]:
+        self.add_user(telegram_id)
+        self.users[telegram_id]["protocol"] = "amnezia_gateway"
+        gateway = {
+            "grant_id": str(uuid.uuid4()),
+            "protocol_id": str(uuid.uuid4()),
+            "server_id": str(uuid.uuid4()),
+            "server_name": name,
+        }
+        self.device_gateways.setdefault(telegram_id, []).append(gateway)
+        return gateway
+
+    def add_device(self, telegram_id: int, name: str = "Phone", state: str = "active") -> dict[str, Any]:
+        device = {
+            "id": str(uuid.uuid4()),
+            "device_name": name,
+            "state": state,
+            "has_config": state == "active",
+            "is_gateway": True,
+            "access_grant_id": self.device_gateways[telegram_id][0]["grant_id"],
+        }
+        self.device_rows.setdefault(telegram_id, []).append(device)
+        return device
 
     def finish(self, registration_id: str, status: str = "active") -> None:
         """Выдача закончилась: статус меняется, при `active` появляется пользователь (его покажет /status)."""
@@ -647,6 +675,10 @@ class FakePanel:
     @staticmethod
     def _route(method: str, path: str) -> str:
         tail = path.removeprefix(API_PREFIX)
+        if tail.startswith("/users/by-telegram/") and "/devices" in tail:
+            parts = tail.split("/")
+            suffix = "/devices" if len(parts) == 5 else f"/devices/*/{parts[-1]}"
+            return f"{method} /users/by-telegram/*{suffix}"
         if tail.startswith("/users/by-telegram/") and tail.endswith("/config-link"):
             return f"{method} /users/by-telegram/*/config-link"
         for prefix in ("/registrations/", "/users/by-telegram/"):
@@ -658,6 +690,8 @@ class FakePanel:
         if not path.startswith(API_PREFIX + "/"):
             return httpx.Response(404, json={"detail": "Not Found"})
         last = path.rsplit("/", 1)[-1]
+        if "/devices" in path:
+            return self._devices(route, path, body)
         if route == CONFIG_LINK:
             return self._config_link(path.split("/")[-2])
         if route == "POST /heartbeat":
@@ -688,6 +722,72 @@ class FakePanel:
                 return httpx.Response(404, json={"detail": "User not found"})
             return httpx.Response(200, json=user)
         return httpx.Response(404, json={"detail": "Not Found"})
+
+    def _devices(self, route: str, path: str, body: Any) -> httpx.Response:
+        parts = path.removeprefix(API_PREFIX).split("/")
+        telegram_id = int(parts[3])
+        missing = httpx.Response(404, json={"detail": "Device not found"})
+        if telegram_id not in self.users:
+            return missing
+        devices = self.device_rows.setdefault(telegram_id, [])
+        gateways = self.device_gateways.get(telegram_id, [])
+        occupied = sum(item["state"] != "revoked" for item in devices)
+        if len(parts) == 5 and route.startswith("GET"):
+            return httpx.Response(
+                200,
+                json={
+                    "limit": 5,
+                    "occupied": occupied,
+                    "devices": [item for item in devices if item["state"] != "revoked"],
+                    "gateways": gateways,
+                },
+            )
+        if len(parts) == 5 and route.startswith("POST"):
+            if not any(item["grant_id"] == body.get("grant_id") for item in gateways):
+                return missing
+            request = body["request_id"]
+            if request in self.device_requests:
+                owner, grant, _, job = self.device_requests[request]
+                return (
+                    httpx.Response(202, json={"id": job})
+                    if (owner == telegram_id and grant == body["grant_id"])
+                    else missing
+                )
+            if occupied >= 5:
+                return self._conflict("device_limit")
+            device = self.add_device(telegram_id, body["device_name"], "reserved")
+            device["access_grant_id"] = body["grant_id"]
+            job = str(uuid.uuid4())
+            self.device_requests[request] = (telegram_id, body["grant_id"], device["id"], job)
+            return httpx.Response(202, json={"id": job})
+        device = next((item for item in devices if item["id"] == parts[5]), None)
+        if device is None:
+            return missing
+        if parts[-1] == "revoke":
+            if device["state"] != "revoked":
+                device["state"], device["has_config"] = "revoking", False
+            return httpx.Response(200, json={"status": "accepted"})
+        if parts[-1] == "config-link":
+            if device["state"] in ("revoking", "revoked"):
+                return self._conflict("no_access")
+            if device["state"] != "active":
+                return self._conflict("not_ready")
+            if not device["has_config"]:
+                return self._conflict("config_unavailable")
+            for old in self.links:
+                if old.credential_id == device["id"]:
+                    old.live = False
+            token = f"LinkToken{len(self.links) + 1:034d}"
+            link = IssuedLink(telegram_id, token, f"{PUBLIC_URL}/c#{token}", credential_id=device["id"])
+            self.links.append(link)
+            return httpx.Response(
+                200,
+                json={
+                    "config_url": link.url,
+                    "valid_until": self.users[telegram_id]["valid_until"],
+                },
+            )
+        return missing
 
     def _config_link(self, raw_id: str) -> httpx.Response:
         """Новая ссылка: прежняя живая гаснет. 404 - нет такого человека; 409 с reason - по `link_refusal`."""

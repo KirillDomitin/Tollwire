@@ -70,13 +70,18 @@ async def test_links_are_sent_without_a_preview(started: StubBot) -> None:
 
 
 async def test_the_menu_has_status_config_and_help(started: StubBot) -> None:
-    assert sorted(command.command for command in started.commands) == ["config", "help", "status"]
+    assert sorted(command.command for command in started.commands) == ["config", "devices", "help", "status"]
     assert all(command.description for command in started.commands)
 
 
 async def test_the_menu_describes_config_with_the_text_from_texts(started: StubBot) -> None:
     (config,) = [command for command in started.commands if command.command == "config"]
     assert config.description == t(K.cmd_config)
+
+
+async def test_the_menu_describes_devices_from_texts(started: StubBot) -> None:
+    (devices,) = [command for command in started.commands if command.command == "devices"]
+    assert devices.description == t("cmd_devices")
 
 
 # --- отправитель очереди (этап 25.4) ---------------------------------------------------------------------------------

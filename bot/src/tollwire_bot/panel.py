@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol
 from urllib.parse import urlsplit
+from uuid import UUID
 
 import certifi
 import httpx
@@ -37,6 +38,7 @@ CONFLICT_REASONS = frozenset(
         "no_access",
         "not_configured",
         "conflict",
+        "device_limit",
     }
 )
 
@@ -303,6 +305,47 @@ class PanelClient:
         valid_until = data.get("valid_until")
         return ConfigLink(config_url=url, valid_until=valid_until if isinstance(valid_until, str) else None)
 
+    async def devices(self, telegram_id: int) -> dict[str, Any] | None:
+        response = await self._request("GET", f"/users/by-telegram/{telegram_id}/devices", allow_missing=True)
+        if response.status_code == 404:
+            return None
+        data = _json(response)
+        return _devices(data)
+
+    async def add_device(self, telegram_id: int, grant_id: str, device_name: str, request_id: str) -> None:
+        response = await self._request(
+            "POST",
+            f"/users/by-telegram/{telegram_id}/devices",
+            {
+                "grant_id": grant_id,
+                "device_name": device_name,
+                "request_id": request_id,
+            },
+            allow_missing=True,
+        )
+        if response.status_code == 404:
+            raise Conflict("no_access")
+
+    async def revoke_device(self, telegram_id: int, credential_id: str) -> None:
+        response = await self._request(
+            "POST", f"/users/by-telegram/{telegram_id}/devices/{credential_id}/revoke", allow_missing=True
+        )
+        if response.status_code == 404:
+            raise Conflict("no_access")
+
+    async def device_config_link(self, telegram_id: int, credential_id: str) -> ConfigLink | None:
+        response = await self._request(
+            "POST", f"/users/by-telegram/{telegram_id}/devices/{credential_id}/config-link", allow_missing=True
+        )
+        if response.status_code == 404:
+            return None
+        data = _json(response)
+        url = data.get("config_url")
+        if not isinstance(url, str) or not url:
+            raise PanelUnexpected("no link in the answer")
+        until = data.get("valid_until")
+        return ConfigLink(config_url=url, valid_until=until if isinstance(until, str) else None)
+
     async def claim(self, limit: int, kinds: list[str] | None = None) -> Claim:
         """Взять пачку исходящих сообщений в аренду (для ссылок на конфиг панель выпускает адрес прямо сейчас)."""
         body: dict[str, Any] = {"limit": limit}
@@ -431,6 +474,50 @@ class PanelClient:
             if 200 <= status < 300:
                 return response
             raise PanelUnexpected(f"HTTP {status}")
+
+
+def _device_uuid(value: Any) -> str:
+    if not isinstance(value, str):
+        raise PanelUnexpected("unexpected device identifier")
+    try:
+        return str(UUID(value))
+    except ValueError:
+        raise PanelUnexpected("unexpected device identifier") from None
+
+
+def _devices(data: dict[str, Any]) -> dict[str, Any]:
+    """Validate the entire list before handlers can display or address any device."""
+    devices, gateways = data.get("devices"), data.get("gateways")
+    occupied, limit = data.get("occupied"), data.get("limit")
+    if not isinstance(devices, list) or not isinstance(gateways, list):
+        raise PanelUnexpected("unexpected devices answer")
+    if type(occupied) is not int or occupied < 0 or type(limit) is not int or limit != 5:
+        raise PanelUnexpected("unexpected device quota")
+    states = {"reserved", "provisioning", "active", "revoking", "revoked"}
+    clean_devices = []
+    for item in devices:
+        if not isinstance(item, dict) or not isinstance(item.get("state"), str) or item["state"] not in states:
+            raise PanelUnexpected("unexpected device state")
+        if type(item.get("has_config")) is not bool:
+            raise PanelUnexpected("unexpected device readiness")
+        name = item.get("device_name")
+        if name is not None and (not isinstance(name, str) or len(name) > 100):
+            raise PanelUnexpected("unexpected device name")
+        clean_devices.append(
+            {
+                "id": _device_uuid(item.get("id")),
+                "access_grant_id": _device_uuid(item.get("access_grant_id")),
+                "device_name": name,
+                "state": item["state"],
+                "has_config": item["has_config"],
+            }
+        )
+    clean_gateways = []
+    for item in gateways:
+        if not isinstance(item, dict) or not isinstance(item.get("server_name"), str) or not item["server_name"]:
+            raise PanelUnexpected("unexpected gateway name")
+        clean_gateways.append({"grant_id": _device_uuid(item.get("grant_id")), "server_name": item["server_name"]})
+    return {"devices": clean_devices, "gateways": clean_gateways, "occupied": occupied, "limit": limit}
 
 
 def _json(response: httpx.Response) -> dict[str, Any]:
