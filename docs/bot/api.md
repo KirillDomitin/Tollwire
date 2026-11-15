@@ -14,6 +14,10 @@
 | `GET /registrations/{registration_id}` | — | `{registration_id, status}` | 200; 404; 422 (не UUID) |
 | `GET /users/by-telegram/{telegram_id}` | — | `{name, valid_until, protocol}` | 200; 404 (`User not found`); 422 |
 | `POST /users/by-telegram/{telegram_id}/config-link` | — | `{config_url, valid_until}` | 200; 404 (`User not found`); 409 с `reason`; 422 |
+| `GET /users/by-telegram/{telegram_id}/devices` | — | `{limit:5, occupied, devices, gateways}` | 200; 404; 422 |
+| `POST /users/by-telegram/{telegram_id}/devices` | `{grant_id, device_name?, request_id}` | JobRead | 202; 404; 409; 422 |
+| `POST /users/by-telegram/{telegram_id}/devices/{credential_id}/revoke` | — | `{status:"accepted"}` | 200; 404; 422 |
+| `POST /users/by-telegram/{telegram_id}/devices/{credential_id}/config-link` | — | `{config_url, valid_until}`, `no-store` | 200; 404; 409 с `reason`; 422 |
 
 - `status` регистрации: `payment_pending`, `provisioning`, `active`, `failed`.
 - `/users/by-telegram`: `valid_until` — конец последней подписки пользователя (по дате создания, в любом статусе);
@@ -108,6 +112,28 @@
 - Аудит и логи: актор бота без админа (только IP). `core/log.py` маскирует `twb_…`, значение `X-Bot-Key`, поле
   `code` (от 8 символов) и поле `token` страницы конфига (от 8 символов). Ключ и приглашение, выпущенные консольными скриптами, — с `source: cli` в `meta`.
 - Ключ, отозванный в панели, перестаёт работать на следующем запросе.
+
+## Gateway-устройства пользователя
+
+Маршруты `/devices` доступны только с ключом бота. Владелец выводится из Telegram ID;
+каждая мутация/ссылка проверяет принадлежность grant/credential и gateway-протокол. Чужой,
+исчезнувший либо non-gateway ID → 404. Подпись 1–100 символов (в Telegram ввод ограничен 64),
+request_id — обязательный UUID; повтор возвращает ту же выдачу без второго места.
+
+Список содержит metadata VPNCredentialRead: id/access_grant_id, state, device_name,
+is_gateway, has_config, source, external_name, created_at, revoked_at. Конфига/ключей в нём нет.
+`gateways` — только действующие доступы: grant_id/protocol_id/server_id/server_name. Устройства
+с истёкшим доступом могут ещё занимать слот до уборки, но их grant уже отсутствует в gateways.
+
+Лимит общий с панелью: пять gateway-credentials на VPNUser по всем шлюзам. Pending и отзыв
+занимают место; достижение → 409 `reason=device_limit`. Неактивный grant запрещает добавление.
+Адресная ссылка: pending → 409 not_ready; нет действующего доступа/отзывается → no_access;
+нет сохранённого конфига → config_unavailable; нет публичного адреса → not_configured.
+Повторная ссылка заменяет ссылку только выбранного устройства, не создавая peer.
+
+`/devices` — явное меню шлюзов. Прежний `/config` сохраняет выбор одиночного клиента и совместимость
+со смешанными протоколами; из него бот подсказывает `/devices`. Общий lifecycle и административные
+маршруты — [контракт устройств](../access/gateway-devices.md), диалог — [бот](../bot-service/dialog.md).
 
 ## Уведомления администратору
 

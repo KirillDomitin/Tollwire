@@ -1,0 +1,89 @@
+# История миграций
+
+Справочник прежних ревизий; текущие правила — [alembic/CLAUDE.md](../../alembic/CLAUDE.md).
+
+## Новые значения enum (`d3a7c9e15b42`, поиск Amnezia)
+
+- `ADD VALUE` для `protocoltype` (`AMNEZIA_APP_AWG`, `AMNEZIA_APP_AWG2`) и `jobtype` (`DISCOVER_VPN`) — в
+  `op.get_context().autocommit_block()`, с `IF NOT EXISTS`.
+- Downgrade удаляет строки `protocols` с новыми типами и `jobs` с `DISCOVER_VPN`, затем пересоздаёт оба enum без
+  новых значений. Значение из enum Postgres иначе не убрать.
+
+## Шлюз (`a8c4e1f7b925`)
+
+- `protocoltype` += `AMNEZIA_GATEWAY` - в `autocommit_block`, с `IF NOT EXISTS`.
+- Downgrade удаляет строки `protocols` шлюза (каскадом уходят их гранты и credential'ы) и пересоздаёт enum из трёх
+  прежних значений (как `d3a7c9e15b42`); уникальность `(server_id, type)` сохраняется.
+
+## Выходы шлюза (`c7e1b4d8a932`)
+
+- `jobtype` += `GATEWAY_ADD_EXIT`, `GATEWAY_REMOVE_EXIT` — в `autocommit_block`, с `IF NOT EXISTS`.
+- Таблица `gateway_exits` (FK на `protocols`: шлюз CASCADE, выход RESTRICT; UNIQUE `(шлюз, слот)` и `(шлюз, выход)`; CHECK слота
+  1..200, веса 1..100, `max_clients > 0`; `state` — VARCHAR(16), не Postgres-enum; индекс по `exit_protocol_id`).
+- Downgrade: удаляет таблицу, задачи этих типов и пересоздаёт `jobtype` (DEFAULT `HEALTH_CHECK` возвращается).
+
+## Назначения выходов (`d2f8a6c3b514`)
+
+- Таблица `gateway_assignments`: PK `credential_id` (FK `vpn_credentials` CASCADE), `exit_id` (FK `gateway_exits` CASCADE, индекс),
+  `pinned_exit_id` (FK `gateway_exits` SET NULL), `assigned_at`, `reason` (VARCHAR(16), не Postgres-enum).
+- Также `gateway_exits.drained_moved` / `drained_unassigned` (INTEGER NOT NULL DEFAULT 0): итог переноса клиентов при снятии выхода.
+- Downgrade удаляет эти колонки и таблицу (производные данные: карту на шлюзе панель собирает из БД).
+
+## «Россия напрямую» (`e5a1c9f3b207`)
+
+- `jobtype` += `GEOIP_UPDATE`, `GATEWAY_APPLY_RU` (в `autocommit_block`, `IF NOT EXISTS`). Таблицы `geoip_lists` (статус -
+  VARCHAR(16), не Postgres-enum; частичный уникальный индекс `uq_geoip_lists_one_active` по `status = 'ACTIVE'`) и
+  `geoip_overrides` (UNIQUE `uq_geoip_overrides_network`; `action` - VARCHAR(16)).
+- Downgrade удаляет таблицы (списки скачиваются заново), задачи двух новых типов и пересоздаёт `jobtype` из прежних значений
+  с `DEFAULT 'HEALTH_CHECK'` (как миграции выходов).
+
+## Failover выходов (`f3b8d2a6c914`)
+
+- `gateway_exits.consecutive_failures` (INTEGER NOT NULL DEFAULT 0), `healthy_since` (timestamptz, NULL) и `failure_notified`
+  (BOOLEAN NOT NULL DEFAULT false: событие `gateway_failover` за отказ уже записано); `jobtype` +=
+  `GATEWAY_APPLY` (`autocommit_block`, `IF NOT EXISTS`). Значения `AssignReason` (`failover_return`) - VARCHAR(16), миграции не нужно.
+- Downgrade удаляет колонки (счётчики производные), задачи `GATEWAY_APPLY` и пересоздаёт `jobtype` с `DEFAULT 'HEALTH_CHECK'`.
+
+## Импорт клиентов (`f6b2d8a41c73`)
+
+- `jobtype` += `IMPORT_CLIENTS` — в `autocommit_block`, с `IF NOT EXISTS`.
+- `vpn_users.email` → NULL. `vpn_credentials`: `encrypted_config` → NULL; `source` (VARCHAR(16), не
+  Postgres-enum; `server_default 'ISSUED'` — старые строки становятся ISSUED), `encrypted_psk`,
+  `external_name`; CHECK `ck_vpn_credentials_issued_has_config`. `jobs.params` (JSONB, NULL).
+- Downgrade: удаляет гранты, у которых остались только `IMPORTED` credential'ы (вместе с ними), затем сами
+  `IMPORTED` credential'ы и задачи `IMPORT_CLIENTS`; пользователям без email ставит `<id>@imported.invalid`;
+  дальше возвращает NOT NULL и пересоздаёт `jobtype` без нового значения. Гранты с обычным credential'ом,
+  пользователи, подписки и peer'ы на сервере не трогаются.
+
+## Telegram-бот (`a7d3e9b15c28`)
+
+- `vpn_users` += `telegram_id` (BIGINT NULL, UNIQUE `uq_vpn_users_telegram_id`) и `telegram_username`
+  (VARCHAR(64) NULL).
+- Таблицы `bot_keys`, `bot_invites` (CHECK `ck_bot_invites_days`: 1..3650), `bot_registrations` (UNIQUE
+  `invite_id` и `access_grant_id`, FK именованные). `status` — VARCHAR(16), не Postgres-enum.
+- Частичный уникальный индекс `uq_bot_registrations_open_telegram_id` по `telegram_id` при `status IN
+  ('PAYMENT_PENDING', 'PROVISIONING')` — имена членов enum, не значения.
+- Downgrade удаляет индекс, три таблицы и две колонки с UNIQUE. **Связка пользователей с Telegram и все данные
+  бота (ключи, приглашения, регистрации) теряются**; пользователи, подписки и гранты остаются.
+
+## Страница конфига (`b4f1c8e27a69`)
+
+- Таблица `config_links`: `token_hash` VARCHAR(64) (UNIQUE `uq_config_links_token_hash`), `credential_id` (FK
+  `vpn_credentials`, CASCADE), `created_at`, `revoked_at`, `last_opened_at`.
+- Частичный уникальный индекс `uq_config_links_live_per_credential` по `credential_id` при `revoked_at IS NULL` —
+  одна живая ссылка на клиента.
+- Downgrade удаляет индекс и таблицу. **Все ссылки теряются**: людям нужно снова написать боту `/config`. Клиенты и
+  доступы не трогаются.
+
+## Уведомления администратору (`e7a4c1d92b58`)
+
+- `admin_telegram_links`, `bot_notify_cursor`, `bot_notify_seen`; у outbox получатель —
+  ровно один из admin_link_id (notify) / user_id (news/config), CHECK и CASCADE.
+- `bot_notify_cursor.started_at` — неизменяемая нижняя граница истории. Чтение начинается с
+  max(cursor_at - overlap, started_at); миграция вставляет единственный курсор id=1 с обоими временами now().
+- started_at добавлен в существующую e7 до production-развёртывания. Для уже применённой локальной
+  ревизии повтор upgrade head сам по себе новую колонку не добавляет; нужен пересозданный тестовый стенд
+  либо осознанный цикл downgrade/upgrade с учётом потерь.
+- Downgrade сначала удаляет notify из outbox, затем возвращает NOT NULL user_id и удаляет новые
+  колонки, привязки, курсор/seen, last_seen_local. **Привязки, настройки событий и очередь уведомлений
+  теряются**; прежние news/config остаются. Проверка — tests/services/test_migrations_notify.py.

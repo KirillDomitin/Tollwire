@@ -374,19 +374,32 @@ class AmneziaWGProvider(VPNProvider):
         return VPNClientConfig(name=name, public_key=keys.public_key, address=str(address), config=client_config)
 
     async def revoke_client(self, public_key: str) -> None:
-        """Убирает клиента с сервера. Идемпотентно: отсутствующий клиент — не ошибка.
+        await self.ensure_client_removed(public_key=public_key)
 
-        Вызывающий обязан держать ServerLock (read-modify-write awg0.conf).
+    async def ensure_client_removed(self, *, name: str | None = None, public_key: str | None = None) -> None:
+        """Remove matching peers from disk and runtime under the caller's ServerLock.
+
+        Applying the file even when it already lacks the peer repairs interrupted syncconf operations.
         """
-        if not is_valid_public_key(public_key):
+        if name is None and public_key is None:
+            raise ValueError("A client name or public key is required")
+        if name is not None:
+            validate_name(name)
+        if public_key is not None and not is_valid_public_key(public_key):
             raise ValueError("Invalid WireGuard public key")
         await self._require_own_container()
         server_config = await self.ssh_client.read_file(self.layout.host_config_file)
-        updated, removed = remove_peer(server_config, public_key)
-        if not removed:
-            return
-        await self.ssh_client.write_file(self.layout.host_config_file, updated)
+        updated = server_config
+        for peer in list_peers(server_config):
+            if (name is not None and peer.name == name) or (public_key is not None and peer.public_key == public_key):
+                updated, _ = remove_peer(updated, peer.public_key)
+        if updated != server_config:
+            await self.ssh_client.write_file(self.layout.host_config_file, updated)
         await self._apply_config()
+        runtime = await self.client_stats()
+        expected_keys = {peer.public_key for peer in list_peers(updated)}
+        if runtime is None or {peer.public_key for peer in runtime} != expected_keys:
+            raise CommandExecutionError("Client removal could not be confirmed on the live interface")
 
     async def _ensure_nat(self) -> None:
         """Гарантирует выход клиентов в интернет: хуки NAT в конфиге и правило в работающем контейнере.

@@ -398,7 +398,9 @@ def test_nat_hooks_follow_the_subnet() -> None:
 
 async def test_default_layout_commands_are_byte_for_byte_the_old_ones() -> None:
     """Журнал команд install → create_client → sync → health → install → revoke → uninstall снят с кода ДО
-    введения раскладки. Любая правка текста команды обычного протокола должна ломать этот тест."""
+    введения раскладки. При отзыве добавлены чтение runtime peers и подтверждение владельца контейнера:
+    отсутствие peer в файле не доказывает удаление из интерфейса. Остальные команды сохранены побайтно;
+    любая новая правка текста или порядка команд должна ломать этот тест."""
     golden = json.loads(GOLDEN.read_text(encoding="utf-8"))
     fake = FakeServer()
     await full_flow(AmneziaWGProvider, fake)

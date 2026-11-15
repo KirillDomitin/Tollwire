@@ -183,16 +183,7 @@ class ServerSyncService:
                     continue
                 # ServerLock excludes create/revoke jobs while sync confirms an interrupted operation's cleanup.
                 name = credential.peer_name or client_name(grant.id)
-                peers = [peer for peer in on_server if peer.name == name or (
-                    credential.client_public_key is not None and peer.public_key == credential.client_public_key
-                )]
-                for peer in peers:
-                    await provider.revoke_client(peer.public_key)
-                remaining = await provider.list_clients()
-                if any(peer.name == name or (credential.client_public_key is not None and
-                       peer.public_key == credential.client_public_key) for peer in remaining):
-                    issues.append(f"Credential {credential.id} cleanup was not confirmed")
-                    continue
+                await provider.ensure_client_removed(name=name, public_key=credential.client_public_key)
                 credential.state = CredentialState.REVOKED
                 credential.revoked_at = datetime.now(timezone.utc)
                 await self.session.commit()
@@ -225,8 +216,7 @@ class ServerSyncService:
 
         # Доступ уже закончился, а REVOKE_ACCESS не дошёл до конца (например, сервер был недоступен).
         for credential in stale:
-            if credential.client_public_key in server_keys:
-                await provider.revoke_client(credential.client_public_key)
+            await provider.ensure_client_removed(public_key=credential.client_public_key)
             credential.revoked_at = datetime.now(timezone.utc)
             credential.state = CredentialState.REVOKED
             await self.session.commit()

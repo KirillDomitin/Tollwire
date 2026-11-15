@@ -506,15 +506,7 @@ class VPNCredentialService:
 
     async def _cleanup_peer(self, provider: VPNProvider, credential: VPNCredential, name: str) -> None:
         # A timed out create may have persisted a peer whose key never reached the database.
-        peers = await provider.list_clients()
-        keys = {peer.public_key for peer in peers if peer.name == name}
-        if credential.client_public_key is not None:
-            keys.add(credential.client_public_key)
-        for public_key in keys:
-            await provider.revoke_client(public_key)
-        remaining = await provider.list_clients()
-        if any(peer.name == name or peer.public_key in keys for peer in remaining):
-            raise InactiveAccessError("Peer cleanup was not confirmed")
+        await provider.ensure_client_removed(name=name, public_key=credential.client_public_key)
 
     async def _attach_to_gateway(self, credential: VPNCredential, protocol_id: UUID) -> None:
         protocol = await self.protocols.get_by_id(protocol_id)
@@ -551,7 +543,8 @@ class VPNCredentialService:
         credential.revoked_at = datetime.now(timezone.utc)
         credential.state = CredentialState.REVOKED
         self.audit.record(AuditAction.CREDENTIAL_REVOKED, AuditEntity.VPN_CREDENTIAL, credential.id,
-                          {"access_grant_id": grant.id, "server_id": grant.server_id})
+                          {"access_grant_id": grant.id, "server_id": grant.server_id,
+                           "public_key": credential.client_public_key})
         await self.session.commit()
         if protocol.type == ProtocolType.AMNEZIA_GATEWAY:
             await GatewayAssignmentService(self.session, self.actor).detach(credential)

@@ -211,10 +211,12 @@ async def test_failed_cleanup_does_not_free_slot_or_create_another_peer(
     ready = await world.credentials().provision(grant.id, credential_id=ids[0])
     grant_id, ready_id, ready_key = grant.id, ready.id, ready.client_public_key
 
-    async def cannot_confirm_cleanup(self: AmneziaGatewayProvider, public_key: str) -> None:
+    async def cannot_confirm_cleanup(
+        self: AmneziaGatewayProvider, *, name: str | None = None, public_key: str | None = None
+    ) -> None:
         raise TimeoutError("cleanup not confirmed")
 
-    monkeypatch.setattr(AmneziaGatewayProvider, "revoke_client", cannot_confirm_cleanup)
+    monkeypatch.setattr(AmneziaGatewayProvider, "ensure_client_removed", cannot_confirm_cleanup)
     await world.credentials().schedule_revoke(ready_id)
     with pytest.raises(TimeoutError, match="cleanup not confirmed"):
         await world.credentials().deprovision(grant_id, credential_id=ready_id)

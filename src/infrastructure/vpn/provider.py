@@ -145,6 +145,15 @@ class VPNProvider(ABC):
     async def create_client(self, name: str) -> VPNClientConfig: ...
     @abstractmethod
     async def revoke_client(self, public_key: str) -> None: ...
+
+    async def ensure_client_removed(self, *, name: str | None = None, public_key: str | None = None) -> None:
+        """Confirm removal through a provider's revoke contract; unknown-key cleanup needs provider support."""
+        if name is None and public_key is None:
+            raise ValueError("A client name or public key is required")
+        if public_key is None:
+            raise UnsupportedOperationError(f"{type(self).__name__} cannot remove a client by name")
+        await self.revoke_client(public_key)
+
     @abstractmethod
     async def restore_client(self, name: str, client_config: str) -> bool: ...
     async def restore_peer(self, name: str, public_key: str, psk: str, address: str) -> bool:

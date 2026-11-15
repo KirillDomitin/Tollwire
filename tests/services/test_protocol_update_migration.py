@@ -5,6 +5,7 @@ from uuid import uuid4
 from sqlalchemy import text
 
 from core.database.postgres import engine, session_factory
+from modules.access.models.vpn_credential import VPNCredential
 from modules.jobs.models.job import Job, JobStatus, JobType
 from tests.conftest import run_alembic
 
@@ -109,8 +110,14 @@ async def test_targeted_downgrade_removes_only_new_job_types_and_preserves_old_j
         assert "UPDATE_PROTOCOL" not in labels and "CHECK_PROTOCOL_UPDATES" not in labels
     finally:
         await engine.dispose()
-        run_alembic("upgrade", "a9d1e6c42b70")
+        run_alembic("upgrade", "head")
         await engine.dispose()
+    async with engine.connect() as conn:
+        state_exists = (await conn.execute(text(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND table_name = :table AND column_name = :column)"
+        ), {"table": VPNCredential.__tablename__, "column": VPNCredential.state.key})).scalar_one()
+    assert state_exists, "migration roundtrip must restore the current credential schema for subsequent tests"
     async with session_factory() as session:
         old = await session.get(Job, old_id)
         assert old is not None and old.result == {"preserve": "output"}

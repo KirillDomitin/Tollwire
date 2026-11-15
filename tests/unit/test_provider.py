@@ -105,11 +105,15 @@ async def test_create_client_rejects_unsafe_names(server: FakeServer, name: str)
 
 async def test_revoke_client_is_idempotent(server: FakeServer) -> None:
     client = await call(server, "create_client", "grant-aaa")
+    survivor = await call(server, "create_client", "grant-bbb")
     await call(server, "revoke_client", client.public_key)  # type: ignore[attr-defined]
-    assert server.interface_peers == set() and list_peers(server.files[CONFIG_FILE]) == []
+    assert server.interface_peers == {survivor.public_key}  # type: ignore[attr-defined]
+    assert [peer.public_key for peer in list_peers(server.files[CONFIG_FILE])] == [survivor.public_key]  # type: ignore[attr-defined]
     writes_before = len(server.commands)
+    server.interface_peers.add(client.public_key)  # type: ignore[attr-defined]  # runtime survived an earlier failed apply
     await call(server, "revoke_client", client.public_key)  # type: ignore[attr-defined]
-    assert not any("syncconf" in cmd for cmd in server.commands[writes_before:])  # нечего применять
+    assert any("syncconf" in cmd for cmd in server.commands[writes_before:])
+    assert server.interface_peers == {survivor.public_key}  # type: ignore[attr-defined]
 
 
 async def test_revoke_client_rejects_garbage_key(server: FakeServer) -> None:

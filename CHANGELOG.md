@@ -8,6 +8,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- Device revocation verifies removal from the running VPN interface before releasing its slot, including retries
+  after a configuration was saved but could not be applied.
+
 - Raised the Telegram bot's memory limit to 256 MB for local and remote deployments to prevent startup OOM kills.
 
 - The panel no longer touches a foreign `amnezia-awg` container. The AmneziaVPN app names its container the same
@@ -16,6 +19,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   clear error, removal changes nothing, and status and health report "not installed".
 
 ### Added
+
+- Up to five separate gateway device configurations per VPN user across all gateways, with device lists,
+  explicit gateway selection, individual config links and revocation in the panel and Telegram `/devices`.
+  Pending issuance and cleanup retain their slots; existing configurations remain valid.
 
 - Device activity in user cards: last VPN handshake, downloaded and uploaded traffic, sample time and stale-data
   indicators. Traffic counters are measured from the client's perspective since the last VPN reset.

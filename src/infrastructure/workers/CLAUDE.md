@@ -19,9 +19,13 @@
 - Берёт `job_id` из Redis-очереди (`modules/jobs/queue.py`, BRPOP), читает Job `with_for_update`, ведёт статусы
   PENDING → RUNNING → SUCCESS/FAILED. Одна сессия БД на задачу; любая ошибка → FAILED с текстом
   (`job_error_text`: redact + обрезка), цикл живёт дальше.
-- Диспетчер `match JobType`: `CREATE_USER`, `REVOKE_ACCESS`, `SYNC_SERVER`, `HEALTH_CHECK`, `INSTALL_SERVER`,
-  `INSTALL_PROTOCOL`, `REMOVE_PROTOCOL`, `INSTALL_SSH_KEY`, `DISCOVER_VPN`, `GATEWAY_ADD_EXIT` / `GATEWAY_REMOVE_EXIT` / `GATEWAY_APPLY_RU` (под `ServerLock` шлюза), `GATEWAY_APPLY` (failover и ручной перенос шлюза, под `ServerLock` шлюза), `GEOIP_UPDATE` (глобальная: без `server_id` и блокировки) (`DELETE_USER` — заглушка;`IMPORT_CLIENTS` (`DELETE_USER` — заглушка; `UNINSTALL_SERVER` не
-  обрабатывается → явный FAILED). Серверная задача без `server_id` → FAILED (`_reject`).
+- CREATE_DEVICE/REVOKE_DEVICE адресуют params.credential_id; новые CREATE_USER/REVOKE_ACCESS тоже
+  адресные. Проверять credential/grant/server; только legacy без target работает по гранту. Всё под ServerLock.
+  Намерение PROVISIONING коммитится до SSH; failed Job слот не освобождает.
+  Lifecycle/sync/откат — [контракт устройств](../../../docs/access/gateway-devices.md).
+- Остальные серверные JobType диспетчеризуются в worker.py; GEOIP_UPDATE глобальная без server_id/lock,
+  DISCOVER_VPN и CHECK_PROTOCOL_UPDATES читают без ServerLock. DELETE_USER — заглушка,
+  UNINSTALL_SERVER → FAILED. Серверная задача без server_id → FAILED (`_reject`).
 - `DISCOVER_VPN` — без ServerLock, только чтение (`ServerDiscoveryService.discover`). `INSTALL_SERVER` после
   установки делает тот же поиск внутри своей задачи: сбой поиска логируется (warning), установка остаётся SUCCESS.
 - `IMPORT_CLIENTS` — под `ServerLock`: `ClientImportService.run(job)` (читает сервер, пишет в БД в той же
@@ -30,8 +34,8 @@
   пока задача не завершена (`has_unfinished_for_server`).
 - Серверные операции — под `ServerLock`; сервер занят → задача обратно в PENDING и в очередь с паузой.
 - Перед записью FAILED — `rollback` и перечитать Job (сессия могла сломаться).
-- Итог `CREATE_USER` (SUCCESS и FAILED) передаётся хуку `BotRegistrationService.on_issue_finished(job)` до
-  commit, в той же транзакции: регистрация бота по этому гранту становится `active` или `failed`. Упавший хук
+- Итог CREATE_USER/CREATE_DEVICE (SUCCESS и FAILED) передаётся хуку `BotRegistrationService.on_issue_finished(job)` до
+  commit; active требует готовый адресный credential и живой доступ, иначе failed. Упавший хук
   не даёт зафиксировать итог задачи: она остаётся RUNNING (её закроет `stale_jobs`), регистрацию закроет
   `reconcile`.
 - Сбой Redis → backoff, не падение процесса. Логи с `bind(job_id, job_type, server_id)`.
@@ -64,4 +68,4 @@ interval) — несколько воркеров не дублируют раб
 | `metrics_rollup` | почасовая свёртка метрик и чистка старых |
 
 ⚠️ Если один VPN-сервер подключён к двум панелям (dev и prod), dev-воркер не запускать: правило `sync` каждой
-панели удаляет клиентов другой (имена `grant-*`).
+панели удаляет клиентов другой (имена `grant-*` / `dev-*`).

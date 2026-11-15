@@ -256,7 +256,7 @@ ALLOWED = [
         E(f"rm -rf {HOST_DIR}"),
         rf"docker port {NAME} \d+/udp",
         rf"docker update --restart unless-stopped {NAME}",
-        rf"docker exec {NAME} awg show gw0 (?:public-key|listen-port|latest-handshakes)",
+        rf"docker exec {NAME} awg show gw0 (?:public-key|listen-port|latest-handshakes|transfer)",
         E(f"docker exec {NAME} awg show interfaces"),
         E(f"docker exec {NAME} ip rule show"),
         E(f"docker exec {NAME} iptables -t mangle -S PREROUTING"),
