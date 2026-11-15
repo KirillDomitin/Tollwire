@@ -29,32 +29,47 @@ def upgrade() -> None:
                   JOIN protocols p ON p.id = g.protocol_id
                   WHERE c.access_grant_id = g.id AND p.type = 'AMNEZIA_GATEWAY'""")
     op.drop_index("uq_vpn_credentials_live_per_grant", table_name="vpn_credentials")
-    op.create_index("uq_vpn_credentials_live_per_grant", "vpn_credentials", ["access_grant_id"],
-                    unique=True, postgresql_where=sa.text("revoked_at IS NULL AND NOT is_gateway"))
+    op.create_index(
+        "uq_vpn_credentials_live_per_grant",
+        "vpn_credentials",
+        ["access_grant_id"],
+        unique=True,
+        postgresql_where=sa.text("revoked_at IS NULL AND NOT is_gateway"),
+    )
     op.alter_column("vpn_credentials", "client_address", existing_type=sa.String(64), nullable=True)
     op.alter_column("vpn_credentials", "client_public_key", existing_type=sa.String(64), nullable=True)
     op.drop_constraint("ck_vpn_credentials_issued_has_config", "vpn_credentials", type_="check")
-    op.create_check_constraint("ck_vpn_credentials_issued_has_config", "vpn_credentials",
-                               "state <> 'ACTIVE' OR source <> 'ISSUED' OR encrypted_config IS NOT NULL")
-    op.create_check_constraint("ck_vpn_credentials_active_identity", "vpn_credentials",
-                               "state <> 'ACTIVE' OR (client_address IS NOT NULL AND client_public_key IS NOT NULL)")
+    op.create_check_constraint(
+        "ck_vpn_credentials_issued_has_config",
+        "vpn_credentials",
+        "state <> 'ACTIVE' OR source <> 'ISSUED' OR encrypted_config IS NOT NULL",
+    )
+    op.create_check_constraint(
+        "ck_vpn_credentials_active_identity",
+        "vpn_credentials",
+        "state <> 'ACTIVE' OR (client_address IS NOT NULL AND client_public_key IS NOT NULL)",
+    )
 
 
 def downgrade() -> None:
     connection = op.get_bind()
-    incompatible = connection.execute(sa.text("""SELECT EXISTS (
+    incompatible = connection.execute(
+        sa.text("""SELECT EXISTS (
         SELECT 1 FROM vpn_credentials WHERE client_address IS NULL OR client_public_key IS NULL
             OR (source = 'ISSUED' AND encrypted_config IS NULL)
         UNION ALL SELECT 1 FROM vpn_credentials WHERE revoked_at IS NULL
             GROUP BY access_grant_id HAVING count(*) > 1
         UNION ALL SELECT 1 FROM vpn_credentials WHERE state IN ('RESERVED','PROVISIONING','REVOKING')
-    )""")).scalar()
+    )""")
+    ).scalar()
     if incompatible:
         raise RuntimeError("Cannot downgrade gateway devices: finish cleanup and revoke additional devices first")
-    unfinished = connection.execute(sa.text("""SELECT EXISTS (SELECT 1 FROM jobs
+    unfinished = connection.execute(
+        sa.text("""SELECT EXISTS (SELECT 1 FROM jobs
         WHERE (type::text IN ('CREATE_DEVICE','REVOKE_DEVICE') OR
             (type::text IN ('CREATE_USER','REVOKE_ACCESS') AND params ? 'credential_id'))
-            AND status::text IN ('PENDING','RUNNING'))""")).scalar()
+            AND status::text IN ('PENDING','RUNNING'))""")
+    ).scalar()
     if unfinished:
         raise RuntimeError("Cannot downgrade with unfinished device jobs")
     # Preserve completed history in the vocabulary understood by the old application.
@@ -62,13 +77,19 @@ def downgrade() -> None:
     op.execute("UPDATE jobs SET type = 'REVOKE_ACCESS' WHERE type::text = 'REVOKE_DEVICE'")
     op.drop_constraint("ck_vpn_credentials_active_identity", "vpn_credentials", type_="check")
     op.drop_constraint("ck_vpn_credentials_issued_has_config", "vpn_credentials", type_="check")
-    op.create_check_constraint("ck_vpn_credentials_issued_has_config", "vpn_credentials",
-                               "source <> 'ISSUED' OR encrypted_config IS NOT NULL")
+    op.create_check_constraint(
+        "ck_vpn_credentials_issued_has_config", "vpn_credentials", "source <> 'ISSUED' OR encrypted_config IS NOT NULL"
+    )
     op.alter_column("vpn_credentials", "client_address", existing_type=sa.String(64), nullable=False)
     op.alter_column("vpn_credentials", "client_public_key", existing_type=sa.String(64), nullable=False)
     op.drop_index("uq_vpn_credentials_live_per_grant", table_name="vpn_credentials")
-    op.create_index("uq_vpn_credentials_live_per_grant", "vpn_credentials", ["access_grant_id"],
-                    unique=True, postgresql_where=sa.text("revoked_at IS NULL"))
+    op.create_index(
+        "uq_vpn_credentials_live_per_grant",
+        "vpn_credentials",
+        ["access_grant_id"],
+        unique=True,
+        postgresql_where=sa.text("revoked_at IS NULL"),
+    )
     op.drop_constraint("uq_vpn_credentials_request_id", "vpn_credentials", type_="unique")
     for column in ("request_id", "peer_name", "device_name", "is_gateway", "state"):
         op.drop_column("vpn_credentials", column)

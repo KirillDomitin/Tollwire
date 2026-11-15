@@ -25,8 +25,10 @@ class VPNCredential(UuidPkMixin, TimestampMixin, Base):
             "state <> 'ACTIVE' OR source <> 'ISSUED' OR encrypted_config IS NOT NULL",
             name="ck_vpn_credentials_issued_has_config",
         ),
-        CheckConstraint("state <> 'ACTIVE' OR (client_address IS NOT NULL AND client_public_key IS NOT NULL)",
-                        name="ck_vpn_credentials_active_identity"),
+        CheckConstraint(
+            "state <> 'ACTIVE' OR (client_address IS NOT NULL AND client_public_key IS NOT NULL)",
+            name="ck_vpn_credentials_active_identity",
+        ),
     )
 
     access_grant_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("access_grants.id", ondelete="CASCADE"))
@@ -35,7 +37,8 @@ class VPNCredential(UuidPkMixin, TimestampMixin, Base):
     client_address: Mapped[str | None] = mapped_column(String(64))
     client_public_key: Mapped[str | None] = mapped_column(String(64))
     state: Mapped[CredentialState] = mapped_column(
-        Enum(CredentialState, native_enum=False, length=16), default=CredentialState.ACTIVE,
+        Enum(CredentialState, native_enum=False, length=16),
+        default=CredentialState.ACTIVE,
         server_default=text("'ACTIVE'"),
     )
     is_gateway: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
@@ -46,6 +49,7 @@ class VPNCredential(UuidPkMixin, TimestampMixin, Base):
     @property
     def has_config(self) -> bool:
         return self.state == CredentialState.ACTIVE and self.revoked_at is None and self.encrypted_config is not None
+
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     # VARCHAR, а не Postgres-enum: новые источники добавляются без ALTER TYPE (как AuditAction).
     source: Mapped[CredentialSource] = mapped_column(

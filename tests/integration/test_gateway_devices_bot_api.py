@@ -69,9 +69,7 @@ async def test_bot_device_list_includes_pending_slots_without_secrets(scene: Sce
 
 
 @pytest.mark.parametrize("operation", ["revoke", "config-link"])
-async def test_bot_cannot_target_another_users_device(
-    scene: Scene, world: World, operation: str
-) -> None:
+async def test_bot_cannot_target_another_users_device(scene: Scene, world: World, operation: str) -> None:
     protocol = await world.credentials().protocols.get_by_id(scene.grant.protocol_id)
     assert protocol is not None
     other, _, grant = await world.access(protocol)
@@ -89,9 +87,14 @@ async def test_bot_cannot_add_to_another_users_gateway_grant(scene: Scene, world
     protocol = await world.credentials().protocols.get_by_id(scene.grant.protocol_id)
     assert protocol is not None
     _, _, foreign_grant = await world.access(protocol)
-    response = await scene.bot.post(scene.url, json={
-        "grant_id": str(foreign_grant.id), "device_name": " чужой", "request_id": str(uuid4()),
-    })
+    response = await scene.bot.post(
+        scene.url,
+        json={
+            "grant_id": str(foreign_grant.id),
+            "device_name": " чужой",
+            "request_id": str(uuid4()),
+        },
+    )
     assert response.status_code == 404, response.text
     assert (await scene.bot.get(scene.url)).json()["occupied"] == 0
 
@@ -130,9 +133,14 @@ async def test_panel_and_bot_share_reservations_and_callback_replay(scene: Scene
     assert first.status_code == repeated.status_code == 202
     assert first.json()["id"] == repeated.json()["id"]
     for index in range(4):
-        response = await api.post(f"/api/v1/vpn-users/{scene.user.id}/gateway-devices", json={
-            **payload, "device_name": f"Panel {index}", "request_id": str(uuid4()),
-        })
+        response = await api.post(
+            f"/api/v1/vpn-users/{scene.user.id}/gateway-devices",
+            json={
+                **payload,
+                "device_name": f"Panel {index}",
+                "request_id": str(uuid4()),
+            },
+        )
         assert response.status_code == 202, response.text
     sixth = await scene.bot.post(scene.url, json={**payload, "request_id": str(uuid4())})
     assert sixth.status_code == 409 and sixth.json()["reason"] == "device_limit", sixth.text
@@ -149,7 +157,11 @@ async def test_invalid_device_input_is_rejected(scene: Scene, field: str, value:
 async def test_device_routes_require_bot_key(scene: Scene) -> None:
     async with bot_client() as anonymous:
         assert (await anonymous.get(scene.url)).status_code == 401
-        response = await anonymous.post(scene.url, json={
-            "grant_id": str(scene.grant.id), "request_id": str(uuid4()),
-        })
+        response = await anonymous.post(
+            scene.url,
+            json={
+                "grant_id": str(scene.grant.id),
+                "request_id": str(uuid4()),
+            },
+        )
         assert response.status_code == 401

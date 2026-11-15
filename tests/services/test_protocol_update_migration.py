@@ -113,10 +113,15 @@ async def test_targeted_downgrade_removes_only_new_job_types_and_preserves_old_j
         run_alembic("upgrade", "head")
         await engine.dispose()
     async with engine.connect() as conn:
-        state_exists = (await conn.execute(text(
-            "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
-            "WHERE table_schema = 'public' AND table_name = :table AND column_name = :column)"
-        ), {"table": VPNCredential.__tablename__, "column": VPNCredential.state.key})).scalar_one()
+        state_exists = (
+            await conn.execute(
+                text(
+                    "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
+                    "WHERE table_schema = 'public' AND table_name = :table AND column_name = :column)"
+                ),
+                {"table": VPNCredential.__tablename__, "column": VPNCredential.state.key},
+            )
+        ).scalar_one()
     assert state_exists, "migration roundtrip must restore the current credential schema for subsequent tests"
     async with session_factory() as session:
         old = await session.get(Job, old_id)

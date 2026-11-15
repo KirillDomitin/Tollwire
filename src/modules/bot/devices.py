@@ -38,9 +38,7 @@ class BotDeviceService:
         user = await self.user(telegram_id)
         credential = await self.credentials.get(credential_id)
         grant = await AccessGrantRepository(self.session).get_by_id(credential.access_grant_id)
-        subscription = (
-            await SubscriptionRepository(self.session).get_by_id(grant.subscription_id) if grant else None
-        )
+        subscription = await SubscriptionRepository(self.session).get_by_id(grant.subscription_id) if grant else None
         if subscription is None or subscription.user_id != user.id or not credential.is_gateway:
             raise NotFoundError("Device not found")
         return credential

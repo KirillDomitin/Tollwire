@@ -132,28 +132,47 @@ class VPNCredentialRepository:
         return await self.session.get(VPNUser, user_id, with_for_update=True, populate_existing=True)
 
     async def count_gateway_for_user(self, user_id: UUID) -> int:
-        query = (select(func.count()).select_from(VPNCredential)
-                 .join(AccessGrant, VPNCredential.access_grant_id == AccessGrant.id)
-                 .join(Subscription, AccessGrant.subscription_id == Subscription.id)
-                 .join(VPNProtocol, AccessGrant.protocol_id == VPNProtocol.id)
-                 .where(Subscription.user_id == user_id, VPNProtocol.type == ProtocolType.AMNEZIA_GATEWAY,
-                        VPNCredential.revoked_at.is_(None)))
+        query = (
+            select(func.count())
+            .select_from(VPNCredential)
+            .join(AccessGrant, VPNCredential.access_grant_id == AccessGrant.id)
+            .join(Subscription, AccessGrant.subscription_id == Subscription.id)
+            .join(VPNProtocol, AccessGrant.protocol_id == VPNProtocol.id)
+            .where(
+                Subscription.user_id == user_id,
+                VPNProtocol.type == ProtocolType.AMNEZIA_GATEWAY,
+                VPNCredential.revoked_at.is_(None),
+            )
+        )
         return int((await self.session.execute(query)).scalar_one())
 
     async def by_request_id(self, request_id: UUID) -> VPNCredential | None:
-        return (await self.session.execute(select(VPNCredential).where(
-            VPNCredential.request_id == request_id))).scalar_one_or_none()
+        return (
+            await self.session.execute(select(VPNCredential).where(VPNCredential.request_id == request_id))
+        ).scalar_one_or_none()
 
     async def live_for_grant(self, grant_id: UUID) -> Sequence[VPNCredential]:
-        return (await self.session.execute(select(VPNCredential).where(
-            VPNCredential.access_grant_id == grant_id, VPNCredential.revoked_at.is_(None)))).scalars().all()
+        return (
+            (
+                await self.session.execute(
+                    select(VPNCredential).where(
+                        VPNCredential.access_grant_id == grant_id, VPNCredential.revoked_at.is_(None)
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
 
     async def live_by_server(self, server_id: UUID) -> list[tuple[VPNCredential, UUID]]:
         rows = await self.session.execute(
             select(VPNCredential, AccessGrant.protocol_id)
             .join(AccessGrant, VPNCredential.access_grant_id == AccessGrant.id)
-            .where(AccessGrant.server_id == server_id, VPNCredential.revoked_at.is_(None),
-                   VPNCredential.state == CredentialState.ACTIVE)
+            .where(
+                AccessGrant.server_id == server_id,
+                VPNCredential.revoked_at.is_(None),
+                VPNCredential.state == CredentialState.ACTIVE,
+            )
         )
         return [(credential, protocol_id) for credential, protocol_id in rows.all()]
 

@@ -158,7 +158,8 @@ class ConfigLinkService:
                 raise NotFoundError("Device not found")
             _, grant, subscription = owned
             if inactive_reason(grant, subscription, now) or credential.state in (
-                CredentialState.REVOKING, CredentialState.REVOKED
+                CredentialState.REVOKING,
+                CredentialState.REVOKED,
             ):
                 raise ReasonConflictError(NO_ACCESS)
             if credential.state != CredentialState.ACTIVE:
@@ -169,7 +170,8 @@ class ConfigLinkService:
         live: list[tuple[VPNCredential, AccessGrant]] = [
             (credential, grant)
             for credential, grant, subscription in await self.links.credentials_of_user(user_id)
-            if inactive_reason(grant, subscription, now) is None and (grant_id is None or grant.id == grant_id)
+            if inactive_reason(grant, subscription, now) is None
+            and (grant_id is None or grant.id == grant_id)
             and credential.state == CredentialState.ACTIVE
         ]
         issued = [
@@ -197,8 +199,12 @@ class ConfigLinkService:
                 continue
             if grant_id is not None and grant.id != grant_id:
                 continue
-            if any([await jobs.has_unfinished_for_grant(kind, grant.id)
-                    for kind in (JobType.CREATE_USER, JobType.CREATE_DEVICE)]):
+            if any(
+                [
+                    await jobs.has_unfinished_for_grant(kind, grant.id)
+                    for kind in (JobType.CREATE_USER, JobType.CREATE_DEVICE)
+                ]
+            ):
                 return True
         return False
 

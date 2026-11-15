@@ -207,8 +207,11 @@ class GatewayAssignmentService:
         """Назначает выходы всем живым клиентам шлюза без назначения (после добавления выхода, при сверке). Возвращает,
         скольким назначены; карта применяется один раз."""
         rows = await self.credentials.list_with_access_by_protocol_id(gateway.id)
-        pending = [credential for credential, _, _ in rows
-                   if credential.revoked_at is None and credential.state == CredentialState.ACTIVE]
+        pending = [
+            credential
+            for credential, _, _ in rows
+            if credential.revoked_at is None and credential.state == CredentialState.ACTIVE
+        ]
         pending = [credential for credential in pending if await self.assignments.get(credential.id) is None]
         if not pending:
             return 0

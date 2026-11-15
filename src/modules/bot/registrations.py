@@ -206,8 +206,14 @@ class BotRegistrationService:
         if job.status == JobStatus.SUCCESS:
             credentials = await VPNCredentialRepository(self.session).live_for_grant(job.access_grant_id)
             target = (job.params or {}).get("credential_id")
-            ready = next((item for item in credentials if item.state == CredentialState.ACTIVE
-                          and (target is None or str(item.id) == str(target))), None)
+            ready = next(
+                (
+                    item
+                    for item in credentials
+                    if item.state == CredentialState.ACTIVE and (target is None or str(item.id) == str(target))
+                ),
+                None,
+            )
             if ready is not None:
                 try:
                     await VPNCredentialService(self.session, self.actor)._ensure_grant_is_live(job.access_grant_id)
@@ -220,8 +226,12 @@ class BotRegistrationService:
         elif job.status == JobStatus.FAILED:
             # Админ мог повторить выдачу, пока эта (зависшая) задача ещё шла: итог решает новая, а не старая.
             # Запрос сам сбрасывает в БД статус этой задачи (autoflush), так что она не считается незавершённой.
-            if any([await JobRepository(self.session).has_unfinished_for_grant(kind, job.access_grant_id)
-                    for kind in (JobType.CREATE_USER, JobType.CREATE_DEVICE)]):
+            if any(
+                [
+                    await JobRepository(self.session).has_unfinished_for_grant(kind, job.access_grant_id)
+                    for kind in (JobType.CREATE_USER, JobType.CREATE_DEVICE)
+                ]
+            ):
                 return
             self._fail(registration, job.error, job.id)
 
@@ -256,14 +266,20 @@ class BotRegistrationService:
             grant_id = registration.access_grant_id
             if grant_id is None:
                 self._fail(registration, None)
-            elif any([await jobs.has_unfinished_for_grant(kind, grant_id)
-                      for kind in (JobType.CREATE_USER, JobType.CREATE_DEVICE)]):
+            elif any(
+                [
+                    await jobs.has_unfinished_for_grant(kind, grant_id)
+                    for kind in (JobType.CREATE_USER, JobType.CREATE_DEVICE)
+                ]
+            ):
                 continue
             elif any(item.state == CredentialState.ACTIVE for item in await credentials.live_for_grant(grant_id)):
                 self._activate(registration)
             else:
-                candidates = [await jobs.get_last_for_grant(kind, grant_id)
-                              for kind in (JobType.CREATE_USER, JobType.CREATE_DEVICE)]
+                candidates = [
+                    await jobs.get_last_for_grant(kind, grant_id)
+                    for kind in (JobType.CREATE_USER, JobType.CREATE_DEVICE)
+                ]
                 last = max((item for item in candidates if item), key=lambda item: item.created_at, default=None)
                 self._fail(registration, last.error if last else None, last.id if last else None)
             changed += 1
@@ -298,9 +314,10 @@ class BotRegistrationService:
         registration.finished_at = None
         self.audit.record(AuditAction.BOT_REGISTRATION_RETRIED, AuditEntity.BOT_REGISTRATION, registration.id)
         try:
-            pending = next((item for item in existing if item.state in (
-                CredentialState.RESERVED, CredentialState.PROVISIONING
-            )), None)
+            pending = next(
+                (item for item in existing if item.state in (CredentialState.RESERVED, CredentialState.PROVISIONING)),
+                None,
+            )
             if pending is None:
                 await VPNCredentialService(self.session, self.actor).schedule_issue(grant_id)
             else:
@@ -308,13 +325,18 @@ class BotRegistrationService:
                 assert grant is not None
                 await VPNCredentialService(self.session, self.actor)._ensure_grant_is_live(grant_id)
                 jobs = JobRepository(self.session)
-                if any([await jobs.has_unfinished_for_grant(kind, grant_id)
-                        for kind in (JobType.CREATE_USER, JobType.CREATE_DEVICE)]):
+                if any(
+                    [
+                        await jobs.has_unfinished_for_grant(kind, grant_id)
+                        for kind in (JobType.CREATE_USER, JobType.CREATE_DEVICE)
+                    ]
+                ):
                     raise StateConflictError("Credential is already being issued")
                 await JobService(self.session, self.actor).create(
                     JobType.CREATE_DEVICE if pending.is_gateway else JobType.CREATE_USER,
-                    server_id=grant.server_id, access_grant_id=grant_id,
-                    params={"credential_id": str(pending.id)}
+                    server_id=grant.server_id,
+                    access_grant_id=grant_id,
+                    params={"credential_id": str(pending.id)},
                 )
         except AppError:
             await self.session.rollback()  # доступ отозван / выдача уже идёт: статус остаётся failed

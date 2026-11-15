@@ -51,17 +51,26 @@ def get_credential_service(session: SessionDep, actor: ActorDep) -> VPNCredentia
     return VPNCredentialService(session, actor)
 
 
-@router.get("/vpn-users/{user_id}/gateway-devices", response_model=GatewayDevicesRead,
-            dependencies=[Depends(require(Permission.ACCESS_READ))])
-async def gateway_devices(user_id: UUID,
-                          service: VPNCredentialService = Depends(get_credential_service)) -> GatewayDevicesRead:
+@router.get(
+    "/vpn-users/{user_id}/gateway-devices",
+    response_model=GatewayDevicesRead,
+    dependencies=[Depends(require(Permission.ACCESS_READ))],
+)
+async def gateway_devices(
+    user_id: UUID, service: VPNCredentialService = Depends(get_credential_service)
+) -> GatewayDevicesRead:
     return await service.gateway_devices(user_id)
 
 
-@router.post("/vpn-users/{user_id}/gateway-devices", response_model=JobRead, status_code=202,
-             dependencies=[Depends(require(Permission.ACCESS_MANAGE))])
-async def add_gateway_device(user_id: UUID, body: GatewayDeviceCreate,
-                             service: VPNCredentialService = Depends(get_credential_service)) -> Job:
+@router.post(
+    "/vpn-users/{user_id}/gateway-devices",
+    response_model=JobRead,
+    status_code=202,
+    dependencies=[Depends(require(Permission.ACCESS_MANAGE))],
+)
+async def add_gateway_device(
+    user_id: UUID, body: GatewayDeviceCreate, service: VPNCredentialService = Depends(get_credential_service)
+) -> Job:
     return await service.add_gateway_device(user_id, body)
 
 
@@ -208,13 +217,15 @@ async def revoke_grant(
     status_code=202,
 )
 async def issue_credential(
-    access_grant_id: UUID, body: VPNCredentialCreate | None = None,
-    service: VPNCredentialService = Depends(get_credential_service)
+    access_grant_id: UUID,
+    body: VPNCredentialCreate | None = None,
+    service: VPNCredentialService = Depends(get_credential_service),
 ) -> Job:
     # Клиент создаётся на сервере воркером; результат — в GET /access/{id}/credentials после SUCCESS задачи.
     try:
-        return await service.schedule_issue(access_grant_id, body.device_name if body else None,
-                                            body.request_id if body else None)
+        return await service.schedule_issue(
+            access_grant_id, body.device_name if body else None, body.request_id if body else None
+        )
     except NotFoundError as exc:
         raise HTTPException(404, detail=str(exc))
     except (InactiveAccessError, AlreadyExistsError) as exc:

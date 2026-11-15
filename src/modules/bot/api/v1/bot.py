@@ -67,7 +67,9 @@ async def revoke_device(
 @router.post("/users/by-telegram/{telegram_id}/devices/{credential_id}/config-link", response_model=ConfigLinkRead)
 async def device_config_link(
     telegram_id: Annotated[int, Path(ge=1, le=2**63 - 1)],
-    credential_id: UUID, context: BotKeyContext, response: Response
+    credential_id: UUID,
+    context: BotKeyContext,
+    response: Response,
 ) -> ConfigLinkRead:
     await BotDeviceService(context.session, context.actor).owned(telegram_id, credential_id)
     service = ConfigLinkService(context.session, context.actor)

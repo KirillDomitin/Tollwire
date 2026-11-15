@@ -41,9 +41,7 @@ def target(job: Job) -> UUID:
 
 
 async def occupied(world: World) -> list[VPNCredential]:
-    return list(
-        (await world.session.scalars(select(VPNCredential).where(VPNCredential.revoked_at.is_(None)))).all()
-    )
+    return list((await world.session.scalars(select(VPNCredential).where(VPNCredential.revoked_at.is_(None)))).all())
 
 
 async def test_pending_devices_reserve_all_five_slots_across_gateways(world: World) -> None:

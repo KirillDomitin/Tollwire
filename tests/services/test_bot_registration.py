@@ -516,9 +516,7 @@ async def test_failed_issue_makes_the_registration_failed_keeping_user_and_grant
 async def test_ssh_error_text_with_a_secret_is_redacted_in_the_registration(
     world: World, worker: JobWorker, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def leaking(
-        self: VPNCredentialService, access_grant_id: UUID, credential_id: UUID | None = None
-    ) -> None:
+    async def leaking(self: VPNCredentialService, access_grant_id: UUID, credential_id: UUID | None = None) -> None:
         raise RuntimeError("awg: bad line 'PrivateKey = aGVsbG8gd29ybGQgaGVsbG8gd29ybGQgaGVsbG8=' in config")
 
     monkeypatch.setattr(VPNCredentialService, "provision", leaking)

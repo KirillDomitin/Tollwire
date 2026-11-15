@@ -42,8 +42,13 @@ async def test_device_downgrade_refuses_unfinished_targeted_legacy_jobs(world: W
     _, protocol, _ = await world.server()
     assert protocol is not None
     _, _, grant, credential = await world.issued(protocol)
-    pending = Job(type=kind, status=JobStatus.PENDING, server_id=protocol.server_id,
-                  access_grant_id=grant.id, params={"credential_id": str(credential.id)})
+    pending = Job(
+        type=kind,
+        status=JobStatus.PENDING,
+        server_id=protocol.server_id,
+        access_grant_id=grant.id,
+        params={"credential_id": str(credential.id)},
+    )
     world.session.add(pending)
     await world.session.commit()
     pending_id, credential_id = pending.id, credential.id
@@ -52,12 +57,16 @@ async def test_device_downgrade_refuses_unfinished_targeted_legacy_jobs(world: W
         with pytest.raises(RuntimeError, match="unfinished device jobs"):
             await migrate("downgrade", BEFORE_DEVICES)
         async with engine.connect() as connection:
-            rows = (await connection.execute(text(
-                "SELECT id FROM vpn_credentials WHERE id = :id"
-            ), {"id": credential_id})).scalars().all()
-            job = (await connection.execute(text(
-                "SELECT type::text, status::text FROM jobs WHERE id = :id"
-            ), {"id": pending_id})).one()
+            rows = (
+                (await connection.execute(text("SELECT id FROM vpn_credentials WHERE id = :id"), {"id": credential_id}))
+                .scalars()
+                .all()
+            )
+            job = (
+                await connection.execute(
+                    text("SELECT type::text, status::text FROM jobs WHERE id = :id"), {"id": pending_id}
+                )
+            ).one()
         assert rows == [credential_id] and tuple(job) == (kind.name, "PENDING")
     finally:
         await migrate("upgrade", "head")
@@ -75,22 +84,37 @@ async def test_device_migration_roundtrip_preserves_legacy_keys_configs_and_gate
     await migrate("downgrade", BEFORE_DEVICES)
     try:
         async with engine.connect() as connection:
-            row = (await connection.execute(
-                text("SELECT client_public_key, client_address, encrypted_config FROM vpn_credentials WHERE id = :id"),
-                {"id": credential_id},
-            )).one()
+            row = (
+                await connection.execute(
+                    text(
+                        "SELECT client_public_key, client_address, encrypted_config FROM vpn_credentials WHERE id = :id"
+                    ),
+                    {"id": credential_id},
+                )
+            ).one()
             assert tuple(row) == identity
-            columns = (await connection.execute(text(
-                "SELECT column_name FROM information_schema.columns WHERE table_name = 'vpn_credentials'"
-            ))).scalars().all()
+            columns = (
+                (
+                    await connection.execute(
+                        text("SELECT column_name FROM information_schema.columns WHERE table_name = 'vpn_credentials'")
+                    )
+                )
+                .scalars()
+                .all()
+            )
             assert "state" not in columns and "is_gateway" not in columns
     finally:
         await migrate("upgrade", "head")
     async with engine.connect() as connection:
-        row = (await connection.execute(text(
-            "SELECT client_public_key, client_address, encrypted_config, state, is_gateway "
-            "FROM vpn_credentials WHERE id = :id"
-        ), {"id": credential_id})).one()
+        row = (
+            await connection.execute(
+                text(
+                    "SELECT client_public_key, client_address, encrypted_config, state, is_gateway "
+                    "FROM vpn_credentials WHERE id = :id"
+                ),
+                {"id": credential_id},
+            )
+        ).one()
     assert tuple(row[:3]) == identity
     assert tuple(row[3:]) == ("ACTIVE", True)
 

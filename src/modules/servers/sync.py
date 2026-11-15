@@ -237,10 +237,18 @@ class ServerSyncService:
                 # Наш внутренний клиент без записи о выходе (выход снят, пока сервер был недоступен; commit не дошёл).
                 await provider.revoke_client(client.public_key)
                 result["removed_orphans"].append(_client(client))
-            elif client.name and (client.name.startswith(CLIENT_NAME_PREFIX) or (
-                client.name.startswith("dev-") and len(client.name) == 30 and
-                all(char in "abcdefghijklmnopqrstuvwxyz234567" for char in client.name[4:])
-            )) and protocol.type not in APP_PROTOCOLS:
+            elif (
+                client.name
+                and (
+                    client.name.startswith(CLIENT_NAME_PREFIX)
+                    or (
+                        client.name.startswith("dev-")
+                        and len(client.name) == 30
+                        and all(char in "abcdefghijklmnopqrstuvwxyz234567" for char in client.name[4:])
+                    )
+                )
+                and protocol.type not in APP_PROTOCOLS
+            ):
                 # Наш peer без записи в БД: упал commit после create_client или запись удалили.
                 await provider.revoke_client(client.public_key)
                 result["removed_orphans"].append(_client(client))
