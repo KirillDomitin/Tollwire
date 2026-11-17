@@ -76,7 +76,12 @@ it("users: sorts activity and expands traffic across servers", async () => {
   });
   const data = [
     { ...user("a", "Alice"), devices: [
-      device("Phone", "Helsinki", "2024-02-01T00:00:00Z", 12, 8),
+      {
+        ...device("Phone", "Helsinki", "2024-02-01T00:00:00Z", 12, 8),
+        is_gateway: true,
+        exit_slot: 3,
+        exit_server_name: "Stockholm",
+      },
       device("Laptop", "Berlin", "2024-01-01T00:00:00Z", 9, null),
     ] },
     { ...user("b", "Bob"), devices: [device("Tablet", "Paris", "2024-03-01T00:00:00Z", 0, 0)] },
@@ -104,6 +109,12 @@ it("users: sorts activity and expands traffic across servers", async () => {
   expect(screen.getByText("Berlin")).toBeInTheDocument();
   await userEvent.click(toggle);
   expect(screen.queryByText("Helsinki")).not.toBeInTheDocument();
+  await click("Expand all");
+  expect(screen.getByText("Goes through exit 3 — Stockholm")).toBeInTheDocument();
+  expect(screen.getByText("Paris")).toBeInTheDocument();
+  await click("Collapse all");
+  expect(screen.queryByText("Stockholm", { exact: false })).not.toBeInTheDocument();
+  expect(screen.queryByText("Paris")).not.toBeInTheDocument();
 });
 
 it("servers: original order, numeric clients, stale values, keyboard, field switch and refresh", async () => {

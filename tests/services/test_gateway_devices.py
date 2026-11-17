@@ -17,7 +17,10 @@ from modules.access.schemas import AccessGrantCreate
 from modules.access.service import AccessGrantService, SubscriptionService, VPNCredentialService
 from modules.audit.actor import SYSTEM_ACTOR
 from modules.audit.models.audit_log import AuditAction
+from modules.gateway.models.gateway_assignment import GatewayAssignment
+from modules.gateway.models.gateway_exit import ExitState, GatewayExit
 from modules.jobs.models.job import Job, JobType
+from modules.monitoring.client_metrics import ClientMetricsService
 from modules.protocols.models.protocol import ProtocolType, VPNProtocol
 from modules.servers.service import ServerConnectionService
 from modules.servers.sync import ServerSyncService
@@ -42,6 +45,32 @@ def target(job: Job) -> UUID:
 
 async def occupied(world: World) -> list[VPNCredential]:
     return list((await world.session.scalars(select(VPNCredential).where(VPNCredential.revoked_at.is_(None)))).all())
+
+
+async def test_user_device_metrics_show_current_gateway_exit(world: World) -> None:
+    protocol, _ = await gateway(world)
+    exit_server, exit_protocol, _ = await world.server()
+    assert exit_protocol is not None
+    user, _, grant = await world.access(protocol)
+    job = await world.credentials().schedule_issue(grant.id, device_name="Phone")
+    credential = await world.credentials().provision(grant.id, credential_id=target(job))
+    exit = GatewayExit(
+        gateway_protocol_id=protocol.id, exit_protocol_id=exit_protocol.id, slot=3, state=ExitState.ACTIVE
+    )
+    world.session.add(exit)
+    await world.session.flush()
+    assignment = GatewayAssignment(credential_id=credential.id, exit_id=exit.id)
+    world.session.add(assignment)
+    await world.session.commit()
+
+    metrics = ClientMetricsService(world.session)
+    (device,) = (await metrics.by_user())[user.id]
+    assert device.is_gateway and device.exit_slot == 3 and device.exit_server_name == exit_server.name
+
+    await world.session.delete(assignment)
+    await world.session.commit()
+    (device,) = (await metrics.by_user())[user.id]
+    assert device.is_gateway and device.exit_slot is None and device.exit_server_name is None
 
 
 async def test_pending_devices_reserve_all_five_slots_across_gateways(world: World) -> None:

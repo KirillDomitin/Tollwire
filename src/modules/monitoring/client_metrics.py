@@ -96,7 +96,17 @@ class ClientMetricsService:
                     )
 
         result: defaultdict[UUID, list[UserDeviceMetric]] = defaultdict(list)
-        for user_id, protocol_id, credential_id, server_name, device_name, public_key in devices:
+        for (
+            user_id,
+            protocol_id,
+            credential_id,
+            server_name,
+            device_name,
+            public_key,
+            gateway,
+            slot,
+            exit_name,
+        ) in devices:
             stale, peers = snapshots.get(protocol_id, (False, {}))
             peer = peers.get(public_key) if public_key is not None else None
             result[user_id].append(
@@ -108,6 +118,9 @@ class ClientMetricsService:
                     downloaded_bytes=peer.tx_bytes if peer else None,
                     uploaded_bytes=peer.rx_bytes if peer else None,
                     stale=stale and peer is not None,
+                    is_gateway=gateway,
+                    exit_slot=slot if gateway else None,
+                    exit_server_name=exit_name if gateway else None,
                 )
             )
         return result

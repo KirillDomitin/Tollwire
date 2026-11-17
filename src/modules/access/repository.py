@@ -7,11 +7,14 @@ from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from modules.access.models import AccessGrantStatus, CredentialState
 from modules.access.models.access_grant import AccessGrant
 from modules.access.models.subscription import Subscription
 from modules.access.models.vpn_credential import VPNCredential
+from modules.gateway.models.gateway_assignment import GatewayAssignment
+from modules.gateway.models.gateway_exit import GatewayExit
 from modules.protocols.models.protocol import ProtocolType, VPNProtocol
 from modules.servers.models.server import VPNServer
 from modules.vpn_users.models.user import VPNUser
@@ -131,7 +134,8 @@ class AccessGrantRepository:
 class VPNCredentialRepository:
     async def live_device_metrics_identity(
         self,
-    ) -> Sequence[tuple[UUID, UUID, UUID, str, str | None, str | None]]:
+    ) -> Sequence[tuple[UUID, UUID, UUID, str, str | None, str | None, bool, int | None, str | None]]:
+        exit_server = aliased(VPNServer)
         rows = await self.session.execute(
             select(
                 Subscription.user_id,
@@ -140,11 +144,22 @@ class VPNCredentialRepository:
                 VPNServer.name,
                 func.coalesce(VPNCredential.device_name, VPNCredential.external_name, VPNCredential.peer_name),
                 VPNCredential.client_public_key,
+                VPNCredential.is_gateway,
+                GatewayExit.slot,
+                exit_server.name,
             )
             .select_from(VPNCredential)
             .join(AccessGrant, VPNCredential.access_grant_id == AccessGrant.id)
             .join(Subscription, AccessGrant.subscription_id == Subscription.id)
             .join(VPNServer, AccessGrant.server_id == VPNServer.id)
+            .outerjoin(GatewayAssignment, VPNCredential.id == GatewayAssignment.credential_id)
+            .outerjoin(
+                GatewayExit,
+                (GatewayAssignment.exit_id == GatewayExit.id)
+                & (AccessGrant.protocol_id == GatewayExit.gateway_protocol_id),
+            )
+            .outerjoin(VPNProtocol, GatewayExit.exit_protocol_id == VPNProtocol.id)
+            .outerjoin(exit_server, VPNProtocol.server_id == exit_server.id)
             .where(VPNCredential.revoked_at.is_(None), VPNCredential.state == CredentialState.ACTIVE)
             .order_by(VPNServer.name, VPNCredential.created_at, VPNCredential.id)
         )

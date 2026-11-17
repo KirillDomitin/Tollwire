@@ -72,12 +72,15 @@ export function UsersPage() {
   const { can } = useAuth();
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<Sort<UserSort>>(null);
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const users = useQuery({
     queryKey: ["vpn-users", "devices"],
     queryFn: () => unwrap(api.GET("/api/v1/vpn-users", { params: { query: { include_devices: true } } })),
     refetchInterval: 60_000,
   });
   const all = users.data ?? [];
+  const expandable = all.filter((user) => user.devices?.length);
+  const allExpanded = expandable.length > 0 && expandable.every((user) => expanded.has(user.id));
   const query = search.trim().toLowerCase();
   const shown = query
     ? all.filter((user) => `${user.username} ${user.email ?? ""}`.toLowerCase().includes(query))
@@ -111,6 +114,14 @@ export function UsersPage() {
       {all.length > 0 && (
         <>
           <div className={styles.toolbar}>
+            {expandable.length > 0 && (
+              <Button
+                variant="secondary"
+                onClick={() => setExpanded(new Set(allExpanded ? [] : expandable.map((user) => user.id)))}
+              >
+                {t(allExpanded ? "users.list.collapseAll" : "users.list.expandAll")}
+              </Button>
+            )}
             <TextField
               className={styles.search}
               type="search"
@@ -126,7 +137,18 @@ export function UsersPage() {
           {shown.length === 0 ? (
             <p className={styles.quiet}>{t("users.list.noMatches")}</p>
           ) : (
-            <UserTable users={shown} sort={sort} onSort={(field) => setSort(nextSort(sort, field))} />
+            <UserTable
+              users={shown}
+              sort={sort}
+              onSort={(field) => setSort(nextSort(sort, field))}
+              expanded={expanded}
+              onToggle={(id) => setExpanded((previous) => {
+                const next = new Set(previous);
+                if (next.has(id)) next.delete(id);
+                else next.add(id);
+                return next;
+              })}
+            />
           )}
           <div className={`${table.foot} ${styles.foot}`}>
             <span>{t("users.list.shown", { shown: shown.length, total: all.length })}</span>
@@ -142,13 +164,16 @@ function UserTable({
   users,
   sort,
   onSort,
+  expanded,
+  onToggle,
 }: {
   users: VPNUserListItem[];
   sort: Sort<UserSort>;
   onSort: (field: UserSort) => void;
+  expanded: ReadonlySet<string>;
+  onToggle: (id: string) => void;
 }) {
   const { t } = useTranslation();
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   // Сначала те, у кого доступ скоро кончится, затем по имени — так список работает как напоминание о продлении.
   const order = { warn: 0, ok: 1, process: 2, down: 3, idle: 4 };
   const now = new Date();
@@ -256,12 +281,7 @@ function UserTable({
                           aria-controls={isExpanded ? detailsId : undefined}
                           aria-label={t("users.list.deviceTraffic", { user: user.username, traffic: formatBytes(traffic) })}
                           title={t("users.metrics.period")}
-                          onClick={() => setExpanded((previous) => {
-                            const next = new Set(previous);
-                            if (next.has(user.id)) next.delete(user.id);
-                            else next.add(user.id);
-                            return next;
-                          })}
+                          onClick={() => onToggle(user.id)}
                         >
                           {formatBytes(traffic)} <span aria-hidden="true">{isExpanded ? "▴" : "▾"}</span>
                         </Button>
@@ -283,6 +303,14 @@ function UserTable({
                             <span>
                               <strong>{device.device_name || t("users.devices.unnamed", { id: device.credential_id.slice(0, 8) })}</strong>
                               <span className={styles.server}>{device.server_name}</span>
+                              {device.is_gateway && (
+                                <span className={styles.server}>
+                                  {device.exit_slot != null ? t("users.grant.exit", {
+                                    slot: device.exit_slot,
+                                    name: device.exit_server_name ?? "—",
+                                  }) : t("users.grant.exitNone")}
+                                </span>
+                              )}
                             </span>
                             <span className={styles.activity}>
                               {t("users.metrics.downloaded")} {formatBytes(device.downloaded_bytes)}

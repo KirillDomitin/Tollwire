@@ -11395,6 +11395,33 @@
           "stale": {
             "type": "boolean",
             "title": "Stale"
+          },
+          "is_gateway": {
+            "type": "boolean",
+            "title": "Is Gateway",
+            "default": false
+          },
+          "exit_slot": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Slot"
+          },
+          "exit_server_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Server Name"
           }
         },
         "type": "object",

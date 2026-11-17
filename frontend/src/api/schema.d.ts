@@ -3647,6 +3647,15 @@ export interface components {
             device_name: string | null;
             /** Stale */
             stale: boolean;
+            /**
+             * Is Gateway
+             * @default false
+             */
+            is_gateway: boolean;
+            /** Exit Slot */
+            exit_slot?: number | null;
+            /** Exit Server Name */
+            exit_server_name?: string | null;
         };
         /**
          * UserStatusRead

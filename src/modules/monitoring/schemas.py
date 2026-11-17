@@ -18,6 +18,9 @@ class UserDeviceMetric(ClientMetric):
     server_name: str
     device_name: str | None
     stale: bool
+    is_gateway: bool = False
+    exit_slot: int | None = None
+    exit_server_name: str | None = None
 
 
 class ProtocolClientMetrics(BaseModel):

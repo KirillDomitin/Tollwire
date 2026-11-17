@@ -24,6 +24,8 @@
       "traffic": "Traffic"
     },
     "devices": "User devices",
+    "expandAll": "Expand all",
+    "collapseAll": "Collapse all",
     "deviceTraffic": "Device traffic for {{user}} ({{traffic}})",
     "partialTraffic": "Partial data",
     "subtitle": "Manage users and their subscriptions",
