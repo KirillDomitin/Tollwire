@@ -15,11 +15,22 @@
 | `GET /users/by-telegram/{telegram_id}` | — | `{name, valid_until, protocol}` | 200; 404 (`User not found`); 422 |
 | `POST /users/by-telegram/{telegram_id}/config-link` | — | `{config_url, valid_until}` | 200; 404 (`User not found`); 409 с `reason`; 422 |
 | `GET /users/by-telegram/{telegram_id}/devices` | — | `{limit:5, occupied, devices, gateways}` | 200; 404; 422 |
+| `GET /users/by-telegram/{telegram_id}/devices/{credential_id}/exit-options` | — | Устройство, фактический/закреплённый выход, режим, UUID revision, выходы с пригодностью | 200; 404; 409; 422 |
+| `PATCH /users/by-telegram/{telegram_id}/devices/{credential_id}/exit` | `{exit_id: UUID|null, expected_revision: UUID|null}` (оба обязательны) | Обновлённый DTO exit-options, `no-store` | 200; 404; 409; 422; 502 |
 | `POST /users/by-telegram/{telegram_id}/devices` | `{grant_id, device_name?, request_id}` | JobRead | 202; 404; 409; 422 |
 | `POST /users/by-telegram/{telegram_id}/devices/{credential_id}/revoke` | — | `{status:"accepted"}` | 200; 404; 422 |
 | `POST /users/by-telegram/{telegram_id}/devices/{credential_id}/config-link` | — | `{config_url, valid_until}`, `no-store` | 200; 404; 409 с `reason`; 422 |
 
 - `status` регистрации: `payment_pending`, `provisioning`, `active`, `failed`.
+- Выбор выхода доступен только владельцу ACTIVE gateway-устройства с действующим доступом.
+  UUID `exit_id` переносит и закрепляет одно устройство; `null` снимает закрепление без перебалансировки.
+  `expected_revision` проверяет актуальность подтверждения; версия меняется при изменении выхода/pin,
+  включая административные операции и failover. Повтор no-op версию не меняет.
+  409 reasons: `no_access`, `not_ready`, `exit_unavailable`, `exit_full`, `gateway_busy`,
+  `stale_confirmation`. Чужой/исчезнувший выход не раскрывается. Ёмкость и пригодность повторно
+  проверяются под блокировкой шлюза; административное исключение max_clients боту не даётся.
+  После потерянного ответа нужно перечитать состояние; повторять перенос с новой revision автоматически нельзя.
+  Старые соединения могут остаться на прежнем выходе до переподключения VPN.
 - `/users/by-telegram`: `valid_until` — конец последней подписки пользователя (по дате создания, в любом статусе);
   `protocol` — тип протокола гранта этой подписки, `null` без грантов или подписки.
 - `/invites/check` не раскрывает протокол, срок и получателя приглашения.

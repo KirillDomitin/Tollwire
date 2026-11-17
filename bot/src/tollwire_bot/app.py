@@ -74,7 +74,7 @@ def build_router(clock: Callable[[], float] = time.time) -> Router:
     router.message.filter(F.chat.type == "private", F.from_user)
     router.callback_query.filter(F.message.chat.type == "private")
     commands.register_commands(router)  # команды раньше состояний: /status работает и посреди диалога
-    devices.register(router)
+    devices.register(router, clock)
     dialog.register(router)
     commands.register_fallback(router)
     return router

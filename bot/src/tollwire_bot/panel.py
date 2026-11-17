@@ -39,6 +39,10 @@ CONFLICT_REASONS = frozenset(
         "not_configured",
         "conflict",
         "device_limit",
+        "exit_unavailable",
+        "exit_full",
+        "gateway_busy",
+        "stale_confirmation",
     }
 )
 
@@ -326,6 +330,25 @@ class PanelClient:
         if response.status_code == 404:
             raise Conflict("no_access")
 
+    async def device_exit_options(self, telegram_id: int, credential_id: str) -> dict[str, Any] | None:
+        response = await self._request(
+            "GET", f"/users/by-telegram/{telegram_id}/devices/{credential_id}/exit-options", allow_missing=True
+        )
+        return None if response.status_code == 404 else _exit_options(_json(response), credential_id)
+
+    async def change_device_exit(
+        self, telegram_id: int, credential_id: str, exit_id: str | None, expected_revision: str | None
+    ) -> dict[str, Any]:
+        response = await self._request(
+            "PATCH",
+            f"/users/by-telegram/{telegram_id}/devices/{credential_id}/exit",
+            {"exit_id": exit_id, "expected_revision": expected_revision},
+            allow_missing=True,
+        )
+        if response.status_code == 404:
+            raise Conflict("no_access")
+        return _exit_options(_json(response), credential_id)
+
     async def revoke_device(self, telegram_id: int, credential_id: str) -> None:
         response = await self._request(
             "POST", f"/users/by-telegram/{telegram_id}/devices/{credential_id}/revoke", allow_missing=True
@@ -518,6 +541,56 @@ def _devices(data: dict[str, Any]) -> dict[str, Any]:
             raise PanelUnexpected("unexpected gateway name")
         clean_gateways.append({"grant_id": _device_uuid(item.get("grant_id")), "server_name": item["server_name"]})
     return {"devices": clean_devices, "gateways": clean_gateways, "occupied": occupied, "limit": limit}
+
+
+def _exit_options(data: dict[str, Any], credential_id: str) -> dict[str, Any]:
+    """Only validated, non-secret fields reach FSM and Telegram."""
+
+    def named(raw: Any) -> dict[str, str]:
+        if not isinstance(raw, dict) or not isinstance(raw.get("name"), str) or not 1 <= len(raw["name"]) <= 100:
+            raise PanelUnexpected("unexpected exit name")
+        return {"id": _device_uuid(raw.get("id")), "name": raw["name"]}
+
+    required = {"credential_id", "device_name", "current_exit", "pinned_exit", "mode", "revision", "exits"}
+    if (
+        not required.issubset(data)
+        or not isinstance(data["device_name"], str)
+        or not 1 <= len(data["device_name"]) <= 100
+    ):
+        raise PanelUnexpected("unexpected exit options")
+    identifier = _device_uuid(data["credential_id"])
+    if identifier != str(UUID(credential_id)):
+        raise PanelUnexpected("unexpected device in exit options")
+    current = None if data["current_exit"] is None else named(data["current_exit"])
+    pinned = None if data["pinned_exit"] is None else named(data["pinned_exit"])
+    revision = None if data["revision"] is None else _device_uuid(data["revision"])
+    if data["mode"] not in ("automatic", "pinned") or (data["mode"] == "pinned") != (pinned is not None):
+        raise PanelUnexpected("unexpected exit mode")
+    if (current is None) != (revision is None) or not isinstance(data["exits"], list):
+        raise PanelUnexpected("unexpected exit assignment")
+    exits = []
+    seen = set()
+    for raw in data["exits"]:
+        item = named(raw)
+        if (
+            type(raw.get("selectable")) is not bool
+            or raw.get("reason") not in (None, "unavailable", "full")
+            or "reason" not in raw
+            or raw["selectable"] != (raw["reason"] is None)
+            or item["id"] in seen
+        ):
+            raise PanelUnexpected("unexpected exit eligibility")
+        seen.add(item["id"])
+        exits.append({**item, "selectable": raw["selectable"], "reason": raw["reason"]})
+    return {
+        "credential_id": identifier,
+        "device_name": data["device_name"],
+        "current_exit": current,
+        "pinned_exit": pinned,
+        "mode": data["mode"],
+        "revision": revision,
+        "exits": exits,
+    }
 
 
 def _json(response: httpx.Response) -> dict[str, Any]:

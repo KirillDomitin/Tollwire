@@ -20,6 +20,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 
+- В Telegram `/devices` можно выбрать и закрепить выходной сервер отдельного устройства или вернуть
+  автоматический режим; конфиг сохраняется, недоступные и заполненные выходы отклоняются.
+
 - Up to five separate gateway device configurations per VPN user across all gateways, with device lists,
   explicit gateway selection, individual config links and revocation in the panel and Telegram `/devices`.
   Pending issuance and cleanup retain their slots; existing configurations remain valid.

@@ -24,6 +24,7 @@ from core.exceptions import (
     ConfigUnavailableError,
     CredentialChangedError,
     CredentialNotFound,
+    GatewayApplyError,
     GatewayExitError,
     ImportNotAllowedError,
     InactiveAccessError,
@@ -96,6 +97,7 @@ _STATUS_BY_ERROR: dict[type[AppError], int] = {
     CredentialChangedError: 409,
     ConfigUnavailableError: 409,  # импортированный клиент: конфига нет
     ImportNotAllowedError: 409,  # ключа нет в отчёте поиска или peer не поддерживается
+    GatewayApplyError: 502,
     GatewayExitError: 409,  # шлюз не установлен / выход не подходит / уже добавлен
     StateConflictError: 409,  # действие невозможно в текущем состоянии объекта
 }

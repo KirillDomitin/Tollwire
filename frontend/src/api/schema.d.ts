@@ -1077,6 +1077,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/bot/users/by-telegram/{telegram_id}/devices/{credential_id}/exit-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Device Exit Options */
+        get: operations["device_exit_options_api_v1_bot_users_by_telegram__telegram_id__devices__credential_id__exit_options_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/bot/users/by-telegram/{telegram_id}/devices/{credential_id}/exit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Change Device Exit */
+        patch: operations["change_device_exit_api_v1_bot_users_by_telegram__telegram_id__devices__credential_id__exit_patch"];
+        trace?: never;
+    };
     "/api/v1/bot/users/by-telegram/{telegram_id}/devices/{credential_id}/revoke": {
         parameters: {
             query?: never;
@@ -2465,6 +2499,58 @@ export interface components {
          * @enum {string}
          */
         CredentialState: "reserved" | "provisioning" | "active" | "revoking" | "revoked";
+        /** DeviceExitChange */
+        DeviceExitChange: {
+            /** Exit Id */
+            exit_id: string | null;
+            /** Expected Revision */
+            expected_revision: string | null;
+        };
+        /** DeviceExitName */
+        DeviceExitName: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /** DeviceExitOption */
+        DeviceExitOption: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Selectable */
+            selectable: boolean;
+            /** Reason */
+            reason: ("unavailable" | "full") | null;
+        };
+        /** DeviceExitOptions */
+        DeviceExitOptions: {
+            /**
+             * Credential Id
+             * Format: uuid
+             */
+            credential_id: string;
+            /** Device Name */
+            device_name: string;
+            current_exit: components["schemas"]["DeviceExitName"] | null;
+            pinned_exit: components["schemas"]["DeviceExitName"] | null;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "automatic" | "pinned";
+            /** Revision */
+            revision: string | null;
+            /** Exits */
+            exits: components["schemas"]["DeviceExitOption"][];
+        };
         /** DiscoveredClientRead */
         DiscoveredClientRead: {
             /** Public Key */
@@ -6190,6 +6276,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    device_exit_options_api_v1_bot_users_by_telegram__telegram_id__devices__credential_id__exit_options_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                telegram_id: number;
+                credential_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceExitOptions"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    change_device_exit_api_v1_bot_users_by_telegram__telegram_id__devices__credential_id__exit_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                telegram_id: number;
+                credential_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeviceExitChange"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceExitOptions"];
                 };
             };
             /** @description Validation Error */

@@ -4,7 +4,7 @@ import enum
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Uuid, func, text
+from sqlalchemy import DateTime, Enum, FetchedValue, ForeignKey, Uuid, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.database.base import Base
@@ -24,6 +24,9 @@ class GatewayAssignment(Base):
     интернета (kill-switch). Источник правды о картe на шлюзе: файл assign.rules собирается из этой таблицы целиком."""
 
     __tablename__ = "gateway_assignments"
+    __mapper_args__ = {"eager_defaults": True}
+
+    revision: Mapped[UUID] = mapped_column(Uuid, server_default=func.gen_random_uuid(), server_onupdate=FetchedValue())
 
     # Клиент отозван (credential удалён) - назначение уходит с ним. Живой credential один на грант: ключ - он сам.
     credential_id: Mapped[UUID] = mapped_column(

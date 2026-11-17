@@ -2,6 +2,18 @@
 
 Справочник прежних ревизий; текущие правила — [alembic/CLAUDE.md](../../alembic/CLAUDE.md).
 
+## Версия назначения выхода (`e9b3d7c10f42`)
+
+- Продолжает `g8c2e4a61d90`. Добавляет `gateway_assignments.revision`: UUID NOT NULL,
+  `server_default gen_random_uuid()`; существующие назначения получают версии без изменения маршрутов.
+- Функция и BEFORE UPDATE trigger `gateway_assignment_revision` генерируют новый UUID только при
+  изменении `exit_id` или `pinned_exit_id` через `IS DISTINCT FROM`. Это включает старые процессы,
+  failover и FK SET NULL; обычный no-op сохраняет версию. INSERT получает новую версию из default.
+- CAS пользовательского переноса сравнивает версию под блокировкой. Возврат выхода/pin к прежнему
+  значению и пересоздание назначения не восстанавливают старый UUID; `null` означает отсутствие строки.
+- Downgrade удаляет trigger, функцию и колонку. Назначения и закрепления сохраняются, версии теряются;
+  повторный upgrade выдаёт новые UUID. API выбора выхода требует эту миграцию.
+
 ## Новые значения enum (`d3a7c9e15b42`, поиск Amnezia)
 
 - `ADD VALUE` для `protocoltype` (`AMNEZIA_APP_AWG`, `AMNEZIA_APP_AWG2`) и `jobtype` (`DISCOVER_VPN`) — в

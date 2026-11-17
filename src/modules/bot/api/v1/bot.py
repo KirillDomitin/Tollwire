@@ -27,6 +27,8 @@ from modules.bot.schemas import (
     AdminLinkRequest,
     BotRegistrationRead,
     ConfigLinkRead,
+    DeviceExitChange,
+    DeviceExitOptions,
     HeartbeatRequest,
     HeartbeatResponse,
     InviteCheckRequest,
@@ -54,6 +56,29 @@ async def add_device(
     telegram_id: Annotated[int, Path(ge=1, le=2**63 - 1)], data: GatewayDeviceCreate, context: BotKeyContext
 ) -> JobRead:
     return JobRead.model_validate(await BotDeviceService(context.session, context.actor).add(telegram_id, data))
+
+
+@router.get("/users/by-telegram/{telegram_id}/devices/{credential_id}/exit-options", response_model=DeviceExitOptions)
+async def device_exit_options(
+    telegram_id: Annotated[int, Path(ge=1, le=2**63 - 1)],
+    credential_id: UUID,
+    context: BotKeyContext,
+    response: Response,
+) -> DeviceExitOptions:
+    response.headers["Cache-Control"] = "no-store"
+    return await BotDeviceService(context.session, context.actor).exit_options(telegram_id, credential_id)
+
+
+@router.patch("/users/by-telegram/{telegram_id}/devices/{credential_id}/exit", response_model=DeviceExitOptions)
+async def change_device_exit(
+    telegram_id: Annotated[int, Path(ge=1, le=2**63 - 1)],
+    credential_id: UUID,
+    data: DeviceExitChange,
+    context: BotKeyContext,
+    response: Response,
+) -> DeviceExitOptions:
+    response.headers["Cache-Control"] = "no-store"
+    return await BotDeviceService(context.session, context.actor).change_exit(telegram_id, credential_id, data)
 
 
 @router.post("/users/by-telegram/{telegram_id}/devices/{credential_id}/revoke")

@@ -4140,6 +4140,134 @@
         }
       }
     },
+    "/api/v1/bot/users/by-telegram/{telegram_id}/devices/{credential_id}/exit-options": {
+      "get": {
+        "tags": [
+          "bot"
+        ],
+        "summary": "Device Exit Options",
+        "operationId": "device_exit_options_api_v1_bot_users_by_telegram__telegram_id__devices__credential_id__exit_options_get",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "telegram_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "title": "Telegram Id"
+            }
+          },
+          {
+            "name": "credential_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Credential Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceExitOptions"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bot/users/by-telegram/{telegram_id}/devices/{credential_id}/exit": {
+      "patch": {
+        "tags": [
+          "bot"
+        ],
+        "summary": "Change Device Exit",
+        "operationId": "change_device_exit_api_v1_bot_users_by_telegram__telegram_id__devices__credential_id__exit_patch",
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "telegram_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "title": "Telegram Id"
+            }
+          },
+          {
+            "name": "credential_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Credential Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceExitChange"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceExitOptions"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/bot/users/by-telegram/{telegram_id}/devices/{credential_id}/revoke": {
       "post": {
         "tags": [
@@ -7914,6 +8042,171 @@
           "revoked"
         ],
         "title": "CredentialState"
+      },
+      "DeviceExitChange": {
+        "properties": {
+          "exit_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Id"
+          },
+          "expected_revision": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "exit_id",
+          "expected_revision"
+        ],
+        "title": "DeviceExitChange"
+      },
+      "DeviceExitName": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "DeviceExitName"
+      },
+      "DeviceExitOption": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "selectable": {
+            "type": "boolean",
+            "title": "Selectable"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "unavailable",
+                  "full"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "selectable",
+          "reason"
+        ],
+        "title": "DeviceExitOption"
+      },
+      "DeviceExitOptions": {
+        "properties": {
+          "credential_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Credential Id"
+          },
+          "device_name": {
+            "type": "string",
+            "title": "Device Name"
+          },
+          "current_exit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeviceExitName"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pinned_exit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeviceExitName"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "automatic",
+              "pinned"
+            ],
+            "title": "Mode"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision"
+          },
+          "exits": {
+            "items": {
+              "$ref": "#/components/schemas/DeviceExitOption"
+            },
+            "type": "array",
+            "title": "Exits"
+          }
+        },
+        "type": "object",
+        "required": [
+          "credential_id",
+          "device_name",
+          "current_exit",
+          "pinned_exit",
+          "mode",
+          "revision",
+          "exits"
+        ],
+        "title": "DeviceExitOptions"
       },
       "DiscoveredClientRead": {
         "properties": {

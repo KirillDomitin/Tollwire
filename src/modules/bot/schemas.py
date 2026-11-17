@@ -447,3 +447,29 @@ class OutboxAckRequest(BaseModel):
 class OutboxAckResponse(BaseModel):
     applied: list[UUID]
     ignored: list[UUID]
+
+
+class DeviceExitName(BaseModel):
+    id: UUID
+    name: str
+
+
+class DeviceExitOption(DeviceExitName):
+    selectable: bool
+    reason: Literal["unavailable", "full"] | None
+
+
+class DeviceExitOptions(BaseModel):
+    credential_id: UUID
+    device_name: str
+    current_exit: DeviceExitName | None
+    pinned_exit: DeviceExitName | None
+    mode: Literal["automatic", "pinned"]
+    revision: UUID | None
+    exits: list[DeviceExitOption]
+
+
+class DeviceExitChange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    exit_id: UUID | None
+    expected_revision: UUID | None

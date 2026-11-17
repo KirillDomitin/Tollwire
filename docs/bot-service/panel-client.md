@@ -31,6 +31,8 @@
 | `add_device(telegram_id, grant_id, device_name, request_id)` | `POST /users/by-telegram/{id}/devices` | Принятая выдача; 404 → `Conflict(no_access)` |
 | `revoke_device(telegram_id, credential_id)` | `POST /users/by-telegram/{id}/devices/{credential_id}/revoke` | Принятый отзыв; 404 → `Conflict(no_access)` |
 | `device_config_link(telegram_id, credential_id)` | `POST /users/by-telegram/{id}/devices/{credential_id}/config-link` | `ConfigLink` выбранного устройства или `None` (404) |
+| `device_exit_options(telegram_id, credential_id)` | `GET …/devices/{credential_id}/exit-options` | Проверенные устройство, текущий/закреплённый выход, revision, список целей; 404 → `None` |
+| `change_device_exit(telegram_id, credential_id, exit_id, expected_revision)` | `PATCH …/devices/{credential_id}/exit` | Проверенный DTO exit-options; 404 → `Conflict(no_access)` |
 
 Ответ, который не объект, не JSON, или без обязательного поля (`status`, `registration_id`, `name`; у `config_link` —
 непустой `config_url`), — `PanelUnexpected`. `ConfigLink` в `repr` адрес не показывает: в нём токен.
@@ -55,6 +57,8 @@
 - 429: `Retry-After` в секундах. Если заголовка нет, он больше 10 с или это уже второй 429 в запросе — `RateLimited`
   (бот говорит «подождите минуту»). Иначе ждём и повторяем один раз.
 - Добавление устройства повторяет то же тело с `request_id`; панель возвращает ту же резервацию.
+  Смена выхода повторяет исходные `exit_id` и `expected_revision`; новую revision автоматически не подставляет.
+  После потери ответа повтор может получить `stale_confirmation`: обработчик читает актуальное состояние.
   Адресный отзыв идемпотентен. Адресная ссылка заменяет только ссылку выбранного устройства.
 - Паузы — через `sleep`, подменяемый в тестах.
 

@@ -142,3 +142,10 @@ class UnsupportedProtocolError(ProtocolError): ...
 
 class AddressPoolExhaustedError(ProtocolError):
     """В подсети туннеля не осталось свободных адресов для нового клиента."""
+
+
+class GatewayApplyError(AppError):
+    """Sanitized synchronous gateway application failure."""
+
+    def __init__(self) -> None:
+        super().__init__("The gateway is unreachable or failed to apply the change")

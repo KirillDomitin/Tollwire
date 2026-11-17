@@ -25,6 +25,7 @@ from tollwire_bot.panel import (  # noqa: E402
     PanelAuthError,
     PanelClient,
     PanelUnavailable,
+    PanelUnexpected,
     RateLimited,
     Rejected,
 )
@@ -33,6 +34,7 @@ __all__ = [
     "Conflict",
     "PanelAuthError",
     "PanelClient",
+    "PanelUnexpected",
     "PanelUnavailable",
     "RateLimited",
     "Rejected",

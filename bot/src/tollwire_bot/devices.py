@@ -1,5 +1,7 @@
 """Personal gateway devices, addressed by credential ID through the Bot API."""
 
+import time
+from collections.abc import Callable
 from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid5
 
@@ -66,6 +68,7 @@ async def show(message: Message, telegram_id: int, panel: PanelClient, data: dic
         actions = []
         if gateway is not None and state == "active" and device.get("has_config"):
             actions.append((t("device_config", name=name), f"dev:config:{identifier}"))
+            rows.append([(t("device_exit_choose", name=name), f"dev:exit:{identifier}")])
         if state not in ("revoking", "revoked"):
             actions.append((t("device_revoke", name=name), f"dev:revoke:{identifier}"))
         if actions:
@@ -76,7 +79,11 @@ async def show(message: Message, telegram_id: int, panel: PanelClient, data: dic
     await message.answer("\n".join(lines), reply_markup=keyboard(rows), parse_mode=None)
 
 
-def register(router: Router) -> None:
+def register(router: Router, clock: Callable[[], float] = time.time) -> None:
+    from tollwire_bot.device_exits import register as register_exits
+
+    register_exits(router, clock)
+
     @router.message(Command("devices"))
     async def devices(message: Message, state: FSMContext, panel: PanelClient) -> None:
         assert message.from_user is not None
@@ -118,6 +125,7 @@ def register(router: Router) -> None:
                 request_id = uuid5(
                     NAMESPACE_URL, f"tollwire-device:{telegram_id}:{message.chat.id}:{message.message_id}:{grant_id}"
                 )
+                await state.clear()
                 await state.update_data(device_grant_id=grant_id, device_request_id=str(request_id))
                 await state.set_state(AddDevice.name)
                 await message.answer(t("device_ask_name"))
@@ -130,6 +138,7 @@ def register(router: Router) -> None:
                 )
             elif action == "revoke" and len(parts) == 3:
                 identifier = str(UUID(parts[2]))
+                await state.clear()
                 await message.answer(
                     t("device_revoke_confirm"),
                     reply_markup=keyboard(

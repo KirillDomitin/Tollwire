@@ -133,6 +133,7 @@ async def test_device_downgrade_refuses_without_deleting_incompatible_data(world
         await world.session.execute(text("UPDATE jobs SET status = 'SUCCESS'"))
     await world.session.commit()
     before = (await world.session.execute(text("SELECT id FROM vpn_credentials ORDER BY id"))).scalars().all()
+    before_version = (await world.session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one()
     await world.session.close()
     try:
         with pytest.raises(RuntimeError, match="Cannot downgrade"):
@@ -141,6 +142,6 @@ async def test_device_downgrade_refuses_without_deleting_incompatible_data(world
             after = (await connection.execute(text("SELECT id FROM vpn_credentials ORDER BY id"))).scalars().all()
             version = (await connection.execute(text("SELECT version_num FROM alembic_version"))).scalar_one()
         assert after == before
-        assert version == DEVICES
+        assert version == before_version
     finally:
         await migrate("upgrade", "head")

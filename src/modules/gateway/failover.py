@@ -15,6 +15,7 @@ from core.exceptions import (
     InvalidDataError,
     JobAlreadyRunningError,
     NotFoundError,
+    ReasonConflictError,
     StateConflictError,
 )
 from infrastructure.vpn.gateway import AmneziaGatewayProvider
@@ -35,6 +36,7 @@ from modules.gateway.balancer import (
     next_health,
     plan_failover,
 )
+from modules.gateway.device_selection import eligible_device, unavailable
 from modules.gateway.exit_health import record_exit_status
 from modules.gateway.models.gateway_assignment import AssignReason, GatewayAssignment
 from modules.gateway.models.gateway_exit import ExitState, GatewayExit
@@ -283,12 +285,29 @@ class GatewayFailoverService:
             self._audit_moved(move.credential_id, exits[move.from_exit].slot, exits[move.to_exit].slot, reason.value)
         await self.session.flush()
 
-    def _audit_moved(self, credential_id: UUID, from_slot: int | None, to_slot: int, reason: str) -> None:
+    def _audit_moved(
+        self,
+        credential_id: UUID,
+        from_slot: int | None,
+        to_slot: int,
+        reason: str,
+        *,
+        user_id: UUID | None = None,
+        exit_id: UUID | None = None,
+    ) -> None:
+        metadata: dict[str, Any] = {
+            "credential_id": credential_id,
+            "from_slot": from_slot,
+            "to_slot": to_slot,
+            "reason": reason,
+        }
+        if user_id is not None:
+            metadata.update(source="bot", user_id=user_id, exit_id=exit_id)
         self.audit.record(
             AuditAction.GATEWAY_CLIENT_MOVED,
             AuditEntity.VPN_CREDENTIAL,
             credential_id,
-            {"credential_id": credential_id, "from_slot": from_slot, "to_slot": to_slot, "reason": reason},
+            metadata,
         )
 
     # --- ручное управление ------------------------------------------------------------------------------------------
@@ -314,7 +333,14 @@ class GatewayFailoverService:
         )
 
     async def move_client(
-        self, server_id: UUID, credential_id: UUID, exit_id: UUID | None, pin: bool
+        self,
+        server_id: UUID,
+        credential_id: UUID,
+        exit_id: UUID | None,
+        pin: bool,
+        *,
+        user_id: UUID | None = None,
+        expected_revision: UUID | None = None,
     ) -> GatewayAssignmentRead:
         """PATCH .../gateway/assignments/{credential_id}: перенос клиента на ACTIVE-выход шлюза (причина manual) и /
         или закрепление (`pin=True` - за целевым выходом, без `exit_id` - за текущим; `pin=False` снимает закрепление).
@@ -324,6 +350,8 @@ class GatewayFailoverService:
         Ошибки: 404 - нет сервера / клиента этого шлюза / выхода этого шлюза; 409 - нет шлюза, клиент отозван или без
         выхода, выход не ACTIVE или отказал, шлюз занят."""
         gateway = await self._gateway(server_id)
+        if user_id is not None:
+            return await self._move_owned(gateway, credential_id, exit_id, user_id, expected_revision)
         async with ServerLock(gateway.server_id):
             credential = await self.credentials.get_by_id(credential_id)
             grant = await self.grants.get_by_id(credential.access_grant_id) if credential else None
@@ -361,6 +389,77 @@ class GatewayFailoverService:
             await self.session.refresh(assignment)
             return self._read(assignment, slots)
 
+    async def _move_owned(
+        self,
+        gateway: VPNProtocol,
+        credential_id: UUID,
+        exit_id: UUID | None,
+        user_id: UUID,
+        expected_revision: UUID | None,
+    ) -> GatewayAssignmentRead:
+        """Restricted synchronous move. All decisions are repeated after readiness."""
+        async with ServerLock(gateway.server_id):
+            if exit_id is not None:
+                async with self.assign._provider(gateway, None) as provider:
+                    await self.assign._ready(gateway, provider)
+                    assignment, slots = await self._owned_change(
+                        gateway, credential_id, exit_id, user_id, expected_revision, provider
+                    )
+            else:
+                assignment, slots = await self._owned_change(
+                    gateway, credential_id, None, user_id, expected_revision, None
+                )
+            await self.session.commit()
+            await self.session.refresh(assignment)
+            return self._read(assignment, slots)
+
+    async def _owned_change(
+        self,
+        gateway: VPNProtocol,
+        credential_id: UUID,
+        exit_id: UUID | None,
+        user_id: UUID,
+        expected_revision: UUID | None,
+        provider: AmneziaGatewayProvider | None,
+    ) -> tuple[GatewayAssignment, dict[UUID, int]]:
+        await self.exits.lock_gateway(gateway.id)
+        _, actual_gateway = await eligible_device(self.session, user_id, credential_id, lock=True)
+        if actual_gateway.id != gateway.id:
+            raise NotFoundError("Device not found")
+        current = await self.session.get(GatewayAssignment, credential_id, with_for_update=True, populate_existing=True)
+        if (current.revision if current else None) != expected_revision:
+            raise ReasonConflictError("stale_confirmation")
+        rows = list(await self.exits.list_by_gateway(gateway.id))
+        # Lock exit metadata as well: max_clients can be edited independently of ServerLock.
+        for row in rows:
+            await self.session.refresh(row, with_for_update=True)
+        slots = {row.id: row.slot for row in rows}
+        target = next((row for row in rows if row.id == exit_id), None)
+        moved = exit_id is not None and (current is None or current.exit_id != exit_id)
+        if exit_id is not None:
+            if target is None or unavailable(target):
+                raise ReasonConflictError("exit_unavailable")
+            counts = await self.assignments.counts(gateway.id)
+            if moved and target.max_clients is not None and counts.get(target.id, 0) >= target.max_clients:
+                raise ReasonConflictError("exit_full")
+            assert provider is not None
+            # Unlike automatic assignment, a user selection fails closed if the
+            # gateway cannot read its tunnels. Do not fall back to stored health.
+            statuses = await provider.exit_status(expected=[row.slot for row in rows])
+            record_exit_status(rows, statuses, datetime.now(timezone.utc))
+            if unavailable(target):
+                raise ReasonConflictError("exit_unavailable")
+        elif current is None:
+            raise ReasonConflictError("not_ready")
+        from_slot = slots.get(current.exit_id) if current else None
+        assignment = await self._change(
+            credential_id, target, exit_id is not None, from_slot, slots, moved=moved, user_id=user_id
+        )
+        if moved:
+            assert provider is not None
+            await self.assign._apply_map(gateway, provider)
+        return assignment, slots
+
     async def _change(
         self,
         credential_id: UUID,
@@ -370,12 +469,15 @@ class GatewayFailoverService:
         slots: dict[UUID, int],
         *,
         moved: bool,
+        user_id: UUID | None = None,
     ) -> GatewayAssignment:
         """Изменения назначения в БД (flush без commit): перенос и / или закрепление."""
         if moved:
             assert target is not None
             await self.assignments.set(credential_id, target.id, AssignReason.MANUAL)
-            self._audit_moved(credential_id, from_slot, target.slot, AssignReason.MANUAL.value)
+            self._audit_moved(
+                credential_id, from_slot, target.slot, AssignReason.MANUAL.value, user_id=user_id, exit_id=target.id
+            )
         assignment = await self.assignments.get(credential_id)
         assert assignment is not None
         new_pin = target.id if (pin and target is not None) else None
@@ -383,7 +485,9 @@ class GatewayFailoverService:
             assignment.pinned_exit_id = new_pin
             if not moved:
                 slot = slots.get(assignment.exit_id, 0)
-                self._audit_moved(credential_id, slot, slot, "pin" if new_pin else "unpin")
+                self._audit_moved(
+                    credential_id, slot, slot, "pin" if new_pin else "unpin", user_id=user_id, exit_id=new_pin
+                )
         await self.session.flush()
         return assignment
 
