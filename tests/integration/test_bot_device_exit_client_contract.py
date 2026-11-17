@@ -19,8 +19,10 @@ async def exit_client(switch: SwitchScene) -> AsyncIterator[PanelClient]:  # noq
         pass
 
     result = PanelClient(
-        "http://testserver", switch.bot.headers["x-bot-key"],
-        transport=httpx.ASGITransport(app=app), sleep=instant,
+        "http://testserver",
+        switch.bot.headers["x-bot-key"],
+        transport=httpx.ASGITransport(app=app),
+        sleep=instant,
     )
     try:
         yield result
@@ -29,7 +31,8 @@ async def exit_client(switch: SwitchScene) -> AsyncIterator[PanelClient]:  # noq
 
 
 async def test_real_client_pins_unpins_and_preserves_revision_cas(
-    exit_client: PanelClient, switch: SwitchScene  # noqa: F811
+    exit_client: PanelClient,
+    switch: SwitchScene,  # noqa: F811
 ) -> None:
     credential = str(switch.credential.id)
     before = await exit_client.device_exit_options(TELEGRAM_ID, credential)
@@ -57,29 +60,41 @@ async def test_missing_device_maps_to_none_and_no_access(exit_client: PanelClien
 def safe_options() -> dict:
     target = {"id": str(uuid4()), "name": "Amsterdam"}
     return {
-        "credential_id": str(uuid4()), "device_name": "Phone",
-        "current_exit": target, "pinned_exit": None, "mode": "automatic",
+        "credential_id": str(uuid4()),
+        "device_name": "Phone",
+        "current_exit": target,
+        "pinned_exit": None,
+        "mode": "automatic",
         "revision": str(uuid4()),
         "exits": [{**target, "selectable": True, "reason": None}],
     }
 
 
-@pytest.mark.parametrize("field,value", [
-    ("credential_id", "secret-invalid-id"), ("device_name", 123),
-    ("current_exit", {"id": str(uuid4()), "name": None}),
-    ("pinned_exit", {"id": "invalid", "name": "Secret"}),
-    ("mode", "secret-mode"), ("revision", "secret-revision"),
-    ("exits", [None]),
-    ("exits", [{"id": str(uuid4()), "name": "Exit", "selectable": 1, "reason": None}]),
-    ("exits", [{"id": str(uuid4()), "name": "Exit", "selectable": False, "reason": "secret"}]),
-])
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("credential_id", "secret-invalid-id"),
+        ("device_name", 123),
+        ("current_exit", {"id": str(uuid4()), "name": None}),
+        ("pinned_exit", {"id": "invalid", "name": "Secret"}),
+        ("mode", "secret-mode"),
+        ("revision", "secret-revision"),
+        ("exits", [None]),
+        ("exits", [{"id": str(uuid4()), "name": "Exit", "selectable": 1, "reason": None}]),
+        ("exits", [{"id": str(uuid4()), "name": "Exit", "selectable": False, "reason": "secret"}]),
+    ],
+)
 @pytest.mark.parametrize("mutation", [False, True])
 async def test_exit_dto_is_validated_before_handler_sees_it(field: str, value: object, mutation: bool) -> None:
     body = safe_options()
     body[field] = value
-    exit_client = PanelClient("http://testserver", "test-key", transport=httpx.MockTransport(
-        lambda _: httpx.Response(200, json=deepcopy(body)),
-    ))
+    exit_client = PanelClient(
+        "http://testserver",
+        "test-key",
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(200, json=deepcopy(body)),
+        ),
+    )
     try:
         with pytest.raises(PanelUnexpected) as error:
             if mutation:
@@ -93,9 +108,13 @@ async def test_exit_dto_is_validated_before_handler_sees_it(field: str, value: o
 
 @pytest.mark.parametrize("reason", ["exit_unavailable", "exit_full", "gateway_busy", "stale_confirmation"])
 async def test_exit_conflict_reasons_are_preserved(reason: str) -> None:
-    exit_client = PanelClient("http://testserver", "test-key", transport=httpx.MockTransport(
-        lambda _: httpx.Response(409, json={"reason": reason}),
-    ))
+    exit_client = PanelClient(
+        "http://testserver",
+        "test-key",
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(409, json={"reason": reason}),
+        ),
+    )
     try:
         with pytest.raises(Conflict) as error:
             await exit_client.change_device_exit(TELEGRAM_ID, str(uuid4()), None, None)
@@ -121,8 +140,10 @@ async def test_lost_reply_retries_same_cas_body_and_reads_confirmed_result(switc
         pass
 
     exit_client = PanelClient(
-        "http://testserver", switch.bot.headers["x-bot-key"],
-        transport=httpx.MockTransport(dispatch), sleep=instant,
+        "http://testserver",
+        switch.bot.headers["x-bot-key"],
+        transport=httpx.MockTransport(dispatch),
+        sleep=instant,
     )
     credential = str(switch.credential.id)
     try:
@@ -145,14 +166,24 @@ async def test_exit_dto_strips_unexpected_secret_fields() -> None:
     body["config"] = "PrivateKey=TOP-SECRET"
     body["current_exit"]["host"] = "private-host"
     body["exits"][0]["ssh_password"] = "TOP-SECRET"
-    exit_client = PanelClient("http://testserver", "test-key", transport=httpx.MockTransport(
-        lambda _: httpx.Response(200, json=body),
-    ))
+    exit_client = PanelClient(
+        "http://testserver",
+        "test-key",
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(200, json=body),
+        ),
+    )
     try:
         result = await exit_client.device_exit_options(TELEGRAM_ID, body["credential_id"])
         assert result is not None
         assert set(result) == {
-            "credential_id", "device_name", "current_exit", "pinned_exit", "mode", "revision", "exits",
+            "credential_id",
+            "device_name",
+            "current_exit",
+            "pinned_exit",
+            "mode",
+            "revision",
+            "exits",
         }
         assert set(result["current_exit"]) == {"id", "name"}
         assert set(result["exits"][0]) == {"id", "name", "selectable", "reason"}
