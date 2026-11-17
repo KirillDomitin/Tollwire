@@ -10,6 +10,22 @@
   box-shadow: var(--shadow-card);
 }
 
+button.card {
+  color: var(--text);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+button.card:hover,
+button.card[aria-pressed="true"] {
+  border-color: var(--accent);
+}
+
+button.card[aria-pressed="true"] {
+  box-shadow: inset 0 0 0 1px var(--accent), var(--shadow-card);
+}
+
 .icon {
   display: grid;
   flex: none;

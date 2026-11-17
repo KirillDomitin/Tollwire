@@ -20,6 +20,7 @@
     "subtitle": "All VPN servers and their current state",
     "search": "Search by name or address",
     "noMatches": "Nothing found. Change the search.",
+    "noStatusMatches": "No servers with the selected status.",
     "shown": "Showing {{shown}} of {{total}}",
     "stats": {
       "total": "Total servers",

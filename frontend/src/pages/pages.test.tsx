@@ -80,11 +80,47 @@ describe("ServersPage", () => {
     );
     renderWithProviders(<ServersPage />);
 
-    const tile = async (name: string) => within(await screen.findByRole("group", { name }));
+    const tile = async (name: string) => within(await screen.findByRole("button", { name }));
     expect((await tile("Всего серверов")).getByText("3")).toBeInTheDocument();
     expect((await tile("Онлайн")).getByText("2")).toBeInTheDocument(); // в работе и с проблемами
     expect((await tile("Оффлайн")).getByText("1")).toBeInTheDocument();
-    await vi.waitFor(async () => expect((await tile("Всего клиентов")).getByText("12")).toBeInTheDocument());
+    const clients = await screen.findByRole("group", { name: "Всего клиентов" });
+    expect(await within(clients).findByText("12")).toBeInTheDocument();
+  });
+
+  it("filters by status and search and restores all statuses from the total tile", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        json([
+          server({ name: "North-1", health_status: "degraded" }),
+          server({ name: "South-1", status: "offline" }),
+          server({ name: "North-2", status: "new" }),
+        ]),
+      ),
+    );
+    renderWithProviders(<ServersPage />);
+
+    const total = await screen.findByRole("button", { name: "Всего серверов", pressed: true });
+    const online = screen.getByRole("button", { name: "Онлайн" });
+    const offline = screen.getByRole("button", { name: "Оффлайн" });
+    await userEvent.click(offline);
+    expect(offline).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("link", { name: "South-1" })).toBeInTheDocument();
+    expect(screen.getByText("Показано 1 из 3")).toBeInTheDocument();
+
+    const search = screen.getByRole("searchbox", { name: "Поиск по названию или адресу" });
+    await userEvent.type(search, "north");
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+
+    await userEvent.click(online);
+    expect(screen.getByRole("link", { name: "North-1" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "North-2" })).not.toBeInTheDocument();
+
+    await userEvent.click(total);
+    expect(total).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("link", { name: "North-2" })).toBeInTheDocument();
+    expect(screen.getByText("Показано 2 из 3")).toBeInTheDocument();
   });
 
   it("filters the table by name or address and says when nothing matches", async () => {

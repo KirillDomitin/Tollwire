@@ -31,11 +31,13 @@ export { freshMetrics };
 const REFRESH_MS = 30_000;
 
 type ServerSort = "name" | "status" | "clients";
+type ServerFilter = "all" | "online" | "offline";
 
 export function ServersPage() {
   const { t } = useTranslation();
   const { can } = useAuth();
   const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<ServerFilter>("all");
   const [sort, setSort] = useState<Sort<ServerSort>>(null);
   const servers = useQuery({
     queryKey: ["servers"],
@@ -46,9 +48,17 @@ export function ServersPage() {
   const latest = useLatestMetrics();
   const all = servers.data ?? [];
   const query = search.trim().toLowerCase();
+  const groups = { online: [] as Server[], offline: [] as Server[] };
+  // Новые и устанавливаемые серверы видны только в общем списке.
+  for (const server of all) {
+    const { signal } = serverSignal(server);
+    if (signal === "ok" || signal === "warn") groups.online.push(server);
+    if (signal === "down") groups.offline.push(server);
+  }
+  const filtered = filter === "all" ? all : groups[filter];
   const shown = query
-    ? all.filter((server) => `${server.name} ${server.host}`.toLowerCase().includes(query))
-    : all;
+    ? filtered.filter((server) => `${server.name} ${server.host}`.toLowerCase().includes(query))
+    : filtered;
 
   return (
     <section aria-labelledby="servers-title">
@@ -77,7 +87,14 @@ export function ServersPage() {
 
       {all.length > 0 && (
         <>
-          <Stats servers={all} metrics={latest} />
+          <Stats
+            servers={all}
+            metrics={latest}
+            online={groups.online.length}
+            offline={groups.offline.length}
+            filter={filter}
+            onFilter={setFilter}
+          />
           <div className={styles.toolbar}>
             <TextField
               className={styles.search}
@@ -92,7 +109,9 @@ export function ServersPage() {
             />
           </div>
           {shown.length === 0 ? (
-            <p className={styles.quiet}>{t("servers.list.noMatches")}</p>
+            <p className={styles.quiet}>
+              {t(query ? "servers.list.noMatches" : "servers.list.noStatusMatches")}
+            </p>
           ) : (
             <ServerTable
               servers={shown}
@@ -112,12 +131,22 @@ export function ServersPage() {
 }
 
 /** Плитки сводки: сколько серверов, сколько в сети и без связи, сколько клиентов (по свежим замерам). */
-function Stats({ servers, metrics }: { servers: Server[]; metrics: Map<string, LatestMetrics> }) {
+function Stats({
+  servers,
+  metrics,
+  online,
+  offline,
+  filter,
+  onFilter,
+}: {
+  servers: Server[];
+  metrics: Map<string, LatestMetrics>;
+  online: number;
+  offline: number;
+  filter: ServerFilter;
+  onFilter: (filter: ServerFilter) => void;
+}) {
   const { t } = useTranslation();
-  const signals = servers.map((server) => serverSignal(server).signal);
-  // «Онлайн» — отвечают (в том числе с проблемами), «Оффлайн» — недоступны или в ошибке; новые и устанавливаемые — ни то ни то.
-  const online = signals.filter((signal) => signal === "ok" || signal === "warn").length;
-  const offline = signals.filter((signal) => signal === "down").length;
   const counts = servers.flatMap((server) => {
     const total = metrics.get(server.id)?.clients_total;
     return total === null || total === undefined ? [] : [total];
@@ -129,18 +158,21 @@ function Stats({ servers, metrics }: { servers: Server[]; metrics: Map<string, L
         icon={<ServerIcon size={24} />}
         label={t("servers.list.stats.total")}
         value={servers.length}
+        action={{ pressed: filter === "all", onClick: () => onFilter("all") }}
       />
       <StatCard
         icon={<ActivityIcon size={24} />}
         tone="green"
         label={t("servers.list.stats.online")}
         value={online}
+        action={{ pressed: filter === "online", onClick: () => onFilter("online") }}
       />
       <StatCard
         icon={<ActivityIcon size={24} />}
         tone="red"
         label={t("servers.list.stats.offline")}
         value={offline}
+        action={{ pressed: filter === "offline", onClick: () => onFilter("offline") }}
       />
       <StatCard
         icon={<UsersIcon size={24} />}

@@ -11,6 +11,7 @@ export function StatCard({
   value,
   unit,
   tone = "blue",
+  action,
 }: {
   icon: ReactNode;
   label: string;
@@ -18,19 +19,38 @@ export function StatCard({
   /** Хвост значения: «/ 200», «%». */
   unit?: ReactNode;
   tone?: StatTone;
+  action?: { pressed: boolean; onClick: () => void };
 }) {
-  return (
-    <div className={styles.card} role="group" aria-label={label}>
-      <span className={styles.icon} data-tone={tone}>
+  const content = (
+    <>
+      <span className={styles.icon} data-tone={tone} aria-hidden="true">
         {icon}
       </span>
-      <div className={styles.body}>
+      <span className={styles.body}>
         <span className={styles.label}>{label}</span>
         <span className={styles.value}>
           {value}
           {unit && <span className={styles.unit}>{unit}</span>}
         </span>
-      </div>
+      </span>
+    </>
+  );
+  if (action) {
+    return (
+      <button
+        type="button"
+        className={styles.card}
+        aria-label={label}
+        aria-pressed={action.pressed}
+        onClick={action.onClick}
+      >
+        {content}
+      </button>
+    );
+  }
+  return (
+    <div className={styles.card} role="group" aria-label={label}>
+      {content}
     </div>
   );
 }
