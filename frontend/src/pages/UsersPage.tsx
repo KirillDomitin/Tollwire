@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 
@@ -18,6 +18,8 @@ import { TextField } from "../components/TextField";
 import i18n from "../i18n";
 import { currentLanguage } from "../i18n/format";
 import { accessPill, accessSignal, daysLeft, formatDay } from "../lib/access";
+import { exactTime, timeAgo } from "../lib/time";
+import { formatBytes } from "../lib/units";
 import styles from "./UsersPage.module.css";
 import { AddUserDialog } from "./user/AddUserDialog";
 
@@ -39,7 +41,31 @@ export function usersSummary(users: VPNUserListItem[], now: Date = new Date()): 
   return `${total} — ${parts.join(", ")}`;
 }
 
-type UserSort = "name" | "access" | "until";
+type UserSort = "name" | "access" | "until" | "handshake" | "traffic";
+type Device = NonNullable<VPNUserListItem["devices"]>[number];
+
+function deviceTraffic(device: Device): number | null {
+  const { downloaded_bytes, uploaded_bytes } = device;
+  if (downloaded_bytes === null && uploaded_bytes === null) return null;
+  return (downloaded_bytes ?? 0) + (uploaded_bytes ?? 0);
+}
+
+function userActivity(user: VPNUserListItem) {
+  const devices = user.devices ?? [];
+  let traffic: number | null = null;
+  let latest: Device | undefined;
+  for (const device of devices) {
+    const bytes = deviceTraffic(device);
+    if (bytes !== null) traffic = (traffic ?? 0) + bytes;
+    if (
+      device.latest_handshake &&
+      (!latest?.latest_handshake || Date.parse(device.latest_handshake) > Date.parse(latest.latest_handshake))
+    ) {
+      latest = device;
+    }
+  }
+  return { devices, traffic, latest };
+}
 
 export function UsersPage() {
   const { t } = useTranslation();
@@ -47,8 +73,9 @@ export function UsersPage() {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<Sort<UserSort>>(null);
   const users = useQuery({
-    queryKey: ["vpn-users"],
-    queryFn: () => unwrap(api.GET("/api/v1/vpn-users")),
+    queryKey: ["vpn-users", "devices"],
+    queryFn: () => unwrap(api.GET("/api/v1/vpn-users", { params: { query: { include_devices: true } } })),
+    refetchInterval: 60_000,
   });
   const all = users.data ?? [];
   const query = search.trim().toLowerCase();
@@ -121,18 +148,22 @@ function UserTable({
   onSort: (field: UserSort) => void;
 }) {
   const { t } = useTranslation();
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   // Сначала те, у кого доступ скоро кончится, затем по имени — так список работает как напоминание о продлении.
   const order = { warn: 0, ok: 1, process: 2, down: 3, idle: 4 };
   const now = new Date();
+  const entries = users.map((user) => ({ id: user.id, user, ...userActivity(user) }));
   const sorted = sort
-    ? sortRows(users, sort.direction, (user) => {
+    ? sortRows(entries, sort.direction, ({ user, latest, traffic }) => {
         if (sort.field === "name") return user.username;
         if (sort.field === "access") return accessRank(user, now);
+        if (sort.field === "handshake") return latest?.latest_handshake ? Date.parse(latest.latest_handshake) : null;
+        if (sort.field === "traffic") return traffic;
         return user.access && user.access.status !== "revoked" ? Date.parse(user.access.valid_until) : null;
       })
-    : users;
+    : entries;
   const rows = sorted
-    .map((user) => ({ user, ...accessSignal(user.access ?? null) }))
+    .map((entry) => ({ ...entry, ...accessSignal(entry.user.access ?? null, now) }))
     .sort((a, b) =>
       sort
         ? 0
@@ -154,47 +185,117 @@ function UserTable({
             <SortHeader field="until" sort={sort} onSort={onSort}>
               {t("users.list.columns.until")}
             </SortHeader>
+            <SortHeader field="handshake" sort={sort} onSort={onSort}>
+              {t("users.metrics.handshake")}
+            </SortHeader>
+            <SortHeader field="traffic" sort={sort} onSort={onSort}>
+              {t("users.list.columns.traffic")}
+            </SortHeader>
             <th scope="col">{t("users.list.columns.note")}</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map(({ user, signal }) => {
+          {rows.map(({ user, signal, devices, traffic, latest }) => {
             const access = user.access ?? null;
             const pill = accessPill(access);
             const left = daysLeft(access);
+            const isExpanded = expanded.has(user.id);
+            const detailsId = `user-devices-${user.id}`;
+            const partial = traffic !== null && devices.some(
+              (device) => device.downloaded_bytes === null || device.uploaded_bytes === null,
+            );
+            const staleTraffic = devices.some((device) => device.stale && deviceTraffic(device) !== null);
             return (
-              <tr key={user.id} data-signal={signal}>
-                <th scope="row" className={table.primary}>
-                  <span className={styles.person}>
-                    <Avatar name={user.username} />
-                    <span className={styles.who}>
-                      <Link to={`/users/${user.id}`} className={table.title}>
-                        {user.username}
-                      </Link>
-                      <span className={styles.email}>{user.email ?? "—"}</span>
+              <Fragment key={user.id}>
+                <tr data-signal={signal}>
+                  <th scope="row" className={table.primary}>
+                    <span className={styles.person}>
+                      <Avatar name={user.username} />
+                      <span className={styles.who}>
+                        <Link to={`/users/${user.id}`} className={table.title}>
+                          {user.username}
+                        </Link>
+                        <span className={styles.email}>{user.email ?? "—"}</span>
+                      </span>
+                      {user.status === "disabled" && (
+                        <StatusPill tone="neutral">{t("users.list.disabled")}</StatusPill>
+                      )}
                     </span>
-                    {user.status === "disabled" && (
-                      <StatusPill tone="neutral">{t("users.list.disabled")}</StatusPill>
+                  </th>
+                  <td data-label={t("users.list.columns.access")}>
+                    <StatusPill tone={pill.tone}>{pill.label}</StatusPill>
+                  </td>
+                  <td className={table.num} data-label={t("users.list.columns.until")}>
+                    {access && access.status !== "revoked" ? (
+                      <span className={styles.until}>
+                        <span>{formatDay(access.valid_until)}</span>
+                        {left && <span className={table.muted}>{left}</span>}
+                      </span>
+                    ) : (
+                      "—"
                     )}
-                  </span>
-                </th>
-                <td data-label={t("users.list.columns.access")}>
-                  <StatusPill tone={pill.tone}>{pill.label}</StatusPill>
-                </td>
-                <td className={table.num} data-label={t("users.list.columns.until")}>
-                  {access && access.status !== "revoked" ? (
-                    <span className={styles.until}>
-                      <span>{formatDay(access.valid_until)}</span>
-                      {left && <span className={table.muted}>{left}</span>}
-                    </span>
-                  ) : (
-                    "—"
-                  )}
-                </td>
-                <td className={`${table.muted} ${styles.note}`} data-label={t("users.list.columns.note")}>
-                  {user.description}
-                </td>
-              </tr>
+                  </td>
+                  <td data-label={t("users.metrics.handshake")}>
+                    {latest?.latest_handshake ? (
+                      <span className={styles.activity}>
+                        <time dateTime={latest.latest_handshake} title={exactTime(latest.latest_handshake)}>
+                          {timeAgo(latest.latest_handshake, now)}
+                        </time>
+                        {latest.stale && <small>{t("users.metrics.stale")}</small>}
+                      </span>
+                    ) : "—"}
+                  </td>
+                  <td data-label={t("users.list.columns.traffic")}>
+                    {devices.length > 0 ? (
+                      <span className={styles.activity}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className={styles.trafficButton}
+                          aria-expanded={isExpanded}
+                          aria-controls={isExpanded ? detailsId : undefined}
+                          aria-label={t("users.list.deviceTraffic", { user: user.username, traffic: formatBytes(traffic) })}
+                          title={t("users.metrics.period")}
+                          onClick={() => setExpanded((previous) => {
+                            const next = new Set(previous);
+                            if (next.has(user.id)) next.delete(user.id);
+                            else next.add(user.id);
+                            return next;
+                          })}
+                        >
+                          {formatBytes(traffic)} <span aria-hidden="true">{isExpanded ? "▴" : "▾"}</span>
+                        </Button>
+                        {partial && <small>{t("users.list.partialTraffic")}</small>}
+                        {staleTraffic && <small>{t("users.metrics.stale")}</small>}
+                      </span>
+                    ) : "—"}
+                  </td>
+                  <td className={styles.note} data-label={t("users.list.columns.note")}>
+                    {user.description}
+                  </td>
+                </tr>
+                {isExpanded && devices.length > 0 && (
+                  <tr>
+                    <td colSpan={6}>
+                      <ul id={detailsId} className={styles.devices} aria-label={t("users.list.devices")}>
+                        {devices.map((device) => (
+                          <li key={device.credential_id} className={styles.device}>
+                            <span>
+                              <strong>{device.device_name || t("users.devices.unnamed", { id: device.credential_id.slice(0, 8) })}</strong>
+                              <span className={styles.server}>{device.server_name}</span>
+                            </span>
+                            <span className={styles.activity}>
+                              {t("users.metrics.downloaded")} {formatBytes(device.downloaded_bytes)}
+                              <span>{t("users.metrics.uploaded")} {formatBytes(device.uploaded_bytes)}</span>
+                              {device.stale && <small>{t("users.metrics.stale")}</small>}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
             );
           })}
         </tbody>

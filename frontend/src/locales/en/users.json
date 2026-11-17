@@ -20,8 +20,12 @@
       "user": "User",
       "access": "Subscription",
       "note": "Note",
-      "until": "Valid until"
+      "until": "Valid until",
+      "traffic": "Traffic"
     },
+    "devices": "User devices",
+    "deviceTraffic": "Device traffic for {{user}} ({{traffic}})",
+    "partialTraffic": "Partial data",
     "subtitle": "Manage users and their subscriptions",
     "search": "Search by name or email",
     "noMatches": "Nothing found. Change the search.",

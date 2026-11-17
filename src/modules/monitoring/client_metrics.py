@@ -1,6 +1,7 @@
 """Short-lived runtime peer observations; HTTP reads never connect to VPN servers."""
 
 import logging
+from collections import defaultdict
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -12,7 +13,7 @@ from core.exceptions import NotFoundError
 from core.redis import get_redis
 from infrastructure.vpn.provider import VPNClientStats
 from modules.access.repository import VPNCredentialRepository
-from modules.monitoring.schemas import ClientMetric, ProtocolClientMetrics, ServerClientMetrics
+from modules.monitoring.schemas import ClientMetric, ProtocolClientMetrics, ServerClientMetrics, UserDeviceMetric
 from modules.protocols.repository import ProtocolRepository
 from modules.servers.repository import ServerRepository
 
@@ -35,6 +36,20 @@ class PeerSample(BaseModel):
 class ClientSnapshot(BaseModel):
     sampled_at: AwareDatetime
     peers: list[PeerSample] = Field(max_length=4096)
+
+
+def decode_snapshot(raw: str | bytes | None, now: datetime) -> ClientSnapshot | None:
+    if raw is None or len(raw) > 2 * 1024 * 1024:
+        return None
+    try:
+        snapshot = ClientSnapshot.model_validate_json(raw)
+    except (ValueError, TypeError):
+        return None
+    return snapshot if (now - snapshot.sampled_at).total_seconds() < RETENTION_SECONDS else None
+
+
+def is_stale(snapshot: ClientSnapshot, now: datetime) -> bool:
+    return not 0 <= (now - snapshot.sampled_at).total_seconds() < STALE_SECONDS
 
 
 async def save_snapshot(protocol_id: UUID, sampled_at: datetime, peers: list[VPNClientStats]) -> None:
@@ -62,6 +77,41 @@ class ClientMetricsService:
         self.protocols = ProtocolRepository(session)
         self.credentials = VPNCredentialRepository(session)
 
+    async def by_user(self) -> dict[UUID, list[UserDeviceMetric]]:
+        devices = await self.credentials.live_device_metrics_identity()
+        protocol_ids = list(dict.fromkeys(row[1] for row in devices))
+        now = datetime.now(timezone.utc)
+        snapshots: dict[UUID, tuple[bool, dict[str, PeerSample]]] = {}
+        if protocol_ids:
+            try:
+                samples = await get_redis().mget([cache_key(protocol_id) for protocol_id in protocol_ids])
+            except RedisError:
+                samples = []
+            for protocol_id, raw in zip(protocol_ids, samples):
+                snapshot = decode_snapshot(raw, now)
+                if snapshot is not None:
+                    snapshots[protocol_id] = (
+                        is_stale(snapshot, now),
+                        {peer.public_key: peer for peer in snapshot.peers},
+                    )
+
+        result: defaultdict[UUID, list[UserDeviceMetric]] = defaultdict(list)
+        for user_id, protocol_id, credential_id, server_name, device_name, public_key in devices:
+            stale, peers = snapshots.get(protocol_id, (False, {}))
+            peer = peers.get(public_key) if public_key is not None else None
+            result[user_id].append(
+                UserDeviceMetric(
+                    credential_id=credential_id,
+                    server_name=server_name,
+                    device_name=device_name,
+                    latest_handshake=peer.latest_handshake if peer else None,
+                    downloaded_bytes=peer.tx_bytes if peer else None,
+                    uploaded_bytes=peer.rx_bytes if peer else None,
+                    stale=stale and peer is not None,
+                )
+            )
+        return result
+
     async def get_cached(self, server_id: UUID) -> ServerClientMetrics:
         if not await self.servers.get_by_id(server_id):
             raise NotFoundError("Server not found")
@@ -74,16 +124,13 @@ class ClientMetricsService:
             result.append(item)
             try:
                 raw = await get_redis().get(cache_key(protocol.id))
-                if raw is None or len(raw) > 2 * 1024 * 1024:
-                    continue
-                snapshot = ClientSnapshot.model_validate_json(raw)
-            except (RedisError, ValueError, TypeError):
+            except RedisError:
                 continue
-            age = (now - snapshot.sampled_at).total_seconds()
-            if age >= RETENTION_SECONDS:
+            snapshot = decode_snapshot(raw, now)
+            if snapshot is None:
                 continue
             item.sampled_at = snapshot.sampled_at
-            item.stale = age >= STALE_SECONDS or age < 0
+            item.stale = is_stale(snapshot, now)
             by_key = {peer.public_key: peer for peer in snapshot.peers}
             for credential, protocol_id in credentials:
                 if protocol_id != protocol.id or credential.client_public_key is None:

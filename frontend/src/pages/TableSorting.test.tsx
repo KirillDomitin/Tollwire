@@ -55,15 +55,57 @@ it("users: names, dates, missing values, search and refresh", async () => {
   expect(names()).toEqual(["ALPHA", "alpha"]);
   const updated = [user("a", "alpha", "2099-03-01"), data[1], data[0]];
   await act(async () => {
-    queryClient.setQueryData(["vpn-users"], updated);
+    queryClient.setQueryData(["vpn-users", "devices"], updated);
   });
   await waitFor(() => expect(names()).toEqual(["alpha", "ALPHA"]));
-  expect(queryClient.getQueryData(["vpn-users"])).toEqual(updated);
+  expect(queryClient.getQueryData(["vpn-users", "devices"])).toEqual(updated);
   expect(screen.getByRole("columnheader", { name: "Valid until" })).toHaveAttribute(
     "aria-sort",
     "descending",
   );
 });
+it("users: sorts activity and expands traffic across servers", async () => {
+  const device = (id: string, server: string, handshake: string, down: number | null, up: number | null) => ({
+    credential_id: id,
+    device_name: id,
+    server_name: server,
+    latest_handshake: handshake,
+    downloaded_bytes: down,
+    uploaded_bytes: up,
+    stale: false,
+  });
+  const data = [
+    { ...user("a", "Alice"), devices: [
+      device("Phone", "Helsinki", "2024-02-01T00:00:00Z", 12, 8),
+      device("Laptop", "Berlin", "2024-01-01T00:00:00Z", 9, null),
+    ] },
+    { ...user("b", "Bob"), devices: [device("Tablet", "Paris", "2024-03-01T00:00:00Z", 0, 0)] },
+    user("c", "Charlie"),
+  ];
+  vi.stubGlobal("fetch", vi.fn(async () => json(data)));
+  renderWithProviders(<UsersPage />);
+  await screen.findByRole("link", { name: "Alice" });
+
+  await click("Last handshake");
+  expect(names()).toEqual(["Alice", "Bob", "Charlie"]);
+  await click("Last handshake");
+  expect(names()).toEqual(["Bob", "Alice", "Charlie"]);
+  await click("Traffic");
+  expect(names()).toEqual(["Bob", "Alice", "Charlie"]);
+  await click("Traffic");
+  expect(names()).toEqual(["Alice", "Bob", "Charlie"]);
+
+  expect(screen.getByText("Partial data")).toBeInTheDocument();
+  expect(screen.queryByText("Helsinki")).not.toBeInTheDocument();
+  const toggle = screen.getByRole("button", { name: "Device traffic for Alice (29 B)" });
+  await userEvent.click(toggle);
+  expect(toggle).toHaveAttribute("aria-expanded", "true");
+  expect(screen.getByText("Helsinki")).toBeInTheDocument();
+  expect(screen.getByText("Berlin")).toBeInTheDocument();
+  await userEvent.click(toggle);
+  expect(screen.queryByText("Helsinki")).not.toBeInTheDocument();
+});
+
 it("servers: original order, numeric clients, stale values, keyboard, field switch and refresh", async () => {
   const data = [server("a", "Zulu"), server("b", "alpha"), server("c", "Missing"), server("d", "Stale")];
   const metrics = [

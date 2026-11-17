@@ -2580,27 +2580,49 @@
         ],
         "summary": "Get",
         "operationId": "get_api_v1_vpn_users_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "include_devices",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Devices"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
+                  "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/VPNUserListItem"
                   },
-                  "type": "array",
                   "title": "Response Get Api V1 Vpn Users Get"
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
           }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
+        }
       },
       "post": {
         "tags": [
@@ -2608,15 +2630,20 @@
         ],
         "summary": "Create",
         "operationId": "create_api_v1_vpn_users_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/VPNUserCreate"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "201": {
@@ -2639,12 +2666,7 @@
               }
             }
           }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
+        }
       }
     },
     "/api/v1/vpn-users/{user_id}": {
@@ -11312,6 +11334,81 @@
         ],
         "title": "TokenResponse"
       },
+      "UserDeviceMetric": {
+        "properties": {
+          "credential_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Credential Id"
+          },
+          "latest_handshake": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Handshake"
+          },
+          "downloaded_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Downloaded Bytes"
+          },
+          "uploaded_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uploaded Bytes"
+          },
+          "server_name": {
+            "type": "string",
+            "title": "Server Name"
+          },
+          "device_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Name"
+          },
+          "stale": {
+            "type": "boolean",
+            "title": "Stale"
+          }
+        },
+        "type": "object",
+        "required": [
+          "credential_id",
+          "latest_handshake",
+          "downloaded_bytes",
+          "uploaded_bytes",
+          "server_name",
+          "device_name",
+          "stale"
+        ],
+        "title": "UserDeviceMetric"
+      },
       "UserStatusRead": {
         "properties": {
           "name": {
@@ -11630,6 +11727,13 @@
                 "type": "null"
               }
             ]
+          },
+          "devices": {
+            "items": {
+              "$ref": "#/components/schemas/UserDeviceMetric"
+            },
+            "type": "array",
+            "title": "Devices"
           }
         },
         "type": "object",

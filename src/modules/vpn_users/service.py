@@ -10,6 +10,7 @@ from modules.access.repository import SubscriptionRepository, VPNCredentialRepos
 from modules.audit.actor import AuditActor
 from modules.audit.models.audit_log import AuditAction, AuditEntity
 from modules.audit.service import AuditService, diff_changes
+from modules.monitoring.client_metrics import ClientMetricsService
 from modules.vpn_users.models.user import VPNUser
 from modules.vpn_users.repository import VPNUserRepository
 from modules.vpn_users.schemas import AccessSummary, VPNUserCreate, VPNUserListItem, VPNUserUpdate
@@ -56,13 +57,17 @@ class VPNUserService:
     async def list_all(self) -> Sequence[VPNUser]:
         return await self.users.list_all()
 
-    async def list_with_access(self) -> list[VPNUserListItem]:
-        """Пользователи вместе с последней подпиской — два запроса на весь список, без запроса на каждого."""
+    async def list_with_access(self, *, include_devices: bool = False) -> list[VPNUserListItem]:
+        """Пользователи с последней подпиской и опциональной статистикой устройств."""
         users = await self.users.list_all()
         latest = await SubscriptionRepository(self.session).latest_by_user()
+        devices = await ClientMetricsService(self.session).by_user() if include_devices and users else {}
         return [
             VPNUserListItem.model_validate(user).model_copy(
-                update={"access": AccessSummary.model_validate(latest[user.id]) if user.id in latest else None}
+                update={
+                    "access": AccessSummary.model_validate(latest[user.id]) if user.id in latest else None,
+                    "devices": devices.get(user.id, []),
+                }
             )
             for user in users
         ]

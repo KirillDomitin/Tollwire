@@ -13,6 +13,7 @@ from modules.access.models.access_grant import AccessGrant
 from modules.access.models.subscription import Subscription
 from modules.access.models.vpn_credential import VPNCredential
 from modules.protocols.models.protocol import ProtocolType, VPNProtocol
+from modules.servers.models.server import VPNServer
 from modules.vpn_users.models.user import VPNUser
 
 _ACTIVE_STATUSES = (AccessGrantStatus.PENDING, AccessGrantStatus.ACTIVE)
@@ -128,6 +129,27 @@ class AccessGrantRepository:
 
 
 class VPNCredentialRepository:
+    async def live_device_metrics_identity(
+        self,
+    ) -> Sequence[tuple[UUID, UUID, UUID, str, str | None, str | None]]:
+        rows = await self.session.execute(
+            select(
+                Subscription.user_id,
+                AccessGrant.protocol_id,
+                VPNCredential.id,
+                VPNServer.name,
+                func.coalesce(VPNCredential.device_name, VPNCredential.external_name, VPNCredential.peer_name),
+                VPNCredential.client_public_key,
+            )
+            .select_from(VPNCredential)
+            .join(AccessGrant, VPNCredential.access_grant_id == AccessGrant.id)
+            .join(Subscription, AccessGrant.subscription_id == Subscription.id)
+            .join(VPNServer, AccessGrant.server_id == VPNServer.id)
+            .where(VPNCredential.revoked_at.is_(None), VPNCredential.state == CredentialState.ACTIVE)
+            .order_by(VPNServer.name, VPNCredential.created_at, VPNCredential.id)
+        )
+        return rows.tuples().all()
+
     async def lock_user(self, user_id: UUID) -> VPNUser | None:
         return await self.session.get(VPNUser, user_id, with_for_update=True, populate_existing=True)
 

@@ -14,6 +14,12 @@ class ClientMetric(BaseModel):
     uploaded_bytes: int | None = Field(ge=0)
 
 
+class UserDeviceMetric(ClientMetric):
+    server_name: str
+    device_name: str | None
+    stale: bool
+
+
 class ProtocolClientMetrics(BaseModel):
     protocol_id: UUID
     sampled_at: datetime | None = None

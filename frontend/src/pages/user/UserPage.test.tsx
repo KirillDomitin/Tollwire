@@ -299,7 +299,7 @@ describe("users without an email (taken over from AmneziaVPN)", () => {
     mockApi({ userPatch: { email: null } });
     const { unmount } = renderWithProviders(<UsersPage />);
     const row = (await screen.findByRole("link", { name: "alice" })).closest("tr")!;
-    expect(within(row).getByText("—")).toBeInTheDocument();
+    expect(within(within(row).getByRole("rowheader")).getByText("—")).toBeInTheDocument();
     unmount();
 
     renderCard();

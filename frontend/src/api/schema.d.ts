@@ -3628,6 +3628,26 @@ export interface components {
              */
             token_type: string;
         };
+        /** UserDeviceMetric */
+        UserDeviceMetric: {
+            /**
+             * Credential Id
+             * Format: uuid
+             */
+            credential_id: string;
+            /** Latest Handshake */
+            latest_handshake: string | null;
+            /** Downloaded Bytes */
+            downloaded_bytes: number | null;
+            /** Uploaded Bytes */
+            uploaded_bytes: number | null;
+            /** Server Name */
+            server_name: string;
+            /** Device Name */
+            device_name: string | null;
+            /** Stale */
+            stale: boolean;
+        };
         /**
          * UserStatusRead
          * @description /status в боте: имя, до какого числа доступ, протокол.
@@ -3744,6 +3764,8 @@ export interface components {
             /** Bot Blocked At */
             bot_blocked_at?: string | null;
             access?: components["schemas"]["AccessSummary"] | null;
+            /** Devices */
+            devices?: components["schemas"]["UserDeviceMetric"][];
         };
         /** VPNUserRead */
         VPNUserRead: {
@@ -5381,7 +5403,9 @@ export interface operations {
     };
     get_api_v1_vpn_users_get: {
         parameters: {
-            query?: never;
+            query?: {
+                include_devices?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5395,6 +5419,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["VPNUserListItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

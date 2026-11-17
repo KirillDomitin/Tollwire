@@ -9,8 +9,12 @@ from redis.exceptions import RedisError
 
 from core.exceptions import NotFoundError
 from core.redis import get_redis
+from modules.access.schemas import AccessGrantCreate
+from modules.access.service import AccessGrantService
+from modules.audit.actor import SYSTEM_ACTOR
 from modules.monitoring.client_metrics import ClientMetricsService, cache_key
 from modules.monitoring.service import MetricsCollector
+from modules.vpn_users.service import VPNUserService
 from tests.fixtures import World
 
 
@@ -116,6 +120,40 @@ async def test_revoked_credential_is_not_returned_from_an_older_snapshot(world: 
 async def test_unknown_server_is_not_found(world: World) -> None:
     with pytest.raises(NotFoundError):
         await ClientMetricsService(world.session).get_cached(uuid4())
+
+
+async def test_user_list_devices_include_missing_samples_and_exclude_revoked(world: World) -> None:
+    first, protocol, fake = await world.server()
+    second, other_protocol, _ = await world.server()
+    assert protocol is not None and other_protocol is not None
+    user, subscription, _, credential = await world.issued(protocol)
+    other_grant = await AccessGrantService(world.session, SYSTEM_ACTOR).create(
+        subscription.id, AccessGrantCreate(protocol_id=other_protocol.id)
+    )
+    other_credential = await world.credentials().provision(other_grant.id)
+    fake.transfers[credential.client_public_key] = (123, 456)
+    fake.handshakes[credential.client_public_key] = 1_700_000_000
+    assert await MetricsCollector().collect(first.id)
+
+    service = VPNUserService(world.session, SYSTEM_ACTOR)
+    assert (await service.list_with_access())[0].devices == []
+    (entry,) = await service.list_with_access(include_devices=True)
+    assert entry.id == user.id
+    devices = {device.credential_id: device for device in entry.devices}
+    measured = devices[credential.id]
+    assert measured.server_name == first.name
+    assert measured.latest_handshake == datetime.fromtimestamp(1_700_000_000, timezone.utc)
+    assert (measured.downloaded_bytes, measured.uploaded_bytes) == (456, 123)
+    unmeasured = devices[other_credential.id]
+    assert unmeasured.server_name == second.name
+    assert unmeasured.latest_handshake is None
+    assert unmeasured.downloaded_bytes is None and unmeasured.uploaded_bytes is None
+    assert "public_key" not in entry.model_dump_json()
+
+    credential.revoked_at = datetime.now(timezone.utc)
+    await world.session.commit()
+    (entry,) = await service.list_with_access(include_devices=True)
+    assert [device.credential_id for device in entry.devices] == [other_credential.id]
 
 
 async def test_same_public_key_on_different_servers_keeps_its_own_counters(world: World) -> None:

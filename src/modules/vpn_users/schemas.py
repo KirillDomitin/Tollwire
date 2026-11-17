@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from core.schemas import PatchModel
 from modules.access.models import AccessGrantStatus
+from modules.monitoring.schemas import UserDeviceMetric
 from modules.vpn_users.models.user import VPNUserStatus
 
 # Email — идентификатор пользователя (будущая регистрация), поэтому на входе он проверяется (EmailStr).
@@ -56,3 +57,4 @@ class AccessSummary(BaseModel):
 
 class VPNUserListItem(VPNUserRead):
     access: AccessSummary | None = None  # None — подписок ещё не было
+    devices: list[UserDeviceMetric] = Field(default_factory=list)
