@@ -15,7 +15,6 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from core.database.postgres import engine, session_factory
 from modules.jobs.models.job import Job, JobStatus, JobType
-from modules.servers.models.server import VPNServer
 from tests.conftest import run_alembic
 
 LEFTOVERS_SQL = text(
@@ -175,6 +174,7 @@ PROTOCOL_TYPES_SQL = text(
     "SELECT enumlabel FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid WHERE t.typname = 'protocoltype'"
 )
 NEW_PROTOCOL_TYPES = {"AMNEZIA_APP_AWG", "AMNEZIA_APP_AWG2"}
+_INSERT_SERVER = text("INSERT INTO vpn_servers (id, name, host) VALUES (gen_random_uuid(), :n, 'h') RETURNING id")
 
 
 async def _labels(sql: object) -> set[object]:
@@ -182,11 +182,9 @@ async def _labels(sql: object) -> set[object]:
 
 
 async def _add_server() -> UUID:
-    async with session_factory() as session:
-        server = VPNServer(name="migration-srv", host="203.0.113.10")
-        session.add(server)
-        await session.commit()
-        return server.id
+    """Создаёт сервер по колонкам, доступным и после отката миграций."""
+    async with engine.begin() as conn:
+        return (await conn.execute(_INSERT_SERVER, {"n": "migration-srv"})).scalar_one()
 
 
 async def test_discovery_migration_adds_protocol_and_job_types() -> None:
@@ -621,7 +619,6 @@ EXITS_CONSTRAINTS_SQL = text(
 )
 
 
-_INSERT_SERVER = text("INSERT INTO vpn_servers (id, name, host) VALUES (gen_random_uuid(), :n, 'h') RETURNING id")
 _INSERT_PROTOCOL = text("INSERT INTO protocols (id, server_id, type) VALUES (gen_random_uuid(), :s, :t) RETURNING id")
 
 
