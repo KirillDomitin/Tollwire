@@ -4,7 +4,7 @@
 
 ## Модели
 
-- `vpn_servers`: name (unique), host, port, description, `status` (`ServerStatus`), `health_status`
+- `vpn_servers`: name (unique), host, port, description, `location_city_id` (nullable), `status` (`ServerStatus`), `health_status`
   (ok/degraded/down) + `last_health_at`, `ssh_host_key` + `ssh_host_key_fingerprint` (закреплённый ключ).
 - `server_credentials` (1:1, `server_credentials_server_id_key`): username, `auth_type` (password/ssh_key),
   секрет — **только** Fernet (`encrypt_secret`). Наружу секрет не отдаётся никогда. Поля для ключа панели:
@@ -35,6 +35,18 @@ CRUD; `PUT/GET/DELETE /{id}/credentials`; `POST /{id}/test-connection`; `POST /{
 `POST/DELETE /{id}/protocol` (тип: необязательное тело `{"type": "amnezia_wg" | "amnezia_gateway"}` и/или query `?type=...` - у DELETE тело нередко отбрасывает прокси или клиент, поэтому query надёжнее; оба и разные - 422; ни одного - `amnezia_wg`; приложение-типы и неизвестные - 422), `POST /{id}/sync`, `POST /{id}/health`, `POST /{id}/discover`, `POST /{id}/import` (`servers:manage`, тело — см. «Импорт клиентов»); `GET /{id}/protocols`; `GET /{id}/discovery` (отчёт поиска, не задача; 404 — сервера нет). `discover` — право
 `servers:check`, `discovery` — `servers:read`. Права —
 см. `modules/auth/CLAUDE.md`.
+
+### Город на карте
+
+`POST /api/v1/servers` принимает необязательное `location_city_id`. `GET` списка и карточки возвращают код города или
+`null`. В `PATCH /api/v1/servers/{id}` пропуск поля сохраняет текущий город, `null` убирает его с карты. Пример кода
+`fi-helsinki`. API проверяет формат и длину до 64 символов, поэтому клиенты могут сохранять коды из более новой версии
+каталога. Флаг в имени задаётся отдельно.
+
+Миграция `a7f3c1e592bd` добавляет пустую колонку для существующих серверов. При откате теряются выбранные города.
+Карта использует комплектный каталог с русскими и английскими названиями. Запись без города или с неизвестным кодом
+видна в таблице. Координаты округлены по данным [GeoNames](https://www.geonames.org/) ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)).
+Геометрия взята из эскиза карты и использует проекцию [Natural Earth 1](https://www.ika.ethz.ch/teaching/mt_savric_presentation_eth.pdf).
 
 Обновления образов: `GET /{id}/protocol/updates` (`servers:read`, только кеш),
 `POST /{id}/protocol/updates/check` (`servers:check`, 202 CHECK_PROTOCOL_UPDATES),

@@ -2026,3 +2026,30 @@ async def test_outbox_migration_cycle_is_idempotent_and_leaves_no_orphans() -> N
     finally:
         await _alembic("upgrade", "head")
     assert tuple(row[0] for row in await _query(OUTBOX_TABLES_SQL)) == OUTBOX_TABLES
+
+
+async def test_server_location_migration_keeps_existing_servers_through_upgrade_and_downgrade() -> None:
+    before_location = "e9b3d7c10f42"
+    columns = text(
+        "SELECT is_nullable, column_default, character_maximum_length FROM information_schema.columns "
+        "WHERE table_name = 'vpn_servers' AND column_name = 'location_city_id'"
+    )
+    old_row = text("SELECT name, host FROM vpn_servers")
+    upgraded_row = text("SELECT name, host, location_city_id FROM vpn_servers")
+
+    try:
+        await _alembic("downgrade", before_location)
+        assert await _query(columns) == []
+        await _run("INSERT INTO vpn_servers (id, name, host) VALUES (:id, 'existing', '203.0.113.10')", id=uuid4())
+
+        await _alembic("upgrade", "head")
+        assert await _query(columns) == [("YES", None, 64)]
+        assert await _query(upgraded_row) == [("existing", "203.0.113.10", None)]
+        await _run("UPDATE vpn_servers SET location_city_id = 'se-stockholm' WHERE name = 'existing'")
+
+        await _alembic("downgrade", before_location)
+        assert await _query(columns) == []
+        assert await _query(old_row) == [("existing", "203.0.113.10")]
+    finally:
+        await _alembic("upgrade", "head")
+    assert await _query(upgraded_row) == [("existing", "203.0.113.10", None)]

@@ -85,13 +85,22 @@ class ServerService:
     async def create(self, data: ServerCreate) -> VPNServer:
         if await self.servers.get_by_name(data.name):
             raise AlreadyExistsError
-        new_server = VPNServer(name=data.name, host=data.host, ssh_port=data.ssh_port, description=data.description)
+        new_server = VPNServer(
+            name=data.name,
+            host=data.host,
+            ssh_port=data.ssh_port,
+            description=data.description,
+            location_city_id=data.location_city_id,
+        )
         server = await self.servers.create(new_server)
+        meta: dict[str, object] = {"name": server.name, "host": server.host, "ssh_port": server.ssh_port}
+        if server.location_city_id is not None:
+            meta["location_city_id"] = server.location_city_id
         self.audit.record(
             AuditAction.SERVER_CREATED,
             AuditEntity.SERVER,
             server.id,
-            {"name": server.name, "host": server.host, "ssh_port": server.ssh_port},
+            meta,
         )
         await self.session.commit()
         return server

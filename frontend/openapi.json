@@ -10998,6 +10998,19 @@
               }
             ],
             "title": "Description"
+          },
+          "location_city_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[a-z]{2}-[a-z0-9]+(?:-[a-z0-9]+)*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location City Id"
           }
         },
         "type": "object",
@@ -11039,6 +11052,17 @@
               }
             ],
             "title": "Description"
+          },
+          "location_city_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location City Id"
           },
           "health_status": {
             "anyOf": [
@@ -11154,6 +11178,19 @@
               }
             ],
             "title": "Description"
+          },
+          "location_city_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[a-z]{2}-[a-z0-9]+(?:-[a-z0-9]+)*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location City Id"
           }
         },
         "type": "object",

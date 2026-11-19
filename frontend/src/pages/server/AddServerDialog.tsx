@@ -3,7 +3,7 @@ import { useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 
-import { api, unwrap } from "../../api/client";
+import { api, unwrap, type Schemas } from "../../api/client";
 import { Button } from "../../components/Button";
 import { CountrySelect } from "../../components/CountrySelect";
 import { Dialog, DialogActions } from "../../components/Dialog";
@@ -11,9 +11,10 @@ import { PlusIcon } from "../../components/icons";
 import { Notice } from "../../components/Notice";
 import { TextField } from "../../components/TextField";
 import { NAME_MAX_WITH_FLAG, withFlag } from "../../lib/flags";
+import { CitySelect } from "./CitySelect";
 import styles from "./ServerPage.module.css";
 
-/** Новый сервер: только адрес и имя. Дальше — карточка сервера с шагами подготовки. */
+/** Регистрация сервера. Дальше — карточка сервера с шагами подготовки. */
 export function AddServerDialog() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -21,7 +22,7 @@ export function AddServerDialog() {
   const [open, setOpen] = useState(false);
 
   const create = useMutation({
-    mutationFn: (body: { name: string; host: string; ssh_port: number; description: string | null }) =>
+    mutationFn: (body: Schemas["ServerCreate"]) =>
       unwrap(api.POST("/api/v1/servers", { body }), {
         409: t("servers.add.errors.conflict"),
         422: t("servers.add.errors.invalid"),
@@ -37,11 +38,13 @@ export function AddServerDialog() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const description = String(form.get("description")).trim();
+    const city = String(form.get("location_city_id") ?? "");
     create.mutate({
       name: withFlag(String(form.get("flag")), String(form.get("name")).trim()),
       host: String(form.get("host")).trim(),
       ssh_port: Number(form.get("ssh_port")),
       description: description || null,
+      ...(city ? { location_city_id: city } : {}),
     });
   }
 
@@ -61,6 +64,7 @@ export function AddServerDialog() {
       >
         <form className={styles.form} onSubmit={submit}>
           <CountrySelect name="flag" />
+          <CitySelect />
           <TextField
             label={t("servers.add.name")}
             name="name"

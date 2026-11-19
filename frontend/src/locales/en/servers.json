@@ -29,6 +29,31 @@
       "clients": "Total clients"
     }
   },
+  "map": {
+    "title": "Server map",
+    "mapped": "{{mapped}} of {{total}} on the map",
+    "world": "World map",
+    "zoom": "Map zoom",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "group": "Cities grouped",
+    "legend": "Server status legend",
+    "selected": "Selected servers",
+    "hint": "Select a marker to see its servers.",
+    "empty": "Choose a city in a server’s settings to place it on the map.",
+    "signals": {
+      "ok": "Running",
+      "warn": "Has issues",
+      "down": "Unreachable",
+      "process": "Installing",
+      "idle": "Setup or check pending"
+    }
+  },
+  "city": {
+    "label": "City (optional)",
+    "none": "No city",
+    "unknown": "City unavailable in this catalog"
+  },
   "signal": {
     "error": "Error",
     "offline": "Unreachable",

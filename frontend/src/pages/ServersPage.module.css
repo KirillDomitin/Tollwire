@@ -19,6 +19,12 @@
   width: min(100%, 360px);
 }
 
+.serverRow[data-map-selected="true"],
+.serverRow[data-map-selected="true"]:hover {
+  background: color-mix(in srgb, var(--surface-2) 86%, var(--accent));
+  box-shadow: inset 3px 0 var(--accent);
+}
+
 .name {
   display: inline-flex;
   align-items: center;

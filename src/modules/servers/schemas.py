@@ -21,6 +21,7 @@ Name = Annotated[str, Field(min_length=1, max_length=100)]
 Host = Annotated[str, Field(min_length=1, max_length=100, pattern=HOST_PATTERN)]
 Port = Annotated[int, Field(ge=1, le=65535)]
 Description = Annotated[str, Field(max_length=300)]
+LocationCityId = Annotated[str, Field(max_length=64, pattern=r"^[a-z]{2}-[a-z0-9]+(?:-[a-z0-9]+)*$")]
 # Имя пользователя SSH: только безопасные символы — оно уходит в подключение, логи и аудит.
 Username = Annotated[str, Field(min_length=1, max_length=50, pattern=r"^[A-Za-z0-9._-]+$")]
 Secret = Annotated[str, Field(min_length=1, max_length=16384)]  # пустой секрет SSHClient всё равно не примет
@@ -58,14 +59,16 @@ class ServerCreate(BaseModel):
     host: Host
     ssh_port: Port = 22
     description: Description | None = None
+    location_city_id: LocationCityId | None = None
 
 
 class ServerUpdate(PatchModel):
-    NULLABLE = frozenset({"description"})
+    NULLABLE = frozenset({"description", "location_city_id"})
     name: Name | None = None
     host: Host | None = None
     ssh_port: Port | None = None
     description: Description | None = None
+    location_city_id: LocationCityId | None = None
 
 
 class ServerRead(BaseModel):
@@ -76,6 +79,7 @@ class ServerRead(BaseModel):
     ssh_port: int
     status: ServerStatus
     description: str | None = None
+    location_city_id: str | None = None
     health_status: HealthStatus | None = None
     last_health_at: datetime | None = None
     ssh_host_key_fingerprint: str | None = None  # None — ключ ещё не закреплён

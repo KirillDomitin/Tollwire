@@ -31,6 +31,7 @@ class VPNServer(UuidPkMixin, TimestampMixin, Base):
     ssh_port: Mapped[int] = mapped_column(server_default=text("22"))
     status: Mapped[ServerStatus] = mapped_column(default=ServerStatus.NEW, server_default=text("'NEW'"))
     description: Mapped[str | None] = mapped_column(String(300))
+    location_city_id: Mapped[str | None] = mapped_column(String(64))
     # Сводка последнего health-чека; полный отчёт — в Job.result задачи HEALTH_CHECK.
     health_status: Mapped[HealthStatus | None] = mapped_column(default=None)
     last_health_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)

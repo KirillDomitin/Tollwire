@@ -3505,6 +3505,8 @@ export interface components {
             ssh_port: number;
             /** Description */
             description?: string | null;
+            /** Location City Id */
+            location_city_id?: string | null;
         };
         /** ServerRead */
         ServerRead: {
@@ -3522,6 +3524,8 @@ export interface components {
             status: components["schemas"]["ServerStatus"];
             /** Description */
             description?: string | null;
+            /** Location City Id */
+            location_city_id?: string | null;
             health_status?: components["schemas"]["HealthStatus"] | null;
             /** Last Health At */
             last_health_at?: string | null;
@@ -3548,6 +3552,8 @@ export interface components {
             ssh_port?: number | null;
             /** Description */
             description?: string | null;
+            /** Location City Id */
+            location_city_id?: string | null;
         };
         /**
          * SshKeyInstall

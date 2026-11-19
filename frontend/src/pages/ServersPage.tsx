@@ -21,6 +21,7 @@ import { exactTime, timeAgo } from "../lib/time";
 import { formatPercent } from "../lib/units";
 import { freshMetrics, useLatestMetrics } from "./latestMetrics";
 import { AddServerDialog } from "./server/AddServerDialog";
+import { ServerMap } from "./server/ServerMap";
 import styles from "./ServersPage.module.css";
 
 type LatestMetrics = Schemas["LatestMetrics"];
@@ -39,6 +40,7 @@ export function ServersPage() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<ServerFilter>("all");
   const [sort, setSort] = useState<Sort<ServerSort>>(null);
+  const [mapSelection, setMapSelection] = useState<ReadonlySet<string>>(() => new Set());
   const servers = useQuery({
     queryKey: ["servers"],
     queryFn: () => unwrap(api.GET("/api/v1/servers")),
@@ -83,7 +85,12 @@ export function ServersPage() {
         </Notice>
       )}
 
-      {servers.data?.length === 0 && <p className={styles.quiet}>{t("servers.list.empty")}</p>}
+      {servers.data?.length === 0 && (
+        <>
+          <ServerMap servers={shown} selectedCities={mapSelection} onSelect={setMapSelection} />
+          <p className={styles.quiet}>{t("servers.list.empty")}</p>
+        </>
+      )}
 
       {all.length > 0 && (
         <>
@@ -108,6 +115,7 @@ export function ServersPage() {
               autoComplete="off"
             />
           </div>
+          <ServerMap servers={shown} selectedCities={mapSelection} onSelect={setMapSelection} />
           {shown.length === 0 ? (
             <p className={styles.quiet}>
               {t(query ? "servers.list.noMatches" : "servers.list.noStatusMatches")}
@@ -117,6 +125,7 @@ export function ServersPage() {
               servers={shown}
               metrics={latest}
               sort={sort}
+              mapSelection={mapSelection}
               onSort={(field) => setSort(nextSort(sort, field))}
             />
           )}
@@ -188,11 +197,13 @@ function ServerTable({
   servers,
   metrics,
   sort,
+  mapSelection,
   onSort,
 }: {
   servers: Server[];
   metrics: Map<string, LatestMetrics>;
   sort: Sort<ServerSort>;
+  mapSelection: ReadonlySet<string>;
   onSort: (field: ServerSort) => void;
 }) {
   const { t } = useTranslation();
@@ -230,7 +241,12 @@ function ServerTable({
             const { flag, rest } = splitFlag(server.name);
             const cpu = metric?.cpu_percent;
             return (
-              <tr key={server.id} data-signal={signal}>
+              <tr
+                key={server.id}
+                data-signal={signal}
+                data-map-selected={mapSelection.has(server.location_city_id ?? "") || undefined}
+                className={styles.serverRow}
+              >
                 <td data-label={t("servers.list.columns.state")}>
                   <StatusPill tone={SIGNAL_TONE[signal]}>{label}</StatusPill>
                 </td>
